@@ -1,0 +1,36 @@
+local torch = require("torch")
+local numlua = require("numlua")
+
+test("dtype reports luatorch dtype names", function()
+  assert_eq(numlua.dtype(numlua.array({ 1, 2 })), "float32")
+  assert_eq(numlua.dtype(numlua.array({ 1, 2 }, { dtype = "float64" })), "float64")
+  assert_eq(numlua.dtype(numlua.array({ 1, 2 }, { dtype = "int64" })), "int64")
+  assert_eq(numlua.dtype(numlua.array({ true, false })), "bool")
+end)
+
+test("astype converts and leaves the source unchanged", function()
+  local source = numlua.array({ { 1, 2 }, { 3, 4 } }, { dtype = "int64" })
+  local converted = numlua.astype(source, "float64")
+  assert_dtype(converted, "float64")
+  assert_dtype(source, "int64")
+  assert_near(converted:totable(), { { 1, 2 }, { 3, 4 } })
+  assert_false(converted == source)
+
+  local via_id = numlua.astype(source, torch.float64)
+  assert_dtype(via_id, "float64")
+end)
+
+test("astype can convert to bool", function()
+  local t = numlua.astype(numlua.array({ { 0, 2 }, { -1, 0 } }), "bool")
+  assert_dtype(t, "bool")
+  assert_tensor(t, { { false, true }, { true, false } })
+end)
+
+test("dtype conversion reports unsupported dtypes clearly", function()
+  local t = numlua.array({ 1, 2 })
+  assert_error(function() numlua.astype(t) end, "expects a dtype")
+  assert_error(function() numlua.astype(t, "not-a-dtype") end, "unknown dtype")
+  assert_error(function() numlua.astype(t, 99) end, "invalid dtype")
+  assert_error(function() numlua.dtype(nil) end,
+    "numlua.dtype expects a tensor")
+end)

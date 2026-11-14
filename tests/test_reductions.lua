@@ -1,0 +1,74 @@
+local numlua = require("numlua")
+
+local function integer_matrix()
+  return numlua.reshape(numlua.arange(1, 13), 3, 4)
+end
+
+test("sum returns tensors, including 0-D all-axis results", function()
+  local t = integer_matrix()
+  local total = numlua.sum(t)
+  assert_dtype(total, "int64")
+  assert_eq(total:dim(), 0)
+  assert_eq(total:item(), 78)
+
+  assert_tensor(numlua.sum(t, 1), { 15, 18, 21, 24 })
+  assert_tensor(numlua.sum(t, 2), { 10, 26, 42 })
+  assert_tensor(numlua.sum(t, -1), { 10, 26, 42 })
+  assert_shape(numlua.sum(t, 1, true), { 1, 4 })
+  assert_shape(numlua.sum(t, 2, true), { 3, 1 })
+end)
+
+test("mean follows ATen dtype behavior", function()
+  local t = integer_matrix()
+  local all = numlua.mean(t)
+  assert_dtype(all, "float64")
+  assert_near(all:item(), 6.5)
+
+  assert_near(numlua.mean(t, 1):totable(), { 5, 6, 7, 8 })
+  assert_near(numlua.mean(t, 2):totable(), { 2.5, 6.5, 10.5 })
+  assert_shape(numlua.mean(t, 2, true), { 3, 1 })
+
+  local doubles = numlua.astype(t, "float64")
+  assert_dtype(numlua.mean(doubles, 1), "float64")
+
+  local floats = numlua.array({ 1, 2, 3 })
+  assert_dtype(numlua.mean(floats), "float32")
+end)
+
+test("max and min return values only", function()
+  local t = integer_matrix()
+  local max_values, max_extra = numlua.max(t, 1)
+  assert_true(max_extra == nil, "max must return values only")
+  assert_tensor(max_values, { 9, 10, 11, 12 })
+  assert_eq(numlua.max(t):item(), 12)
+  assert_tensor(numlua.max(t, 2), { 4, 8, 12 })
+  assert_shape(numlua.max(t, 1, true), { 1, 4 })
+
+  local min_values, min_extra = numlua.min(t, 2)
+  assert_true(min_extra == nil, "min must return values only")
+  assert_tensor(min_values, { 1, 5, 9 })
+  assert_eq(numlua.min(t):item(), 1)
+  assert_tensor(numlua.min(t, 1), { 1, 2, 3, 4 })
+end)
+
+test("argmax uses 1-based indices and int64 tensors", function()
+  local t = integer_matrix()
+  local flat = numlua.argmax(t)
+  assert_dtype(flat, "int64")
+  assert_eq(flat:item(), 12)
+
+  assert_tensor(numlua.argmax(t, 1), { 3, 3, 3, 3 })
+  assert_tensor(numlua.argmax(t, 2), { 4, 4, 4 })
+  assert_tensor(numlua.argmax(t, -1), { 4, 4, 4 })
+  assert_shape(numlua.argmax(t, 1, true), { 1, 4 })
+end)
+
+test("reductions reject invalid axes and keepdims", function()
+  local t = integer_matrix()
+  assert_error(function() numlua.sum(t, 0) end, "axis 0 is invalid")
+  assert_error(function() numlua.mean(t, 1.5) end, "axis must be an integer")
+  assert_error(function() numlua.max(t, 1, 1) end, "keepdims")
+  assert_error(function() numlua.min(1) end, "numlua.min expects a tensor")
+  assert_error(function() numlua.argmax(nil) end,
+    "numlua.argmax expects a tensor")
+end)

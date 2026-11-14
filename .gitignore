@@ -1,0 +1,33 @@
+# Lua bytecode and native build outputs
+*.o
+*.so
+*.dll
+*.dylib
+*.luac
+luac.out
+
+# Build and dependency caches
+build/
+dist/
+.cache/
+.luarocks/
+*.rock
+*.src.rock
+
+# Test and example scratch files
+tests/.tmp/*
+!tests/.tmp/.gitkeep
+examples/*.npy
+
+# Coverage / profile / scratch logs
+*.out
+*.log
+luacov.stats.out
+luacov.report.out
+.luacheckcache
+
+# Editors and OS files
+.DS_Store
+.vscode/
+.idea/
+*.swp
