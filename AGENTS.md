@@ -33,7 +33,7 @@ core change and land it in luatorch first.
 Run from the repository root:
 
 ```sh
-LUA_PATH="../../lua/?.lua;../../lua/?/init.lua;./?.lua;./?/init.lua;;" \
+LUA_PATH="../luatorch/lua/?.lua;../luatorch/lua/?/init.lua;./?.lua;./?/init.lua;;" \
   luajit tests/run.lua
 ```
 

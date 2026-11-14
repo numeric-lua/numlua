@@ -3,7 +3,7 @@
 # Run the dependency-free numlua test suite.
 #
 # The default layout expects luatorch either beside this checkout or two levels
-# above it (the .numeric-lua staging layout).  Override with LUATORCH_ROOT.
+# above it (the old staging layout).  Override with LUATORCH_ROOT.
 #
 set -euo pipefail
 

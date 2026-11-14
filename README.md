@@ -51,12 +51,11 @@ print(numlua.matmul(numlua.astype(a, "float32"), b):format())
 - No external Lua rocks. The library and test harness use only the Lua standard
   library, LuaJIT FFI, and luatorch.
 
-In the staging layout, this repository lives at
-`luatorch/.numeric-lua/numlua`, so `../../lua` and `../..` point at the sibling
-luatorch checkout. `scripts/test.sh` searches that layout (plus
-`../luatorch` and `../../luatorch`) automatically. Set `LUATORCH_ROOT` if your
-checkout is elsewhere. Set `LUATORCH_LIB` if luatorch cannot find its shared
-library.
+In the organization workspace this repository sits next to `luatorch`, so
+`../luatorch/lua` is the sibling checkout. `scripts/test.sh` searches
+`../luatorch`, `../luatorch/luatorch`, and the old staging layout automatically. Set
+`LUATORCH_ROOT` if your checkout is elsewhere. Set `LUATORCH_LIB` if luatorch
+cannot find its shared library.
 
 ## Install and `LUA_PATH`
 
@@ -64,7 +63,7 @@ LuaRocks packaging is pending. Until then, run from the repository root with
 luatorch on `LUA_PATH`:
 
 ```sh
-LUA_PATH="../../lua/?.lua;../../lua/?/init.lua;./?.lua;./?/init.lua;;" \
+LUA_PATH="../luatorch/lua/?.lua;../luatorch/lua/?/init.lua;./?.lua;./?/init.lua;;" \
   luajit tests/run.lua
 ```
 
@@ -72,7 +71,7 @@ For your own scripts, keep the same two luatorch entries and add this
 repository's entries:
 
 ```sh
-export LUA_PATH="../../lua/?.lua;../../lua/?/init.lua;./?.lua;./?/init.lua;;"
+export LUA_PATH="../luatorch/lua/?.lua;../luatorch/lua/?/init.lua;./?.lua;./?/init.lua;;"
 luajit examples/basic.lua
 ```
 
@@ -150,7 +149,7 @@ assert(b:equal(a))
 From the repository root:
 
 ```sh
-LUA_PATH="../../lua/?.lua;../../lua/?/init.lua;./?.lua;./?/init.lua;;" \
+LUA_PATH="../luatorch/lua/?.lua;../luatorch/lua/?/init.lua;./?.lua;./?/init.lua;;" \
   luajit tests/run.lua
 ```
 

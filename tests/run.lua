@@ -17,7 +17,17 @@ root = root:gsub("/+$", "")
 if root == "" then
   root = "."
 end
-package.path = root .. "/?.lua;" .. root .. "/?/init.lua;" .. package.path
+package.path = table.concat({
+  root .. "/?.lua",
+  root .. "/?/init.lua",
+  root .. "/../luatorch/lua/?.lua",
+  root .. "/../luatorch/lua/?/init.lua",
+  root .. "/../../luatorch/lua/?.lua",
+  root .. "/../../luatorch/lua/?/init.lua",
+  root .. "/../../lua/?.lua",
+  root .. "/../../lua/?/init.lua",
+  package.path,
+}, ";")
 
 TMPDIR = root .. "/tests/.tmp"
 

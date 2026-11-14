@@ -2,7 +2,7 @@
 -- Runnable numlua example.
 --
 -- From the repository root:
---   LUA_PATH="../../lua/?.lua;../../lua/?/init.lua;;" luajit examples/basic.lua
+--   LUA_PATH="../luatorch/lua/?.lua;../luatorch/lua/?/init.lua;;" luajit examples/basic.lua
 --
 local script = arg and arg[0] or "examples/basic.lua"
 local root = script:match("^(.*)[/\\]examples[/\\][^/\\]+$")
@@ -13,7 +13,17 @@ root = root:gsub("/+$", "")
 if root == "" then
   root = "."
 end
-package.path = root .. "/?.lua;" .. root .. "/?/init.lua;" .. package.path
+package.path = table.concat({
+  root .. "/?.lua",
+  root .. "/?/init.lua",
+  root .. "/../luatorch/lua/?.lua",
+  root .. "/../luatorch/lua/?/init.lua",
+  root .. "/../../luatorch/lua/?.lua",
+  root .. "/../../luatorch/lua/?/init.lua",
+  root .. "/../luatorch/lua/?.lua",
+  root .. "/../luatorch/lua/?/init.lua",
+  package.path,
+}, ";")
 
 local torch = require("torch")
 local numlua = require("numlua")
