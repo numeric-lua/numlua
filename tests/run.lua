@@ -162,6 +162,7 @@ local files = {
   "test_linalg.lua",
   "test_dtype.lua",
   "test_npy.lua",
+  "test_txt.lua",
   "test_errors.lua",
 }
 

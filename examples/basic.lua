@@ -69,4 +69,13 @@ assert(numlua.dtype(restored) == numlua.dtype(product))
 print("restored " .. tostring(restored:nbytes()) .. " payload bytes from " .. path)
 os.remove(path)
 
+heading("Text/CSV round-trip")
+local text_path = root .. "/examples/.basic-demo.csv"
+assert(numlua.savetxt(text_path, product, { delimiter = "," }))
+local text_restored = numlua.loadtxt(text_path, { delimiter = "," })
+assert(text_restored:equal(product))
+print("restored " .. tostring(text_restored:numel()) ..
+  " values from " .. text_path)
+os.remove(text_path)
+
 print("\nnumlua example finished successfully.")

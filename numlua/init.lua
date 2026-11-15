@@ -16,6 +16,7 @@
 
 local torch = require("torch")
 local npy = require("numlua.npy")
+local text = require("numlua.text")
 
 local numlua = {}
 
@@ -355,5 +356,12 @@ end
 
 numlua.save = npy.save
 numlua.load = npy.load
+
+-- ---------------------------------------------------------------------------
+-- whitespace / CSV text I/O
+-- ---------------------------------------------------------------------------
+
+numlua.loadtxt = text.loadtxt
+numlua.savetxt = text.savetxt
 
 return numlua

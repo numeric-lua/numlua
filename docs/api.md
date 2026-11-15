@@ -1,8 +1,9 @@
 # numlua API
 
-`numlua` is a thin, NumPy-shaped facade over luatorch tensors. Every public
-function returns a luatorch `Tensor` (except `shape`, `dtype`, and `save`), and
-the numerical work is delegated to luatorch/ATen.
+`numlua` is a thin, NumPy-shaped facade over luatorch tensors. Array-producing
+functions return luatorch `Tensor`s (`shape` and `dtype` return plain Lua
+values, and `save`/`savetxt` return `true`), and the numerical work is
+delegated to luatorch/ATen.
 
 Load it with:
 
@@ -231,6 +232,76 @@ Rejected with explicit errors:
 The header is validated before any tensor allocation. `load` reads the complete
 file into memory, then copies the payload into a C-order tensor.
 
+## Text and CSV I/O
+
+### `numlua.loadtxt(path[, options])`
+
+Reads a whitespace- or delimiter-separated numeric text file and returns a
+luatorch tensor. Options:
+
+| option | default | meaning |
+| --- | --- | --- |
+| `delimiter` | whitespace runs | field separator, such as `","` or `"\t"` |
+| `comments` | `"#"` | comment marker, a table of markers, or `false`/`""` to disable |
+| `dtype` | `"float32"` | result dtype (a luatorch dtype name or id) |
+
+Blank lines and comments are ignored. Comment text starts at the first occurrence
+of any configured marker on a line, so both full-line and trailing comments work.
+Every data row must have the same number of fields. One-row and one-column files
+load as 1-D tensors, following NumPy's default squeeze behavior; a file with no
+data rows returns an empty 1-D tensor. Numeric fields accept decimal, scientific,
+`nan`, `inf`, and `-inf` spellings.
+
+```lua
+-- data.csv:
+--   # measured values
+--   1.5, 2.5
+--   3.5, 4.5
+local values = numlua.loadtxt("data.csv", {
+  delimiter = ",",
+  comments = "#",
+  dtype = "float64",
+})
+```
+
+Malformed input raises a `numlua.loadtxt:` error that names the physical line
+and, for an invalid value, the column:
+
+```text
+numlua.loadtxt: line 3 has 4 column(s), expected 3
+numlua.loadtxt: line 2: invalid number 'oops' in column 2
+```
+
+Supported result dtypes are the numeric luatorch dtypes: `float16`, `float32`,
+`float64`, `int8`, `int16`, `int32`, `int64`, and `uint8`. `bool` is rejected;
+write `0`/`1` with an integral dtype instead.
+
+### `numlua.savetxt(path, tensor[, options])`
+
+Writes a 1-D or 2-D tensor as numeric text and returns `true`. Options:
+
+| option | default | meaning |
+| --- | --- | --- |
+| `delimiter` | `" "` | field separator |
+| `fmt` | dtype-aware | `printf` format string or function for each value |
+
+The default floating formats use enough significant digits to round-trip the
+tensor's dtype (`float16`, `float32`, or `float64`); integral dtypes use base 10.
+`nan`, `inf`, and `-inf` are written explicitly. A custom `fmt` is applied to
+every value:
+
+```lua
+numlua.savetxt("values.csv", numlua.arange(6):reshape(2, 3), {
+  delimiter = ",",
+  fmt = "%.3f",
+})
+```
+
+Zero-dimensional and higher-than-2-D tensors are rejected. `bool` is not a
+supported text dtype. Text files do not record shape or dtype, so load with the
+matching `dtype` when exact integer or wider floating-point values matter; a
+1xN or Nx1 matrix cannot be distinguished from a vector after loading.
+
 ## Errors
 
 Invalid arguments raise ordinary Lua errors with a `numlua.<function>:` prefix
@@ -252,5 +323,8 @@ dtype, or backend constraints are forwarded as-is.
   delegated operation.
 - `.npy` is limited to v1.0, C order, little-endian hosts, and the four dtypes
   listed above.
+- Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
+  or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
+  squeezed to 1-D. `bool` is not supported by either text function.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.
 - No LuaRocks package yet.

@@ -5,9 +5,10 @@ NumPy-shaped arrays for LuaJIT, implemented as a **thin facade over
 
 `numlua` gives LuaJIT the parts of NumPy that are useful around a tensor
 engine: array construction, shape manipulation, reductions, small linear
-algebra operations, dtype conversion, and NumPy `.npy` file I/O. It does not
-implement a tensor engine of its own. Array-producing functions return
-`luatorch` tensors, and luatorch/ATen performs the actual computation.
+algebra operations, dtype conversion, NumPy `.npy` file I/O, and simple
+whitespace/CSV text I/O. It does not implement a tensor engine of its own.
+Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
+the actual computation.
 
 > **Status: MVP scaffold, unreleased.** The public API is intentionally small
 > and is expected to grow. There is no LuaRocks package yet.
@@ -113,6 +114,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Linear algebra | `dot`, `matmul` |
 | Dtype | `dtype`, `astype` |
 | NumPy I/O | `save`, `load` |
+| Text/CSV I/O | `loadtxt`, `savetxt` |
 
 ## `.npy` I/O
 
@@ -144,6 +146,41 @@ local b = numlua.load("arrays.npy")
 assert(b:equal(a))
 ```
 
+## Text/CSV I/O
+
+`numlua.savetxt(path, tensor[, options])` writes a 1-D or 2-D tensor as numeric
+text. `numlua.loadtxt(path[, options])` reads it back as a luatorch tensor.
+Plain whitespace is the default separator, and `delimiter = ","` handles simple
+CSV. Comment markers default to `"#"` and can be changed, supplied as a table,
+or disabled.
+
+```lua
+local numlua = require("numlua")
+
+local a = numlua.array({ { 1.5, 2.5 }, { 3.5, 4.5 } })
+numlua.savetxt("values.csv", a, { delimiter = "," })
+local b = numlua.loadtxt("values.csv", {
+  delimiter = ",",
+  comments = "#",
+  dtype = "float32",
+})
+assert(b:equal(a))
+```
+
+`loadtxt` ignores blank lines and comments, requires every data row to have the
+same number of fields, and reports malformed rows or invalid numbers with the
+line number. One-row and one-column files become 1-D tensors (NumPy's default
+squeeze behavior), and an all-comment/empty file loads as an empty 1-D tensor.
+The default load dtype is `float32`; pass `dtype` to load integers or wider
+floats exactly. Text files do not store shape or dtype, so a 1xN or Nx1 matrix
+cannot be distinguished from a vector after loading.
+
+`savetxt` writes sufficient digits for `float16`/`float32`/`float64`
+round-trips, writes `nan`/`inf` explicitly, and supports a `fmt` format string
+or function. It rejects zero-dimensional and higher-than-2-D tensors and the
+`bool` dtype (use `0`/`1` values with an integral dtype instead). See
+[docs/api.md](docs/api.md#text-and-csv-io) for the full option list.
+
 ## Testing
 
 From the repository root:
@@ -162,8 +199,9 @@ make test
 
 The suite is dependency-free and covers constructors, shape operations,
 reductions, linear algebra, dtype conversion, `.npy` round-trips for all
-supported dtypes and 1-D/2-D/3-D shapes, and error paths. It currently contains
-48 tests. `examples/basic.lua` is runnable with the same `LUA_PATH`.
+supported dtypes and 1-D/2-D/3-D shapes, whitespace/CSV text round-trips, and
+error paths. It currently contains 57 tests. `examples/basic.lua` is runnable
+with the same `LUA_PATH`.
 
 ## Repository layout
 
@@ -171,6 +209,7 @@ supported dtypes and 1-D/2-D/3-D shapes, and error paths. It currently contains
 numlua/
   numlua/init.lua    -- public facade
   numlua/npy.lua     -- .npy v1.0 reader/writer
+  numlua/text.lua    -- whitespace/CSV text reader/writer
   docs/api.md        -- API reference
   examples/basic.lua -- runnable example
   tests/run.lua      -- dependency-free test harness
@@ -194,6 +233,9 @@ This is an MVP, not a complete NumPy replacement:
 - `.npy` support is limited to v1.0, C order, little-endian hosts, and the four
   dtypes above; `load` reads the complete file into memory before copying it
   into a tensor;
+- text I/O is intentionally simple: it does not store shape/dtype metadata,
+  quote strings, or parse headers, and it rejects `bool` rather than guessing a
+  textual boolean spelling;
 - there is no LuaRocks rockspec yet. Packaging is pending.
 
 ## License
