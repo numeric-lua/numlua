@@ -60,6 +60,18 @@ local product = numlua.matmul(numlua.astype(a, "float32"), weights)
 assert(numlua.dtype(product) == "float32")
 print(product:format())
 
+heading("Linear algebra facade")
+local la = numlua.linalg
+local square = numlua.array({ { 4.0, 7.0 }, { 2.0, 6.0 } },
+  { dtype = "float64" })
+print("det = " .. tostring(la.det(square):item()))
+print("norm = " .. tostring(la.norm(square):item()))
+print("inverse:\n" .. la.inv(square):format())
+local u, s, vh = la.svd(square, false)
+print("svd shapes = " .. table.concat(numlua.shape(u), "x") .. ", " ..
+  table.concat(numlua.shape(s), "x") .. ", " ..
+  table.concat(numlua.shape(vh), "x"))
+
 heading(".npy round-trip")
 local path = root .. "/examples/.basic-demo.npy"
 assert(numlua.save(path, product))

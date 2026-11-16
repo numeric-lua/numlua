@@ -180,6 +180,38 @@ Delegates to luatorch/ATen `matmul`, including matrix-vector, matrix-matrix,
 batched, and broadcasted forms. Broadcasting behavior and shape errors are
 ATen's.
 
+### `numlua.linalg`
+
+A NumPy-shaped facade for the luatorch linear-algebra methods. It is available
+as both `numlua.linalg` and `require("numlua.linalg")`. Dimensions are
+**1-based**, and array results are luatorch tensors.
+
+```lua
+local la = numlua.linalg
+local a = numlua.array({ { 4, 7 }, { 2, 6 } }, { dtype = "float64" })
+
+la.det(a):item()          -- 10
+la.inv(a)                 -- 2x2
+la.solve(a, numlua.array({ 1, 0 }, { dtype = "float64" }))
+la.norm(a)                -- 0-D Frobenius norm
+local u, s, vh = la.svd(a, false)
+local q, r = la.qr(a)
+```
+
+| Function | Result |
+| --- | --- |
+| `linalg.norm(t[, p[, dim[, keepdim]]])` | 0-D norm, or a tensor when `dim` is given; `p` defaults to 2 |
+| `linalg.inv(t)` | inverse of a square matrix |
+| `linalg.det(t)` | 0-D determinant of a square matrix |
+| `linalg.solve(a, b)` | solves `a * x = b`; `b` is a vector or matrix |
+| `linalg.svd(t[, full_matrices])` | returns `U, S, Vh`; `full_matrices` defaults to `true` |
+| `linalg.qr(t[, mode])` | returns `Q, R`; `mode` is `"reduced"` (default), `"complete"`, or `"r"` |
+
+`svd` accepts rectangular matrices. `qr` returns the ATen shapes for the chosen
+mode. Invalid dtypes, singular systems, and shape errors are reported by
+luatorch/ATen; the facade adds clear errors for non-tensors, non-square
+inverses/determinants, zero dimensions, and mismatched `solve` shapes.
+
 ## Dtype
 
 ### `numlua.dtype(t)`

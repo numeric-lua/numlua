@@ -160,6 +160,7 @@ local files = {
   "test_shape.lua",
   "test_reductions.lua",
   "test_linalg.lua",
+  "test_linalg_facade.lua",
   "test_dtype.lua",
   "test_npy.lua",
   "test_txt.lua",

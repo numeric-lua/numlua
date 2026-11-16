@@ -17,6 +17,7 @@
 local torch = require("torch")
 local npy = require("numlua.npy")
 local text = require("numlua.text")
+local linalg = require("numlua.linalg")
 
 local numlua = {}
 
@@ -363,5 +364,7 @@ numlua.load = npy.load
 
 numlua.loadtxt = text.loadtxt
 numlua.savetxt = text.savetxt
+
+numlua.linalg = linalg
 
 return numlua

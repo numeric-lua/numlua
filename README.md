@@ -44,6 +44,15 @@ local b = torch.ones(3, 2)
 print(numlua.matmul(numlua.astype(a, "float32"), b):format())
 ```
 
+Small linear algebra is available through the same facade:
+
+```lua
+local la = numlua.linalg
+print(la.det(numlua.eye(2)):item())         -- 1
+local q, r = la.qr(numlua.array({ { 1, 2 }, { 3, 4 } }))
+print(la.norm(q:matmul(r)):item())
+```
+
 ## Requirements
 
 - LuaJIT 2.1 (the primary and tested target).
