@@ -313,6 +313,114 @@ function numlua.argmax(t, axis, keepdims)
 end
 
 -- ---------------------------------------------------------------------------
+-- predicates and selection
+-- ---------------------------------------------------------------------------
+
+-- where() accepts scalar or tensor branches and scalar or tensor conditions.
+-- Scalar operands become 0-D luatorch tensors so ATen performs all broadcasting.
+local function as_condition(value)
+  if torch.is_tensor(value) then
+    if value:dtype() == "bool" then
+      return value
+    end
+    return value:ne(0)
+  end
+  if type(value) == "number" then
+    return torch.tensor(value):ne(0)
+  end
+  if type(value) == "boolean" then
+    return torch.tensor(value)
+  end
+  error(string.format(
+    "numlua.where expects a tensor condition, number, or boolean, got %s",
+    type(value)), 3)
+end
+
+local function as_where_operand(value, name)
+  if torch.is_tensor(value) then
+    return value
+  end
+  if type(value) == "number" or type(value) == "boolean" then
+    return torch.tensor(value)
+  end
+  error(string.format(
+    "numlua.where expects a tensor or number for %s, got %s",
+    name, type(value)), 3)
+end
+
+function numlua.where(condition, x, y)
+  return torch.where(as_condition(condition),
+    as_where_operand(x, "x"), as_where_operand(y, "y"))
+end
+
+local function check_clip_bound(value, name)
+  if type(value) == "number" or torch.is_tensor(value) then
+    return value
+  end
+  error(string.format(
+    "numlua.clip: %s must be a number or tensor, got %s",
+    name, type(value)), 3)
+end
+
+-- clip() uses luatorch's scalar clamp when both bounds are numbers.  Tensor
+-- bounds are combined with elementwise maximum/minimum so ATen handles their
+-- broadcasting instead of numlua growing a broadcast layer.
+function numlua.clip(t, minimum, maximum)
+  check_tensor(t, "clip")
+  if minimum == nil or maximum == nil then
+    error("numlua.clip expects minimum and maximum bounds", 2)
+  end
+  check_clip_bound(minimum, "minimum")
+  check_clip_bound(maximum, "maximum")
+  if type(minimum) == "number" and type(maximum) == "number" then
+    return t:clamp(minimum, maximum)
+  end
+  local lo = torch.is_tensor(minimum) and minimum or torch.tensor(minimum)
+  local hi = torch.is_tensor(maximum) and maximum or torch.tensor(maximum)
+  return t:maximum(lo):minimum(hi)
+end
+
+-- IEEE NaN is the only value not equal to itself, so luatorch's comparison
+-- kernel already provides isnan without a new native primitive.
+function numlua.isnan(t)
+  check_tensor(t, "isnan")
+  return t:ne(t)
+end
+
+local function logical_reduction(t, axis, keepdims, name)
+  check_tensor(t, name)
+  check_axis(axis, name)
+  check_keepdims(keepdims, name)
+  local result = t[name](t, axis, keepdims)
+  -- luatorch ignores keepdim for all-axis all()/any(); reshape the 0-D result
+  -- to NumPy's all-ones shape.  This is metadata only, not a kernel.
+  if axis == nil and keepdims and t:dim() > 0 then
+    local shape = {}
+    for i = 1, t:dim() do
+      shape[i] = 1
+    end
+    result = result:reshape(shape)
+  end
+  return result
+end
+
+function numlua.any(t, axis, keepdims)
+  return logical_reduction(t, axis, keepdims, "any")
+end
+
+function numlua.all(t, axis, keepdims)
+  return logical_reduction(t, axis, keepdims, "all")
+end
+
+-- A boolean nonzero mask summed along the axis is an int64 count; ATen's bool
+-- sum reduction supplies the count kernel.
+function numlua.count_nonzero(t, axis)
+  check_tensor(t, "count_nonzero")
+  check_axis(axis, "count_nonzero")
+  return t:ne(0):sum(axis)
+end
+
+-- ---------------------------------------------------------------------------
 -- linear algebra
 -- ---------------------------------------------------------------------------
 

@@ -4,9 +4,10 @@ NumPy-shaped arrays for LuaJIT, implemented as a **thin facade over
 `luatorch` tensors**.
 
 `numlua` gives LuaJIT the parts of NumPy that are useful around a tensor
-engine: array construction, shape manipulation, reductions, small linear
-algebra operations, dtype conversion, NumPy `.npy` file I/O, and simple
-whitespace/CSV text I/O. It does not implement a tensor engine of its own.
+engine: array construction, shape manipulation, reductions, predicates and
+selection, small linear algebra operations, dtype conversion, NumPy `.npy` file
+I/O, and simple whitespace/CSV text I/O. It does not implement a tensor engine
+of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
@@ -53,6 +54,15 @@ local q, r = la.qr(numlua.array({ { 1, 2 }, { 3, 4 } }))
 print(la.norm(q:matmul(r)):item())
 ```
 
+Predicates, clipping, and conditional selection are available too:
+
+```lua
+local values = numlua.array({ -2, -0.5, 0, 0.5, 2 })
+print(numlua.clip(values, -1, 1):format())
+print(numlua.where(values:gt(0), values, 0):format())
+print(numlua.count_nonzero(values):item(), numlua.any(values:gt(0)):item())
+```
+
 ## Requirements
 
 - LuaJIT 2.1 (the primary and tested target).
@@ -63,9 +73,10 @@ print(la.norm(q:matmul(r)):item())
 
 In the organization workspace this repository sits next to `luatorch`, so
 `../luatorch/lua` is the sibling checkout. `scripts/test.sh` searches
-`../luatorch`, `../luatorch/luatorch`, and the old staging layout automatically. Set
-`LUATORCH_ROOT` if your checkout is elsewhere. Set `LUATORCH_LIB` if luatorch
-cannot find its shared library.
+`../luatorch`, the old staging layout, and the main checkout's sibling
+`luatorch` when run from a linked worktree automatically. Set `LUATORCH_ROOT`
+if your checkout is elsewhere. Set `LUATORCH_LIB` if luatorch cannot find its
+shared library.
 
 ## Install and `LUA_PATH`
 
@@ -120,6 +131,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Shape | `shape`, `reshape`, `transpose`, `ravel`, `squeeze`, `unsqueeze` |
 | Combine | `concatenate`, `stack` |
 | Reductions | `sum`, `mean`, `max`, `min`, `argmax` |
+| Predicates/selection | `where`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul` |
 | Dtype | `dtype`, `astype` |
 | NumPy I/O | `save`, `load` |
@@ -207,10 +219,10 @@ make test
 ```
 
 The suite is dependency-free and covers constructors, shape operations,
-reductions, linear algebra, dtype conversion, `.npy` round-trips for all
-supported dtypes and 1-D/2-D/3-D shapes, whitespace/CSV text round-trips, and
-error paths. It currently contains 57 tests. `examples/basic.lua` is runnable
-with the same `LUA_PATH`.
+reductions, predicates and conditional selection, linear algebra, dtype
+conversion, `.npy` round-trips for all supported dtypes and 1-D/2-D/3-D shapes,
+whitespace/CSV text round-trips, and error paths. It currently contains 72
+tests. `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Repository layout
 
@@ -230,9 +242,11 @@ numlua/
 
 This is an MVP, not a complete NumPy replacement:
 
-- reductions accept one axis at a time (no tuple axes);
+- reductions, including `any`, `all`, and `count_nonzero`, accept one axis at a
+  time (no tuple axes);
 - there is no general dtype-promotion system; only `mean` promotes integer/bool
-  input, and it always promotes to `float64`;
+  input, and it always promotes to `float64`; scalar `where` branches are
+  materialized as 0-D `float32` (or `bool`) tensors before ATen broadcasting;
 - `dot` is the 1-D inner product only; use `matmul` for matrix and batched
   products;
 - there is no elementwise arithmetic or fancy-indexing API; use the returned

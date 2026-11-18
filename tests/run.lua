@@ -159,6 +159,7 @@ local files = {
   "test_constructors.lua",
   "test_shape.lua",
   "test_reductions.lua",
+  "test_predicates.lua",
   "test_linalg.lua",
   "test_linalg_facade.lua",
   "test_dtype.lua",

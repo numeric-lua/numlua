@@ -167,6 +167,68 @@ Returns an `int64` tensor of 1-based indices. If `axis` is omitted, the result
 is the flat C-order index of the maximum (a 0-D tensor). With `axis`, the
 reduced axis is removed unless `keepdims` is true.
 
+## Predicates and selection
+
+### `numlua.where(condition, x, y)`
+
+Selects elements from `x` where `condition` is true and from `y` elsewhere.
+`condition`, `x`, and `y` may be tensors or Lua scalars (`number`/`boolean`);
+scalar operands become 0-D luatorch tensors, so ATen performs all broadcasting
+between the three operands. A non-boolean `condition` tensor or number is
+truth-tested as `condition ~= 0`. The result is a luatorch tensor.
+
+```lua
+local condition = numlua.array({ { true }, { false } })
+numlua.where(condition, numlua.array({ { 1, 2, 3 } }), -1)
+-- {{1, 2, 3}, {-1, -1, -1}}
+```
+
+Scalar numeric branches are materialized as `float32` 0-D tensors; tensor
+branches keep luatorch/ATen's dtype promotion.
+
+### `numlua.clip(t, minimum, maximum)`
+
+Clamps every element of `t` to the inclusive `[minimum, maximum]` range.
+Bounds are normally numbers, but tensor bounds are also accepted and broadcast
+by ATen's elementwise `maximum`/`minimum`; scalar bounds use luatorch's clamp
+kernel. The result is a luatorch tensor. NaN input values are preserved, and if
+`minimum > maximum` the result is `maximum`, matching luatorch/NumPy clamping.
+Missing or non-numeric/non-tensor bounds raise a `numlua.clip:` error.
+
+```lua
+numlua.clip(numlua.array({ -2, -0.5, 0, 0.5, 2 }), -1, 1)
+-- {-1, -0.5, 0, 0.5, 1}
+```
+
+### `numlua.isnan(t)`
+
+Returns a `bool` tensor that is true where `t` is NaN and false elsewhere.
+Infinities are not NaN. Integer and boolean inputs produce an all-false mask.
+The implementation uses the IEEE rule that NaN is not equal to itself
+(`t:ne(t)`), so no separate native kernel is needed.
+
+### `numlua.any(t[, axis[, keepdims]])`
+
+### `numlua.all(t[, axis[, keepdims]])`
+
+Return a `bool` tensor. With no `axis`, the result is a 0-D tensor (or an
+all-ones shape when `keepdims` is true). With an `axis`, the reduced axis is
+removed unless `keepdims` is true. Axes are 1-based and may be negative. NaN
+values are truthy, like NumPy.
+
+### `numlua.count_nonzero(t[, axis])`
+
+Returns an `int64` tensor with the number of elements that are not equal to
+zero. With no `axis`, the result is a 0-D tensor; with an `axis`, that axis is
+reduced and removed. NaN counts as nonzero. There is no `keepdims` parameter.
+
+```lua
+local t = numlua.array({ { 0, 1, 0 }, { 2, 0, 3 } })
+numlua.count_nonzero(t):item()        -- 3
+numlua.count_nonzero(t, 1):totable()  -- {1, 1, 1}
+numlua.count_nonzero(t, 2):totable()  -- {1, 2}
+```
+
 ## Linear algebra
 
 ### `numlua.dot(a, b)`
@@ -345,9 +407,11 @@ dtype, or backend constraints are forwarded as-is.
 - Axes/indices are 1-based; NumPy examples must shift axes by one.
 - Default dtypes differ: `float32` is the luatorch default for constructors and
   Lua numeric tables; NumPy usually defaults to `float64`.
-- Reductions take a single axis only, not a tuple of axes.
+- Reductions, including `any`, `all`, and `count_nonzero`, take a single axis
+  only, not a tuple of axes.
 - There is no general dtype promotion. `mean` is the only place the facade
-  promotes, and only integer/bool -> `float64`.
+  promotes, and only integer/bool -> `float64`. Scalar `where` branches are
+  materialized as 0-D `float32` (or `bool`) tensors before ATen broadcasting.
 - `dot` is vector-only; NumPy's `dot` also performs matrix products.
 - No elementwise arithmetic, ufuncs, or fancy indexing are exposed; use the
   returned luatorch tensors and `torch` directly.

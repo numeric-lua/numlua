@@ -3,7 +3,9 @@
 # Run the dependency-free numlua test suite.
 #
 # The default layout expects luatorch either beside this checkout or two levels
-# above it (the old staging layout).  Override with LUATORCH_ROOT.
+# above it (the old staging layout).  Linked worktrees are resolved through the
+# main checkout, whose sibling luatorch is still found.  Override with
+# LUATORCH_ROOT.
 #
 set -euo pipefail
 
@@ -17,11 +19,24 @@ if [[ -n "$luatorch_root" ]]; then
   fi
   luatorch_root="$(cd "$luatorch_root" && pwd)"
 else
-  for candidate in \
-    "$repo_root/../luatorch" \
-    "$repo_root/../.." \
+  candidates=(
+    "$repo_root/../luatorch"
+    "$repo_root/../.."
     "$repo_root/../../luatorch"
-  do
+  )
+
+  git_common_dir="$(git -C "$repo_root" rev-parse --git-common-dir 2>/dev/null || true)"
+  if [[ -n "$git_common_dir" ]]; then
+    if [[ "$git_common_dir" != /* ]]; then
+      git_common_dir="$repo_root/$git_common_dir"
+    fi
+    if [[ -d "$git_common_dir" ]]; then
+      main_checkout="$(cd "$git_common_dir/.." && pwd)"
+      candidates+=("$main_checkout/../luatorch")
+    fi
+  fi
+
+  for candidate in "${candidates[@]}"; do
     if [[ -f "$candidate/lua/torch/init.lua" ]]; then
       luatorch_root="$(cd "$candidate" && pwd)"
       break

@@ -72,6 +72,16 @@ print("svd shapes = " .. table.concat(numlua.shape(u), "x") .. ", " ..
   table.concat(numlua.shape(s), "x") .. ", " ..
   table.concat(numlua.shape(vh), "x"))
 
+heading("Predicates and selection")
+local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })
+print("clipped:\n" .. numlua.clip(values, -1, 1):format())
+print("positive values selected:\n" ..
+  numlua.where(values:gt(0), values, 0):format())
+print("nonzeros = " .. tostring(numlua.count_nonzero(values):item()))
+print("any positive = " .. tostring(numlua.any(values:gt(0)):item()))
+print("all above -3 = " .. tostring(numlua.all(values:gt(-3)):item()))
+print("isnan mask:\n" .. numlua.isnan(values):format())
+
 heading(".npy round-trip")
 local path = root .. "/examples/.basic-demo.npy"
 assert(numlua.save(path, product))
