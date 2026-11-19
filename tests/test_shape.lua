@@ -107,13 +107,50 @@ test("shape operations reject bad arguments", function()
     "axis 0 is invalid")
 end)
 
-test("reshape and transpose preserve view/copy behavior", function()
-  local t = numlua.arange(6):reshape(2, 3)
-  assert_eq(t:numel(), 6)
-  local transposed = numlua.transpose(t)
-  assert_shape(transposed, { 3, 2 })
-  assert_false(transposed:is_contiguous())
-  local raveled = numlua.ravel(transposed)
-  assert_shape(raveled, { 6 })
+test("large layout operations preserve documented view/copy semantics", function()
+  local side = 1024
+  local count = side * side
+  local base = numlua.zeros(side, side)
+  assert_eq(base:numel(), count)
+
+  -- reshape/ravel of a contiguous array are views: writing through the view
+  -- must be visible in the original instead of a silent full-size copy.
+  local reshaped = numlua.reshape(base, { count })
+  assert_shape(reshaped, { count })
+  reshaped:set(1, 11)
+  assert_eq(base:get(1, 1), 11)
+
+  local raveled = numlua.ravel(base)
+  assert_shape(raveled, { count })
   assert_true(raveled:is_contiguous())
+  raveled:set(2, 33)
+  assert_eq(base:get(1, 2), 33)
+
+  -- transpose is a permuted view.  A copy here would not observe the base
+  -- mutation below.
+  local transposed = numlua.transpose(base)
+  assert_shape(transposed, { side, side })
+  assert_false(transposed:is_contiguous())
+  transposed:set(1, 2, 22)
+  assert_eq(base:get(2, 1), 22)
+
+  -- Broadcasting is also a view/expand operation, not a materialized
+  -- numlua-sized copy.  Mutating the source is visible through both forms.
+  local row = numlua.zeros(1, side)
+  local column = numlua.zeros(side, 1)
+  local wide = numlua.broadcast_to(row, { side, side })
+  local a, b = numlua.broadcast_arrays(row, column)
+  assert_false(wide:is_contiguous())
+  row:set(1, 1, 44)
+  assert_eq(wide:get(side, 1), 44)
+  assert_eq(a:get(side, 1), 44)
+  assert_eq(b:get(1, 1), 0)
+
+  -- ravel of a non-contiguous view must produce an independent C-order copy;
+  -- it must not alias the original storage.
+  local copied = numlua.ravel(transposed)
+  assert_shape(copied, { count })
+  assert_true(copied:is_contiguous())
+  copied:set(1, 99)
+  assert_eq(base:get(1, 1), 11)
 end)

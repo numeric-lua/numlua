@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- generated `.npy`/`.npz` fixture corpus covering 3-D/2-D shapes, all supported
+  dtypes, empty and 0-D arrays, stored ZIP members, and big-endian rejection;
+- `bench/bench.lua` and `scripts/bench.sh` for construction, reduction,
+  broadcasting, layout, and `.npy` I/O comparisons against direct ATen/raw
+  Lua baselines;
+- `docs/performance.md` with the dated run, machine/compiler conditions,
+  method, explicit losses, and caveats;
+- a large layout regression test proving documented views do not silently copy
+  and that non-contiguous `ravel` does copy.
+
+### Tests
+
+- 91 tests.
+
 ## 0.2.0 — 2026-11-19
 
 ### Added

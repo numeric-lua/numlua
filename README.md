@@ -239,21 +239,34 @@ make test
 The suite is dependency-free and covers constructors, shape operations,
 reductions, predicates and conditional selection, linear algebra, dtype
 conversion, `.npy` round-trips for all supported dtypes and 1-D/2-D/3-D shapes,
-whitespace/CSV text round-trips, and error paths. It currently contains 72
-tests. `examples/basic.lua` is runnable with the same `LUA_PATH`.
+whitespace/CSV text round-trips, generated `.npy`/`.npz` fixtures, layout
+view/copy semantics, and error paths. It currently contains 91 tests.
+`examples/basic.lua` is runnable with the same `LUA_PATH`.
+
+## Performance notes
+
+`bench/bench.lua` (run with `./scripts/bench.sh`) compares construction,
+reductions, broadcasting, layout operations, and `.npy` I/O with direct
+luatorch/ATen or raw Lua/FFI baselines. A dated snapshot with machine,
+compiler, and method details is in [docs/performance.md](docs/performance.md).
+Timing is deliberately not a CI gate; run the benchmark on the target machine
+rather than treating the recorded numbers as constants.
 
 ## Repository layout
 
 ```text
 numlua/
-  numlua/init.lua    -- public facade
-  numlua/npy.lua     -- .npy v1.0 reader/writer
-  numlua/text.lua    -- whitespace/CSV text reader/writer
-  docs/api.md        -- API reference
-  examples/basic.lua -- runnable example
-  tests/run.lua      -- dependency-free test harness
-  scripts/test.sh    -- test wrapper with LUA_PATH setup
-  Makefile           -- make test
+  numlua/init.lua     -- public facade
+  numlua/npy.lua      -- .npy v1.0 reader/writer
+  numlua/text.lua     -- whitespace/CSV text reader/writer
+  docs/api.md         -- API reference
+  examples/basic.lua  -- runnable example
+  bench/bench.lua     -- facade-vs-ATen micro-benchmarks
+  docs/performance.md -- dated benchmark snapshot and caveats
+  tests/run.lua       -- dependency-free test harness
+  scripts/test.sh     -- test wrapper with LUA_PATH setup
+  scripts/bench.sh    -- benchmark wrapper with LUA_PATH setup
+  Makefile            -- make test, make bench
 ```
 
 ## Status and known limits

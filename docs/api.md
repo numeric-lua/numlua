@@ -97,6 +97,8 @@ Returns a plain Lua array of dimensions: `{2, 3}`.
 ### `numlua.reshape(t, ...)`
 
 Accepts variadic dimensions or a shape table. `-1` infers one dimension.
+For a contiguous input this returns a view; a non-contiguous reshape may
+materialize a copy, following luatorch/ATen.
 
 ```lua
 numlua.reshape(t, 2, 3)
@@ -107,7 +109,7 @@ numlua.reshape(t, 2, -1)
 ### `numlua.transpose(t[, axes])`
 
 With no `axes`, reverses all dimensions (NumPy's default). With `axes`, applies
-a 1-based permutation.
+a 1-based permutation. This is a view: the result shares storage with the input.
 
 ```lua
 numlua.transpose(t)              -- reverse axes
@@ -119,7 +121,8 @@ Zero- and one-dimensional inputs are returned unchanged when `axes` is omitted.
 
 ### `numlua.ravel(t)`
 
-Returns a C-order contiguous 1-D view/copy with `numel(t)` elements.
+Returns a C-order contiguous 1-D result with `numel(t)` elements. It is a view
+when the input is already C-contiguous and a materialized copy otherwise.
 
 ### `numlua.squeeze(t[, axis])`
 
@@ -293,15 +296,21 @@ These functions are 1-based and return luatorch tensors:
 | --- | --- |
 | `numlua.broadcast_to(t, shape)` | broadcast view; NumPy-compatible right alignment |
 | `numlua.broadcast_arrays(...)` | returns multiple broadcast views |
-| `numlua.tile(t, reps)` | repeat whole blocks; `reps` is a number or table |
-| `numlua.repeat_(t, repeats[, axis])` | repeat elements; `numlua["repeat"]` is the same function |
-| `numlua.flip(t, axis)` | reverse one axis or a table of axes |
+| `numlua.tile(t, reps)` | repeat whole blocks (materialized); `reps` is a number or table |
+| `numlua.repeat_(t, repeats[, axis])` | repeat elements (materialized); `numlua["repeat"]` is the same function |
+| `numlua.flip(t, axis)` | reverse one axis or a table of axes (materialized) |
 | `numlua.roll(t, shift[, axis])` | cyclic shift; flattens when `axis` is omitted |
 | `numlua.pad(t, pad_width[, mode[, value]])` | `mode` currently only `"constant"` |
 | `numlua.diff(t[, n[, axis]])` | default axis is the last |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted |
+
+`broadcast_to`, `broadcast_arrays`, `transpose`, contiguous `reshape`, and
+contiguous `ravel` are views; mutating the source is visible through the result.
+Operations documented as materialized return independent storage. Tests cover
+the view/copy boundary on large arrays so a regression cannot silently turn a
+view into a full-size copy.
 
 ## Dtype
 
