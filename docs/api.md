@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.1.0"
+print(numlua.VERSION) -- "0.2.0"
 ```
 
 ## Conventions
@@ -274,6 +274,35 @@ mode. Invalid dtypes, singular systems, and shape errors are reported by
 luatorch/ATen; the facade adds clear errors for non-tensors, non-square
 inverses/determinants, zero dimensions, and mismatched `solve` shapes.
 
+Additional matrix helpers:
+
+| Function | Result |
+| --- | --- |
+| `linalg.pinv(t[, rcond])` | Moore-Penrose pseudoinverse via SVD |
+| `linalg.lstsq(a, b[, rcond])` | minimum-norm least-squares solution |
+| `linalg.matrix_norm(t[, ord])` | `"fro"`/2 (default), `1`, `-1`, infinity, `-infinity`, `2`, `"nuc"` |
+
+`lstsq` uses the SVD pseudoinverse; it is a convenience wrapper, not a LAPACK
+driver.
+
+## Array layout and selection
+
+These functions are 1-based and return luatorch tensors:
+
+| Function | Notes |
+| --- | --- |
+| `numlua.broadcast_to(t, shape)` | broadcast view; NumPy-compatible right alignment |
+| `numlua.broadcast_arrays(...)` | returns multiple broadcast views |
+| `numlua.tile(t, reps)` | repeat whole blocks; `reps` is a number or table |
+| `numlua.repeat_(t, repeats[, axis])` | repeat elements; `numlua["repeat"]` is the same function |
+| `numlua.flip(t, axis)` | reverse one axis or a table of axes |
+| `numlua.roll(t, shift[, axis])` | cyclic shift; flattens when `axis` is omitted |
+| `numlua.pad(t, pad_width[, mode[, value]])` | `mode` currently only `"constant"` |
+| `numlua.diff(t[, n[, axis]])` | default axis is the last |
+| `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
+| `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
+| `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted |
+
 ## Dtype
 
 ### `numlua.dtype(t)`
@@ -289,7 +318,18 @@ Returns a converted tensor. The source tensor is not mutated.
 local x = numlua.astype(numlua.array({ 1, 2 }), "int64")
 ```
 
-## NumPy `.npy` I/O
+### Promotion helpers
+
+```lua
+numlua.promote_types("int32", "float32") -- "float64"
+numlua.result_type("bool", "int16", "float32") -- "float32"
+numlua.can_cast("int8", "int64") -- true
+```
+
+This is a deliberately small safe-promotion table, documented in the README;
+it is not full NumPy type-promotion parity.
+
+## NumPy `.npy` / `.npz` I/O
 
 ### `numlua.save(path, tensor)`
 
@@ -423,4 +463,7 @@ dtype, or backend constraints are forwarded as-is.
   or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
   squeezed to 1-D. `bool` is not supported by either text function.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.
-- No LuaRocks package yet.
+- `.npz` supports stored (uncompressed) ZIP entries, which is what `np.savez`
+  writes; deflate-compressed `np.savez_compressed` archives are rejected.
+- LuaRocks installs the Lua facade; the native `libluatorch.so` must be built
+  separately against libtorch.

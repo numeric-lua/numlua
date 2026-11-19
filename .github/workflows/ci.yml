@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      LIBTORCH_VERSION: "2.5.1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: numeric-lua/luatorch
+          path: luatorch
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build luajit libluajit-5.1-dev curl unzip g++
+      - name: Cache libtorch
+        uses: actions/cache@v4
+        with:
+          path: luatorch/third_party/libtorch
+          key: libtorch-${{ env.LIBTORCH_VERSION }}-cxx11-shared-cpu-${{ runner.os }}
+      - name: Build luatorch
+        working-directory: luatorch
+        run: |
+          ./scripts/fetch_libtorch.sh
+          ./scripts/build.sh
+      - name: Run numlua tests
+        env:
+          LUATORCH_ROOT: ${{ github.workspace }}/luatorch
+          LUATORCH_LIB: ${{ github.workspace }}/luatorch/build/libluatorch.so
+        run: ./scripts/test.sh
+      - name: LuaRocks install smoke
+        env:
+          LUATORCH_LIB: ${{ github.workspace }}/luatorch/build/libluatorch.so
+        run: |
+          sudo apt-get install -y luarocks
+          luarocks --lua-version=5.1 make --tree="$PWD/.rock-tree" --deps-mode=none numlua-0.2.0-1.rockspec
+          ROCK_LUA=$(find "$PWD/.rock-tree/share/lua" -maxdepth 1 -type d | tail -1)
+          LUATORCH_LIB="$LUATORCH_LIB" \
+          LUA_PATH="$ROCK_LUA/?.lua;$ROCK_LUA/?/init.lua;$PWD/luatorch/lua/?.lua;$PWD/luatorch/lua/?/init.lua;;" \
+            luajit -e 'local n=require("numlua"); assert(n.VERSION=="0.2.0"); print(n.zeros(2,2):sum():item())'

@@ -18,10 +18,12 @@ local torch = require("torch")
 local npy = require("numlua.npy")
 local text = require("numlua.text")
 local linalg = require("numlua.linalg")
+local manipulation = require("numlua.manipulation")
+local npz = require("numlua.npz")
 
 local numlua = {}
 
-numlua.VERSION = "0.1.0"
+numlua.VERSION = "0.2.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
@@ -451,6 +453,68 @@ function numlua.dtype(t)
   return t:dtype()
 end
 
+local DTYPE_RANK = {
+  bool = 1, uint8 = 2, int8 = 3, int16 = 4, int32 = 5, int64 = 6,
+  float16 = 7, float32 = 8, float64 = 9,
+}
+
+local function dtype_name(value, name)
+  if torch.is_tensor(value) then return value:dtype() end
+  if type(value) == "string" then
+    if DTYPE_RANK[value] == nil then
+      error("numlua." .. name .. ": unknown dtype '" .. value .. "'", 2)
+    end
+    return value
+  end
+  if type(value) == "number" then
+    local resolved = torch.dtype_name(value)
+    if resolved == nil then
+      error("numlua." .. name .. ": unknown dtype id " .. tostring(value), 2)
+    end
+    return resolved
+  end
+  error("numlua." .. name .. " expects a dtype name, dtype id, or tensor", 2)
+end
+
+-- A deliberately small safe-promotion table for the dtypes the facade
+-- exposes.  It is documented in docs/api.md; it is not a claim of complete
+-- NumPy type-promotion parity.
+function numlua.promote_types(left, right)
+  left = dtype_name(left, "promote_types")
+  right = dtype_name(right, "promote_types")
+  if left == right then return left end
+  local function integral(name) return not name:match("float") end
+  if (left == "float32" and integral(right) and DTYPE_RANK[right] >= 5) or
+      (right == "float32" and integral(left) and DTYPE_RANK[left] >= 5) then
+    return "float64"
+  end
+  local rank = math.max(DTYPE_RANK[left], DTYPE_RANK[right])
+  for name, value in pairs(DTYPE_RANK) do
+    if value == rank then return name end
+  end
+  return "float64"
+end
+
+function numlua.result_type(...)
+  local count = select("#", ...)
+  if count == 0 then error("numlua.result_type expects at least one dtype", 2) end
+  local result = dtype_name((select(1, ...)), "result_type")
+  for index = 2, count do
+    result = numlua.promote_types(result, (select(index, ...)))
+  end
+  return result
+end
+
+function numlua.can_cast(from, to)
+  from = dtype_name(from, "can_cast")
+  to = dtype_name(to, "can_cast")
+  if from == to then return true end
+  if DTYPE_RANK[from] > DTYPE_RANK[to] then return false end
+  if from:match("float") and not to:match("float") then return false end
+  if from ~= "bool" and to == "bool" then return false end
+  return true
+end
+
 function numlua.astype(t, dtype)
   check_tensor(t, "astype")
   if dtype == nil then
@@ -465,6 +529,8 @@ end
 
 numlua.save = npy.save
 numlua.load = npy.load
+numlua.savez = npz.savez
+numlua.loadz = npz.loadz
 
 -- ---------------------------------------------------------------------------
 -- whitespace / CSV text I/O
@@ -472,6 +538,13 @@ numlua.load = npy.load
 
 numlua.loadtxt = text.loadtxt
 numlua.savetxt = text.savetxt
+
+for name, fn in pairs(manipulation) do
+  if numlua[name] ~= nil then
+    error("duplicate numlua export: " .. name)
+  end
+  numlua[name] = fn
+end
 
 numlua.linalg = linalg
 

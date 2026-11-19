@@ -91,6 +91,64 @@ function linalg.svd(t, full_matrices)
   return t:svd(full_matrices)
 end
 
+-- pinv(t[, rcond]) is the Moore-Penrose pseudoinverse via SVD.  Singular
+-- values at or below rcond * largest_singular_value are treated as zero.
+function linalg.pinv(t, rcond)
+  matrix(t, "pinv")
+  rcond = rcond or 1e-15
+  if type(rcond) ~= "number" or rcond < 0 then
+    error("numlua.linalg.pinv: rcond must be a non-negative number", 2)
+  end
+  local u, s, vh = t:svd(false)
+  local singular = s:reshape({ s:numel() })
+  local count = singular:numel()
+  local largest = singular:max():item()
+  local cutoff = rcond * (largest > 0 and largest or 1)
+  local inverse = torch.zeros(count, count, { dtype = t:dtype() })
+  for index = 1, count do
+    local value = singular:get(index)
+    if value > cutoff then inverse:set(index, index, 1 / value) end
+  end
+  return vh:t():matmul(inverse):matmul(u:t())
+end
+
+-- lstsq(a, b[, rcond]) returns the minimum-norm least-squares solution using
+-- the SVD pseudoinverse.  It is a convenience wrapper, not a LAPACK driver.
+function linalg.lstsq(a, b, rcond)
+  matrix(a, "lstsq")
+  tensor(b, "lstsq")
+  local bdims = b:sizes()
+  if (#bdims ~= 1 and #bdims ~= 2) or bdims[1] ~= a:size(1) then
+    error(string.format(
+      "numlua.linalg.lstsq: b must be a vector or matrix with first " ..
+      "dimension %d", a:size(1)), 2)
+  end
+  return linalg.pinv(a, rcond):matmul(b)
+end
+
+-- matrix_norm(t[, ord]) supports the Frobenius/2 norm (default), 1, infinity,
+-- and nuclear norm for a 2-D matrix.  ord=2 and "nuc" use the SVD.
+function linalg.matrix_norm(t, ord)
+  matrix(t, "matrix_norm")
+  ord = ord or "fro"
+  if ord == "fro" or ord == "f" then
+    return t:norm(2)
+  elseif ord == 1 then
+    return t:abs():sum(1):max()
+  elseif ord == math.huge then
+    return t:abs():sum(2):max()
+  elseif ord == -1 then
+    return t:abs():sum(1):min()
+  elseif ord == -math.huge then
+    return t:abs():sum(2):min()
+  elseif ord == 2 or ord == "nuc" then
+    local _, s = t:svd(false)
+    if ord == "nuc" then return s:sum() end
+    return s:max()
+  end
+  error("numlua.linalg.matrix_norm: unsupported ord " .. tostring(ord), 2)
+end
+
 -- qr(t[, mode]) returns Q, R.  mode is "reduced" (default), "complete", or
 -- "r"; shape and mode errors are ATen's.
 function linalg.qr(t, mode)

@@ -11,8 +11,9 @@ of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: MVP scaffold, unreleased.** The public API is intentionally small
-> and is expected to grow. There is no LuaRocks package yet.
+> **Status: 0.2.0 MVP.** The public API is small but usable: construction,
+> shape/layout helpers, reductions, predicates, linalg, `.npy`/`.npz`, and
+> text I/O.  It is packaged on LuaRocks and tested against luatorch 0.8.x.
 
 ## Why a facade?
 
@@ -80,8 +81,14 @@ shared library.
 
 ## Install and `LUA_PATH`
 
-LuaRocks packaging is pending. Until then, run from the repository root with
-luatorch on `LUA_PATH`:
+Install from LuaRocks (the native luatorch shim still has to be built
+separately with its own `scripts/build.sh`):
+
+```sh
+luarocks --lua-version=5.1 install numlua
+```
+
+Run from a checkout with luatorch on `LUA_PATH`:
 
 ```sh
 LUA_PATH="../luatorch/lua/?.lua;../luatorch/lua/?/init.lua;./?.lua;./?/init.lua;;" \
@@ -97,8 +104,8 @@ luajit examples/basic.lua
 ```
 
 `require("numlua")` works from the repository root because the module lives at
-`numlua/init.lua`. A future LuaRocks release will install the module and its
-luatorch dependency normally.
+`numlua/init.lua`. The LuaRocks package installs the same tree and declares
+`luatorch >= 0.8` as a dependency.
 
 ## Conventions (read this before porting NumPy code)
 
@@ -130,12 +137,23 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace` |
 | Shape | `shape`, `reshape`, `transpose`, `ravel`, `squeeze`, `unsqueeze` |
 | Combine | `concatenate`, `stack` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take` |
 | Reductions | `sum`, `mean`, `max`, `min`, `argmax` |
 | Predicates/selection | `where`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
-| Linear algebra | `dot`, `matmul` |
-| Dtype | `dtype`, `astype` |
-| NumPy I/O | `save`, `load` |
+| Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
+| Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
+| NumPy I/O | `save`, `load`, `savez`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt` |
+
+`numlua` arrays are ordinary luatorch tensors, so luaplotlib can plot them
+directly through its tensor adapter. See `examples/plot.lua`.
+
+## `.npz` I/O
+
+`numlua.savez(path, { arrays = tensor, ... })` writes a stored ZIP archive of
+`.npy` members; `numlua.loadz(path)` returns a table keyed by array name. This
+matches the common `np.savez` output. Deflate-compressed archives are rejected
+with a clear error.
 
 ## `.npy` I/O
 

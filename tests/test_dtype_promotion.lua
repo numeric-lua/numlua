@@ -1,0 +1,17 @@
+local numlua = require("numlua")
+
+test("promote_types follows the documented safe subset", function()
+  assert_eq(numlua.promote_types("int32", "int64"), "int64")
+  assert_eq(numlua.promote_types("bool", "int8"), "int8")
+  assert_eq(numlua.promote_types("float32", "int64"), "float64")
+  assert_eq(numlua.promote_types("float32", "float64"), "float64")
+  assert_eq(numlua.promote_types(numlua.zeros(1), "float32"), "float32")
+end)
+
+test("result_type folds a list and can_cast rejects lossy conversions", function()
+  assert_eq(numlua.result_type("bool", "int16", "float32"), "float32")
+  assert_true(numlua.can_cast("int8", "int64"))
+  assert_false(numlua.can_cast("int64", "int8"))
+  assert_false(numlua.can_cast("float32", "int64"))
+  assert_false(numlua.can_cast("bool", "int32") == false)
+end)
