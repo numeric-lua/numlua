@@ -33,3 +33,5 @@ luacov.report.out
 .vscode/
 .idea/
 *.swp
+
+examples/output/
