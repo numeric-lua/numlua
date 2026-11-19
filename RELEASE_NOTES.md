@@ -28,6 +28,6 @@ The native luatorch shim must be built separately; see luatorch's README.
 
 ## Verification
 
-- 87 tests passed
+- 88 tests passed
 - LuaRocks install smoke test
 - CI checkout of luatorch and libtorch
