@@ -232,6 +232,84 @@ numlua.count_nonzero(t, 1):totable()  -- {1, 1, 1}
 numlua.count_nonzero(t, 2):totable()  -- {1, 2}
 ```
 
+## Elementwise ufuncs
+
+All elementwise functions return a luatorch tensor and leave their inputs
+unchanged. They delegate the arithmetic to luatorch/ATen; there is no separate
+kernel or broadcast layer in numlua. Operands may be tensors or Lua numbers, and
+tensor operands broadcast using ATen's normal right-aligned rules. Passing two
+numbers produces a 0-D tensor.
+
+| Function | Notes |
+| --- | --- |
+| `numlua.add(a, b)` | elementwise addition |
+| `numlua.subtract(a, b)` | elementwise subtraction |
+| `numlua.multiply(a, b)` | elementwise multiplication |
+| `numlua.divide(a, b)` | elementwise true division |
+| `numlua.power(a, b)` | elementwise power, equivalent to ATen `pow` |
+| `numlua.maximum(a, b)` | elementwise maximum |
+| `numlua.minimum(a, b)` | elementwise minimum |
+| `numlua.negative(t)` | unary negation |
+| `numlua.abs(t)` | absolute value |
+| `numlua.sqrt(t)` | square root |
+| `numlua.exp(t)` | exponential |
+| `numlua.log(t)` | natural logarithm |
+| `numlua.sin(t)` / `numlua.cos(t)` / `numlua.tanh(t)` | trigonometric and hyperbolic functions |
+| `numlua.square(t)` | elementwise square |
+
+```lua
+local a = numlua.array({ 1, 2, 3 })
+numlua.add(a, 10)             -- {11, 12, 13}
+numlua.subtract(5, a)         -- {4, 3, 2}
+numlua.multiply(a, 2)         -- {2, 4, 6}
+numlua.divide(a, 2)           -- {0.5, 1, 1.5}
+numlua.power(a, 2)            -- {1, 4, 9}
+numlua.maximum(a, 2)          -- {2, 2, 3}
+numlua.sqrt(numlua.array({ 1, 4, 9 })) -- {1, 2, 3}
+```
+
+Lua booleans are not accepted as scalar operands; pass a `bool` tensor if you
+need boolean tensor arithmetic. Non-numeric/non-tensor operands raise a
+`numlua.<function>:` error. Incompatible broadcast shapes and unsupported dtype
+combinations are reported by luatorch/ATen and forwarded as-is.
+
+### Dtype behavior
+
+Elementwise dtype promotion is **ATen's**, not NumPy's and not the small
+`numlua.promote_types` table. For example, an `int64` tensor plus a `float32`
+tensor produces `float32`, even though `numlua.promote_types("float32",
+"int64")` returns `"float64"`. A `float32` plus `float64` tensor produces
+`float64`.
+
+Lua scalars are untyped, so the scalar path follows ATen/luatorch's scalar
+conventions:
+
+- an integral scalar (`2`) keeps an integer input dtype for `add`, `subtract`,
+  `multiply`, `power`, `maximum`, and `minimum` (bool input follows ATen's
+  scalar behavior and normally becomes `int64` here);
+- a fractional scalar (`2.5`) on an integral input produces `float32`;
+- floating input keeps its own dtype when combined with a scalar;
+- `divide` uses ATen true division, so integer/integer division produces
+  `float32`, not NumPy's usual `float64`. Integer inputs are converted to a
+  floating result, so division by zero yields `inf`/`nan` rather than an error;
+- both-scalar calls produce a 0-D `float32` tensor, following `numlua.array`.
+
+Unary operations split into two groups:
+
+- `negative`, `abs`, and `square` preserve an integral input dtype. ATen does
+  not implement `abs` or negation for `bool` tensors; those calls error;
+- `sqrt`, `exp`, `log`, `sin`, `cos`, and `tanh` produce `float32` for
+  integer/bool input and preserve `float32`/`float64` floating input. NumPy
+  would normally use `float64` for integral input.
+
+For `maximum`/`minimum` with a scalar, numlua materializes a 0-D operand with
+the input's dtype for integral scalars (or `int64` for a `bool` input) and
+`float32` for fractional/non-finite scalars. This only supplies the missing
+scalar overload; the comparison itself is still ATen's broadcast kernel.
+
+There are no `out=`, `where=`, `dtype=`, or `casting=` keyword arguments, and no
+separate ufunc objects. Use `numlua.astype` for an explicit result dtype.
+
 ## Linear algebra
 
 ### `numlua.dot(a, b)`
@@ -458,12 +536,19 @@ dtype, or backend constraints are forwarded as-is.
   Lua numeric tables; NumPy usually defaults to `float64`.
 - Reductions, including `any`, `all`, and `count_nonzero`, take a single axis
   only, not a tuple of axes.
-- There is no general dtype promotion. `mean` is the only place the facade
-  promotes, and only integer/bool -> `float64`. Scalar `where` branches are
-  materialized as 0-D `float32` (or `bool`) tensors before ATen broadcasting.
+- The facade has no NumPy-style general dtype-promotion system of its own.
+  `mean` promotes integer/bool input to `float64`; elementwise ufuncs delegate
+  promotion to ATen. Scalar `where` branches are materialized as 0-D `float32`
+  (or `bool`) tensors before ATen broadcasting.
 - `dot` is vector-only; NumPy's `dot` also performs matrix products.
-- No elementwise arithmetic, ufuncs, or fancy indexing are exposed; use the
-  returned luatorch tensors and `torch` directly.
+- Elementwise ufuncs delegate dtype promotion to ATen rather than to NumPy's
+  promotion rules or `numlua.promote_types`. In particular, `int64` + `float32`
+  stays `float32`, integer/integer division produces `float32` (not `float64`),
+  and transcendental functions on integral input produce `float32`.
+- Elementwise ufuncs have no `out=`, `where=`, `dtype=`, or `casting=` options.
+  Lua scalar operands are numbers only; booleans require a `bool` tensor.
+- Fancy indexing is not exposed; use the returned luatorch tensors and `torch`
+  directly.
 - Broadcasting is not reimplemented; it is whatever luatorch/ATen does for the
   delegated operation.
 - `.npy` is limited to v1.0, C order, little-endian hosts, and the four dtypes

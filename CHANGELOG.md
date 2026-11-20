@@ -4,6 +4,10 @@
 
 ### Added
 
+- NumPy-style elementwise ufuncs: `add`, `subtract`, `multiply`, `divide`,
+  `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`,
+  `minimum`, `power`, and `square`, with scalar/tensor operands and ATen
+  broadcasting;
 - generated `.npy`/`.npz` fixture corpus covering 3-D/2-D shapes, all supported
   dtypes, empty and 0-D arrays, stored ZIP members, and big-endian rejection;
 - `bench/bench.lua` and `scripts/bench.sh` for construction, reduction,
@@ -16,7 +20,7 @@
 
 ### Tests
 
-- 91 tests.
+- 97 tests.
 
 ## 0.2.0 — 2026-11-19
 

@@ -19,6 +19,7 @@ local npy = require("numlua.npy")
 local text = require("numlua.text")
 local linalg = require("numlua.linalg")
 local manipulation = require("numlua.manipulation")
+local ufunc = require("numlua.ufunc")
 local npz = require("numlua.npz")
 
 local numlua = {}
@@ -539,12 +540,17 @@ numlua.loadz = npz.loadz
 numlua.loadtxt = text.loadtxt
 numlua.savetxt = text.savetxt
 
-for name, fn in pairs(manipulation) do
-  if numlua[name] ~= nil then
-    error("duplicate numlua export: " .. name)
+local function export(module)
+  for name, fn in pairs(module) do
+    if numlua[name] ~= nil then
+      error("duplicate numlua export: " .. name)
+    end
+    numlua[name] = fn
   end
-  numlua[name] = fn
 end
+
+export(manipulation)
+export(ufunc)
 
 numlua.linalg = linalg
 

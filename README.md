@@ -4,16 +4,17 @@ NumPy-shaped arrays for LuaJIT, implemented as a **thin facade over
 `luatorch` tensors**.
 
 `numlua` gives LuaJIT the parts of NumPy that are useful around a tensor
-engine: array construction, shape manipulation, reductions, predicates and
-selection, small linear algebra operations, dtype conversion, NumPy `.npy` file
-I/O, and simple whitespace/CSV text I/O. It does not implement a tensor engine
-of its own.
+engine: array construction, shape manipulation, elementwise ufuncs, reductions,
+predicates and selection, small linear algebra operations, dtype conversion,
+NumPy `.npy` file I/O, and simple whitespace/CSV text I/O. It does not implement
+a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
 > **Status: 0.2.0 MVP.** The public API is small but usable: construction,
-> shape/layout helpers, reductions, predicates, linalg, `.npy`/`.npz`, and
-> text I/O.  It is packaged on LuaRocks and tested against luatorch 0.8.x.
+> shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
+> `.npy`/`.npz`, and text I/O.  It is packaged on LuaRocks and tested against
+> luatorch 0.8.x.
 
 ## Why a facade?
 
@@ -35,6 +36,10 @@ print(a:format())
 print(numlua.sum(a, 1):format())   -- column sums
 print(numlua.mean(a):item())       -- one number
 print(numlua.argmax(a):item())     -- 1-based flat index
+
+local values = numlua.array({ 1, 4, 9 })
+print(numlua.sqrt(values):format())                -- {1, 2, 3}
+print(numlua.add(numlua.multiply(values, 2), 1):format()) -- {3, 9, 19}
 ```
 
 Use the returned tensors directly with the luatorch API for anything not
@@ -122,9 +127,13 @@ luajit examples/basic.lua
   `arange` infers `int64` for integer bounds and `float32` otherwise.
   `mean` promotes integer/bool input to `float64` (ATen would otherwise reject
   it); floating input keeps its dtype.
-- **Broadcasting is luatorch's.** `matmul` and luatorch's own elementwise
-  operations use ATen broadcasting. `numlua` does not add another broadcast
-  layer.
+- **Elementwise dtype promotion is ATen's.** The ufuncs accept tensor or Lua
+  number operands and delegate shape broadcasting and dtype promotion to
+  luatorch/ATen. This is not NumPy's promotion table: for example, `int64` plus
+  `float32` produces `float32`, and integer/integer division produces
+  `float32`. See [docs/api.md](docs/api.md#dtype-behavior).
+- **Broadcasting is luatorch's.** `matmul` and the elementwise operations use
+  ATen broadcasting. `numlua` does not add another broadcast layer.
 - **`.npy` bytes are NumPy-compatible.** The Lua-facing axes stay 1-based; the
   file format does not change.
 
@@ -138,6 +147,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Shape | `shape`, `reshape`, `transpose`, `ravel`, `squeeze`, `unsqueeze` |
 | Combine | `concatenate`, `stack` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take` |
+| Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
 | Reductions | `sum`, `mean`, `max`, `min`, `argmax` |
 | Predicates/selection | `where`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
@@ -237,10 +247,11 @@ make test
 ```
 
 The suite is dependency-free and covers constructors, shape operations,
-reductions, predicates and conditional selection, linear algebra, dtype
-conversion, `.npy` round-trips for all supported dtypes and 1-D/2-D/3-D shapes,
-whitespace/CSV text round-trips, generated `.npy`/`.npz` fixtures, layout
-view/copy semantics, and error paths. It currently contains 91 tests.
+elementwise ufuncs, reductions, predicates and conditional selection, linear
+algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
+1-D/2-D/3-D shapes, whitespace/CSV text round-trips, generated `.npy`/`.npz`
+fixtures, layout view/copy semantics, and error paths. It currently contains
+97 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -257,6 +268,7 @@ rather than treating the recorded numbers as constants.
 ```text
 numlua/
   numlua/init.lua     -- public facade
+  numlua/ufunc.lua    -- elementwise ufunc facade over luatorch/ATen
   numlua/npy.lua      -- .npy v1.0 reader/writer
   numlua/text.lua     -- whitespace/CSV text reader/writer
   docs/api.md         -- API reference
@@ -280,8 +292,13 @@ This is an MVP, not a complete NumPy replacement:
   materialized as 0-D `float32` (or `bool`) tensors before ATen broadcasting;
 - `dot` is the 1-D inner product only; use `matmul` for matrix and batched
   products;
-- there is no elementwise arithmetic or fancy-indexing API; use the returned
-  luatorch tensors and `torch` for those operations;
+- elementwise ufuncs delegate dtype promotion to ATen, not NumPy's promotion
+  rules or `numlua.promote_types`; integral input to transcendental functions
+  becomes `float32`, and integer division becomes `float32`;
+- ufuncs have no `out=`, `where=`, `dtype=`, or `casting=` options, and Lua
+  boolean scalars are rejected (use a `bool` tensor);
+- fancy indexing is not exposed; use the returned luatorch tensors and `torch`
+  for those operations;
 - `squeeze` delegates to luatorch; squeezing an axis whose size is not 1 leaves
   that axis unchanged rather than raising NumPy's error;
 - `.npy` support is limited to v1.0, C order, little-endian hosts, and the four

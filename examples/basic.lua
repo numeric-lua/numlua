@@ -82,6 +82,14 @@ print("any positive = " .. tostring(numlua.any(values:gt(0)):item()))
 print("all above -3 = " .. tostring(numlua.all(values:gt(-3)):item()))
 print("isnan mask:\n" .. numlua.isnan(values):format())
 
+heading("Elementwise ufuncs")
+local roots = numlua.sqrt(numlua.array({ 1.0, 4.0, 9.0 }))
+print("square roots:\n" .. roots:format())
+print("scaled and shifted:\n" ..
+  numlua.add(numlua.multiply(roots, 2), 1):format())
+print("maximum with scalar 2.5:\n" .. numlua.maximum(roots, 2.5):format())
+assert(numlua.dtype(numlua.sqrt(numlua.arange(1, 4))) == "float32")
+
 heading(".npy round-trip")
 local path = root .. "/examples/.basic-demo.npy"
 assert(numlua.save(path, product))

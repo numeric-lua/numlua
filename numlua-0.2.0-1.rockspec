@@ -10,8 +10,8 @@ description = {
   summary = "NumPy-shaped arrays for LuaJIT",
   detailed = [[
     A thin, 1-based facade over luatorch tensors: constructors, shape and
-    layout helpers, reductions, predicates, linear algebra, .npy/.npz and
-    text I/O.  No second tensor engine.
+    layout helpers, elementwise ufuncs, reductions, predicates, linear algebra,
+    .npy/.npz and text I/O.  No second tensor engine.
   ]],
   homepage = "https://github.com/numeric-lua/numlua",
   license = "BSD-3-Clause",
@@ -31,5 +31,6 @@ build = {
     ["numlua.text"] = "numlua/text.lua",
     ["numlua.linalg"] = "numlua/linalg.lua",
     ["numlua.manipulation"] = "numlua/manipulation.lua",
+    ["numlua.ufunc"] = "numlua/ufunc.lua",
   },
 }
