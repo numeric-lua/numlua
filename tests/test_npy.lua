@@ -65,13 +65,41 @@ test("save/load round-trip for every supported dtype and shape", function()
       dtype = "bool",
       values = { true, false, true, true, false, true },
     },
+    {
+      dtype = "float16",
+      values = { 1.5, -2.25, 0, 3.25, 0.5, -0.125 },
+    },
+    {
+      dtype = "int8",
+      values = { -128, -3, 0, 7, 42, 127 },
+    },
+    {
+      dtype = "int16",
+      values = { -32768, -3, 0, 7, 42, 32767 },
+    },
+    {
+      dtype = "int32",
+      values = { -2147483648, -3, 0, 7, 42, 2147483647 },
+    },
+    {
+      dtype = "uint8",
+      values = { 0, 1, 7, 42, 127, 255 },
+    },
   }
   local shapes = { { 6 }, { 2, 3 }, { 1, 2, 3 } }
 
   for _, case in ipairs(cases) do
     for _, shape in ipairs(shapes) do
-      local source = numlua.reshape(
-        numlua.array(case.values, { dtype = case.dtype }), shape)
+      -- luatorch cannot build a float16 tensor directly from Lua numbers.
+      local source
+      if case.dtype == "float16" then
+        source = numlua.reshape(
+          numlua.array(case.values, { dtype = "float32" }):to("float16"),
+          shape)
+      else
+        source = numlua.reshape(
+          numlua.array(case.values, { dtype = case.dtype }), shape)
+      end
       local path = tmp_path("roundtrip-" .. case.dtype .. "-" .. #shape)
       assert_true(numlua.save(path, source))
       local loaded = numlua.load(path)
@@ -133,6 +161,18 @@ test("save writes non-contiguous tensors in C order", function()
   assert_shape(loaded, { 3, 2 })
   assert_tensor(loaded, { { 1, 4 }, { 2, 5 }, { 3, 6 } })
   os.remove(path)
+
+  local cube = numlua.reshape(
+    numlua.arange(24, { dtype = "int32" }), { 2, 3, 4 })
+  local permuted = numlua.transpose(cube, { 3, 1, 2 })
+  assert_false(permuted:is_contiguous())
+  path = tmp_path("non-contiguous-3d")
+  numlua.save(path, permuted)
+  loaded = numlua.load(path)
+  assert_dtype(loaded, "int32")
+  assert_shape(loaded, { 4, 2, 3 })
+  assert_true(loaded:equal(permuted:contiguous()))
+  os.remove(path)
 end)
 
 test("save/load handles empty and scalar arrays", function()
@@ -152,6 +192,15 @@ test("save/load handles empty and scalar arrays", function()
   assert_dtype(loaded_scalar, "int64")
   assert_eq(loaded_scalar:item(), 7)
   os.remove(scalar_path)
+
+  local half_scalar = numlua.array(-0.125):to("float16")
+  local half_path = tmp_path("scalar-float16")
+  numlua.save(half_path, half_scalar)
+  local loaded_half = numlua.load(half_path)
+  assert_eq(loaded_half:dim(), 0)
+  assert_dtype(loaded_half, "float16")
+  assert_eq(loaded_half:item(), -0.125)
+  os.remove(half_path)
 end)
 
 test("load rejects big-endian files", function()
@@ -175,7 +224,7 @@ end)
 
 test("load rejects unsupported descr values", function()
   local path = craft(tmp_path("unsupported"), {
-    descr = "<i4",
+    descr = "<u4",
     payload_size = 24,
   })
   assert_error(function() numlua.load(path) end, "unsupported .npy descr")
@@ -222,8 +271,6 @@ end)
 test("save and load report file and dtype errors", function()
   local path = tmp_path("errors")
   local int32 = numlua.array({ 1, 2 }, { dtype = "int32" })
-  assert_error(function() numlua.save(path, int32) end,
-    "unsupported dtype 'int32'")
   assert_error(function() numlua.save(path, 1) end,
     "numlua.save expects a tensor")
   assert_error(function() numlua.save("", int32) end,

@@ -427,13 +427,20 @@ Supported dtypes:
 
 | dtype | descr | size |
 | --- | --- | --- |
+| `float16` | `<f2` | 2 |
 | `float32` | `<f4` | 4 |
 | `float64` | `<f8` | 8 |
+| `int8` | `\|i1` | 1 |
+| `int16` | `<i2` | 2 |
+| `int32` | `<i4` | 4 |
 | `int64` | `<i8` | 8 |
+| `uint8` | `\|u1` | 1 |
 | `bool` | `\|b1` | 1 |
 
 Writing an unsupported dtype raises a `numlua.save: unsupported dtype ...`
-error. Only little-endian hosts are supported.
+error. Only little-endian hosts are supported. luatorch cannot construct a
+`float16` tensor directly from a Lua table; create it in another dtype and
+cast with `:to("float16")` first.
 
 ### `numlua.load(path)`
 
@@ -451,7 +458,38 @@ Rejected with explicit errors:
 - non-file paths or unreadable files.
 
 The header is validated before any tensor allocation. `load` reads the complete
-file into memory, then copies the payload into a C-order tensor.
+file into memory, then copies the payload into a C-order tensor. Arrays with
+shape `()` (0-D scalars), zero-sized dimensions, and non-contiguous source
+tensors are supported; non-contiguous tensors are written in C order.
+
+### `numlua.savez(path, arrays)`
+
+Writes a ZIP archive of `.npy` members and returns `true`. `arrays` is a table
+mapping non-empty array names to luatorch tensors. Entries are always written
+with the stored (uncompressed) ZIP method, so writing has no compression
+dependency and matches `np.savez`.
+
+### `numlua.loadz(path)`
+
+Reads an `.npz` archive and returns a table whose keys are member names with
+the `.npy` suffix removed. Supported ZIP compression methods are:
+
+| method | written by | availability |
+| --- | --- | --- |
+| stored (0) | `np.savez`, `numlua.savez` | always, dependency-free |
+| deflate (8) | `np.savez_compressed` | read-only; requires system zlib |
+
+Deflate support is optional and detected lazily through LuaJIT FFI: on Linux
+the loader tries `libz`, `libz.so.1`, and `libz.so`, and on macOS it also tries
+`libz.dylib`. No LuaRocks or compression package is required. Stored archives
+work when zlib is absent; encountering a deflate entry then raises a
+`numlua.loadz: deflate-compressed entry ... requires a system zlib library`
+error. `NUMLUA_DISABLE_ZLIB=1` forces the no-zlib path for testing.
+
+The reader validates member CRCs against the uncompressed payload, checks
+local and central-directory headers and sizes before copying, and reports
+corrupt central directories, CRC mismatches, truncation, encryption, multi-disk
+archives, ZIP64 archives, and unsupported compression methods as Lua errors.
 
 ## Text and CSV I/O
 
@@ -551,13 +589,14 @@ dtype, or backend constraints are forwarded as-is.
   directly.
 - Broadcasting is not reimplemented; it is whatever luatorch/ATen does for the
   delegated operation.
-- `.npy` is limited to v1.0, C order, little-endian hosts, and the four dtypes
+- `.npy` is limited to v1.0, C order, little-endian hosts, and the dtypes
   listed above.
 - Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
   or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
   squeezed to 1-D. `bool` is not supported by either text function.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.
-- `.npz` supports stored (uncompressed) ZIP entries, which is what `np.savez`
-  writes; deflate-compressed `np.savez_compressed` archives are rejected.
+- `.npz` writing is always stored; reading supports stored and deflate entries.
+  Deflate reading requires a system zlib library through LuaJIT FFI, while
+  stored archives and all writing remain dependency-free.
 - LuaRocks installs the Lua facade; the native `libluatorch.so` must be built
   separately against libtorch.

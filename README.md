@@ -160,10 +160,25 @@ directly through its tensor adapter. See `examples/plot.lua`.
 
 ## `.npz` I/O
 
-`numlua.savez(path, { arrays = tensor, ... })` writes a stored ZIP archive of
-`.npy` members; `numlua.loadz(path)` returns a table keyed by array name. This
-matches the common `np.savez` output. Deflate-compressed archives are rejected
-with a clear error.
+`numlua.savez(path, { arrays = tensor, ... })` writes a stored (uncompressed)
+ZIP archive of `.npy` members; `numlua.loadz(path)` returns a table keyed by
+array name. This matches the common `np.savez` output and needs no compression
+library.
+
+`numlua.loadz` accepts these ZIP compression methods:
+
+| method | written by | availability |
+| --- | --- | --- |
+| stored (0) | `np.savez`, `numlua.savez` | always, dependency-free |
+| deflate (8) | `np.savez_compressed` | read-only; requires a system zlib library |
+
+Deflate support is optional. When zlib is present, it is loaded through LuaJIT
+FFI (`libz`/`libz.so.1` on Linux, `libz.dylib` on macOS); there is no mandatory
+LuaRocks or compression dependency. If a deflate entry is encountered and zlib
+cannot be loaded, `loadz` fails with an error naming the entry and explaining
+that zlib is required. Encrypted, multi-disk, ZIP64, and other compression
+methods are rejected explicitly. Stored archives continue to work without zlib.
+Set `NUMLUA_DISABLE_ZLIB=1` to exercise the no-zlib path in tests.
 
 ## `.npy` I/O
 
@@ -174,15 +189,23 @@ Supported dtypes:
 
 | numlua / luatorch | `.npy` descr | bytes per element |
 | --- | --- | --- |
+| `float16` | `<f2` | 2 |
 | `float32` | `<f4` | 4 |
 | `float64` | `<f8` | 8 |
+| `int8` | `\|i1` | 1 |
+| `int16` | `<i2` | 2 |
+| `int32` | `<i4` | 4 |
 | `int64` | `<i8` | 8 |
+| `uint8` | `\|u1` | 1 |
 | `bool` | `\|b1` | 1 |
 
 The reader supports 1-D, 2-D, and N-D arrays (and 0-D scalars) and rejects
 big-endian files, `fortran_order=True`, unsupported `descr` values, NPY versions
-other than 1.0, and truncated data with clear Lua errors. Files are always
-written little-endian; only little-endian hosts are supported.
+other than 1.0, and truncated data with clear Lua errors. Non-contiguous tensors
+are written in C order. Files are always written little-endian; only
+little-endian hosts are supported. luatorch cannot construct `float16` tensors
+directly from Lua tables, so create a tensor in another dtype and cast it with
+`:to("float16")` before saving.
 
 Example:
 
@@ -249,9 +272,10 @@ make test
 The suite is dependency-free and covers constructors, shape operations,
 elementwise ufuncs, reductions, predicates and conditional selection, linear
 algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
-1-D/2-D/3-D shapes, whitespace/CSV text round-trips, generated `.npy`/`.npz`
-fixtures, layout view/copy semantics, and error paths. It currently contains
-97 tests.
+1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
+round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
+corruption paths, layout view/copy semantics, and error paths. It currently
+contains 102 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -301,9 +325,12 @@ This is an MVP, not a complete NumPy replacement:
   for those operations;
 - `squeeze` delegates to luatorch; squeezing an axis whose size is not 1 leaves
   that axis unchanged rather than raising NumPy's error;
-- `.npy` support is limited to v1.0, C order, little-endian hosts, and the four
+- `.npy` support is limited to v1.0, C order, little-endian hosts, and the
   dtypes above; `load` reads the complete file into memory before copying it
   into a tensor;
+- `.npz` writing is always stored; only reading deflate entries is supported.
+  Deflate reading needs a system zlib library loaded through FFI, while stored
+  archives remain dependency-free.
 - text I/O is intentionally simple: it does not store shape/dtype metadata,
   quote strings, or parse headers, and it rejects `bool` rather than guessing a
   textual boolean spelling;

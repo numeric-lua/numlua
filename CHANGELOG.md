@@ -9,7 +9,15 @@
   `minimum`, `power`, and `square`, with scalar/tensor operands and ATen
   broadcasting;
 - generated `.npy`/`.npz` fixture corpus covering 3-D/2-D shapes, all supported
-  dtypes, empty and 0-D arrays, stored ZIP members, and big-endian rejection;
+  dtypes (including `float16`, `int8`, `int16`, `int32`, and `uint8`), empty
+  and 0-D arrays, stored and deflate ZIP members, non-contiguous tensors, and
+  big-endian rejection;
+- optional deflate-compressed `.npz` reading through a system zlib loaded via
+  LuaJIT FFI; stored ZIP reading/writing remains dependency-free and deflate
+  fails with a clear error when zlib is unavailable;
+- ZIP integrity validation for corrupt central directories, local/central CRC
+  mismatches, truncated archives, encrypted/multi-disk/ZIP64 archives, and
+  unsupported compression methods;
 - `bench/bench.lua` and `scripts/bench.sh` for construction, reduction,
   broadcasting, layout, and `.npy` I/O comparisons against direct ATen/raw
   Lua baselines;
@@ -20,7 +28,8 @@
 
 ### Tests
 
-- 97 tests.
+- 102 tests, passing with system zlib available and with
+  `NUMLUA_DISABLE_ZLIB=1`.
 
 ## 0.2.0 — 2026-11-19
 

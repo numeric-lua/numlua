@@ -40,6 +40,32 @@ test("loads the generated .npy corpus across dtypes and shapes", function()
   assert_dtype(bool, "bool")
   assert_tensor(bool, { { true, false }, { true, true } })
 
+  local f16 = numlua.load(files["float16-1d"])
+  assert_dtype(f16, "float16")
+  assert_shape(f16, { 4 })
+  assert_tensor(f16, { 1.5, -2.25, 0, 3.25 })
+
+  local f16_scalar = numlua.load(files["float16-scalar"])
+  assert_dtype(f16_scalar, "float16")
+  assert_eq(f16_scalar:dim(), 0)
+  assert_eq(f16_scalar:item(), -0.125)
+
+  local i8 = numlua.load(files["int8-1d"])
+  assert_dtype(i8, "int8")
+  assert_tensor(i8, { -128, -3, 0, 7, 127 })
+
+  local i16 = numlua.load(files["int16-2x2"])
+  assert_dtype(i16, "int16")
+  assert_tensor(i16, { { -32768, -3 }, { 0, 32767 } })
+
+  local i32 = numlua.load(files["int32-1d"])
+  assert_dtype(i32, "int32")
+  assert_tensor(i32, { -2147483648, -3, 0, 7, 2147483647 })
+
+  local u8 = numlua.load(files["uint8-2x2"])
+  assert_dtype(u8, "uint8")
+  assert_tensor(u8, { { 0, 1 }, { 127, 255 } })
+
   local empty = numlua.load(files["empty-2x0"])
   assert_shape(empty, { 2, 0 })
   assert_eq(empty:numel(), 0)
@@ -71,6 +97,22 @@ test("loads the generated stored-ZIP .npz corpus", function()
 
   assert_dtype(loaded["bool-2x2"], "bool")
   assert_tensor(loaded["bool-2x2"], { { true, false }, { true, true } })
+
+  assert_dtype(loaded["float16-1d"], "float16")
+  assert_tensor(loaded["float16-1d"], { 1.5, -2.25, 0, 3.25 })
+
+  assert_dtype(loaded["int8-1d"], "int8")
+  assert_tensor(loaded["int8-1d"], { -128, -3, 0, 7, 127 })
+
+  assert_dtype(loaded["int16-2x2"], "int16")
+  assert_tensor(loaded["int16-2x2"], { { -32768, -3 }, { 0, 32767 } })
+
+  assert_dtype(loaded["int32-1d"], "int32")
+  assert_tensor(loaded["int32-1d"],
+    { -2147483648, -3, 0, 7, 2147483647 })
+
+  assert_dtype(loaded["uint8-2x2"], "uint8")
+  assert_tensor(loaded["uint8-2x2"], { { 0, 1 }, { 127, 255 } })
 
   assert_shape(loaded["empty-2x0"], { 2, 0 })
   assert_eq(loaded["empty-2x0"]:numel(), 0)

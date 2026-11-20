@@ -4,9 +4,14 @@
 -- Minimal, dependency-free NumPy .npy v1.0 reader/writer.
 --
 -- Supported dtypes:
+--   float16 -> '<f2'
 --   float32 -> '<f4'
 --   float64 -> '<f8'
+--   int8    -> '|i1'
+--   int16   -> '<i2'
+--   int32   -> '<i4'
 --   int64   -> '<i8'
+--   uint8   -> '|u1'
 --   bool    -> '|b1'
 --
 -- Arrays are written in C order.  The reader accepts any 1-D/2-D/N-D C-order
@@ -27,22 +32,38 @@ local VERSION_MAJOR = 1
 local VERSION_MINOR = 0
 
 local DTYPES = {
-  [0] = { descr = "<f4" },
-  [1] = { descr = "<f8" },
-  [2] = { descr = "<i8" },
-  [7] = { descr = "|b1" },
+  [0] = { descr = "<f4", name = "float32" },
+  [1] = { descr = "<f8", name = "float64" },
+  [2] = { descr = "<i8", name = "int64" },
+  [3] = { descr = "<i4", name = "int32" },
+  [4] = { descr = "<i2", name = "int16" },
+  [5] = { descr = "|i1", name = "int8" },
+  [6] = { descr = "|u1", name = "uint8" },
+  [7] = { descr = "|b1", name = "bool" },
+  [8] = { descr = "<f2", name = "float16" },
 }
 
 local LOAD_DTYPES = {
+  ["<f2"] = { dtype = 8, size = 2 },
   ["<f4"] = { dtype = 0, size = 4 },
   ["<f8"] = { dtype = 1, size = 8 },
+  ["<i2"] = { dtype = 4, size = 2 },
+  ["<i4"] = { dtype = 3, size = 4 },
   ["<i8"] = { dtype = 2, size = 8 },
+  ["|i1"] = { dtype = 5, size = 1 },
+  ["|u1"] = { dtype = 6, size = 1 },
   ["|b1"] = { dtype = 7, size = 1 },
-  -- NumPy writes '|b1' for bool, but accept the explicit little-endian form.
+  -- NumPy writes the byte-sized integer dtypes with '|', but accept the
+  -- explicit little-endian spellings too.
+  ["<i1"] = { dtype = 5, size = 1 },
+  ["<u1"] = { dtype = 6, size = 1 },
   ["<b1"] = { dtype = 7, size = 1 },
 }
 
-local SUPPORTED_DESCR = "'<f4', '<f8', '<i8', '|b1'"
+local SUPPORTED_DESCR =
+  "'<f2', '<f4', '<f8', '<i2', '<i4', '<i8', '|i1', '|u1', '|b1'"
+local SUPPORTED_NAMES =
+  "float16, float32, float64, int8, int16, int32, int64, uint8, bool"
 
 local function host_is_little_endian()
   return ffi.abi("le")
@@ -141,8 +162,8 @@ function npy.save(path, tensor)
   local info = DTYPES[dtype_id]
   if info == nil then
     error(string.format(
-      "numlua.save: unsupported dtype '%s' (supported: float32, float64, " ..
-      "int64, bool)", tensor:dtype()), 2)
+      "numlua.save: unsupported dtype '%s' (supported: %s)",
+      tensor:dtype(), SUPPORTED_NAMES), 2)
   end
 
   -- detach() keeps autograd metadata out of the file; contiguous() makes the
@@ -266,10 +287,10 @@ function npy.load(path)
 
   local tensor
   if #shape == 0 then
-    -- luatorch's public empty() constructors require at least one dimension;
-    -- a 0-D seed gives us a scalar tensor to fill.
-    tensor = torch.tensor(info.dtype == 7 and false or 0,
-      { dtype = info.dtype })
+    -- luatorch's public empty() constructors require at least one dimension,
+    -- and its scalar constructors cannot create float16 tensors.  Allocate a
+    -- one-element tensor of the right dtype and reshape it to 0-D instead.
+    tensor = torch.empty({ 1 }, { dtype = info.dtype }):reshape({})
   else
     tensor = torch.empty(shape, { dtype = info.dtype })
   end
