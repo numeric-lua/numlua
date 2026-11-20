@@ -144,7 +144,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Group | Functions |
 | --- | --- |
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace` |
-| Shape | `shape`, `reshape`, `transpose`, `ravel`, `squeeze`, `unsqueeze` |
+| Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize` |
 | Combine | `concatenate`, `stack` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
@@ -154,6 +154,13 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `savez`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt` |
+
+`transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
+`unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `pad`,
+`tile`, `repeat_`, `flip`, `roll`, `diff`, `cumsum`, `cumprod`, `argsort`, and
+`take` allocate independent storage; see
+[docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
+`pad` supports `constant`, `edge`, `reflect`, and `symmetric` modes.
 
 `numlua` arrays are ordinary luatorch tensors, so luaplotlib can plot them
 directly through its tensor adapter. See `examples/plot.lua`.
@@ -275,7 +282,7 @@ algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
 1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
 round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
 corruption paths, layout view/copy semantics, and error paths. It currently
-contains 102 tests.
+contains 108 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes

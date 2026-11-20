@@ -23,12 +23,17 @@
   Lua baselines;
 - `docs/performance.md` with the dated run, machine/compiler conditions,
   method, explicit losses, and caveats;
+- `swapaxes`, `moveaxis`, `atleast_1d`, `atleast_2d`, `atleast_3d`, and
+  `resize` with C-order zero-fill/truncation semantics;
+- `pad` modes `edge`, `reflect`, and `symmetric` in addition to `constant`;
+- explicit view/copy documentation plus tests for axis permutations,
+  zero-size dimensions, negative axes, invalid modes, and independent storage;
 - a large layout regression test proving documented views do not silently copy
   and that non-contiguous `ravel` does copy.
 
 ### Tests
 
-- 102 tests, passing with system zlib available and with
+- 108 tests, passing with system zlib available and with
   `NUMLUA_DISABLE_ZLIB=1`.
 
 ## 0.2.0 — 2026-11-19

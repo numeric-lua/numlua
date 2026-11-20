@@ -133,6 +133,60 @@ dimension to luatorch; an axis whose size is not 1 is left unchanged.
 
 Inserts a size-1 dimension at the 1-based `axis`. Negative axes are accepted.
 
+### `numlua.swapaxes(t, axis1, axis2)`
+
+Interchanges two axes. Axes are 1-based and negative axes count from the end.
+This is a view; the result shares storage with the input.
+
+```lua
+numlua.swapaxes(t, 1, 3)   -- first and last axes
+numlua.swapaxes(t, -1, -3) -- the same interchange
+```
+
+### `numlua.moveaxis(t, source, destination)`
+
+Moves one or more axes to new positions, leaving the order of all other axes
+unchanged. `source` and `destination` may each be an axis or a table of axes.
+Negative axes and negative destination positions count from the end. This is a
+view: the result shares storage with the input.
+
+```lua
+numlua.moveaxis(t, 1, 3)        -- move axis 1 to position 3
+numlua.moveaxis(t, -1, 1)       -- move the last axis to the front
+numlua.moveaxis(t, { 1, 2 }, { 3, 1 })
+```
+
+### `numlua.atleast_1d(...)`, `atleast_2d`, `atleast_3d`
+
+Accept one or more tensors and return one result per input. These helpers only
+add size-1 dimensions, so they are views:
+
+| Input rank | `atleast_1d` | `atleast_2d` | `atleast_3d` |
+| --- | --- | --- | --- |
+| 0-D | `{1}` | `{1, 1}` | `{1, 1, 1}` |
+| 1-D, length `N` | unchanged | `{1, N}` | `{1, N, 1}` |
+| 2-D, `M x N` | unchanged | unchanged | `{M, N, 1}` |
+| 3-D or higher | unchanged | unchanged | unchanged |
+
+```lua
+local a, b = numlua.atleast_2d(scalar, vector)
+```
+
+### `numlua.resize(t, shape)`
+
+Accepts a shape table or variadic dimensions and returns a new tensor with that
+shape. Existing elements are kept in C order, any new space is zero-filled, and
+surplus elements are dropped. This follows `ndarray.resize`'s zero-fill and
+truncation rule; unlike `np.resize`, data is not tiled. The result has
+independent storage and the input is not modified. Zero-size dimensions are
+allowed.
+
+```lua
+numlua.resize(numlua.array({ 1, 2, 3 }), { 2, 3 })
+-- { { 1, 2, 3 }, { 0, 0, 0 } }
+numlua.resize(t, 4) -- a 1-D result with four elements
+```
+
 ## Combining
 
 ### `numlua.concatenate(tensors[, axis])`
@@ -372,23 +426,41 @@ These functions are 1-based and return luatorch tensors:
 
 | Function | Notes |
 | --- | --- |
+| `numlua.swapaxes(t, axis1, axis2)` | interchange two axes (view); negative axes accepted |
+| `numlua.moveaxis(t, source, destination)` | move one or more axes (view); accepts axis tables |
+| `numlua.atleast_1d(...)` / `atleast_2d` / `atleast_3d` | add size-1 dimensions (view); one result per input |
+| `numlua.resize(t, shape)` | zero-fill/truncate to a new shape (materialized) |
 | `numlua.broadcast_to(t, shape)` | broadcast view; NumPy-compatible right alignment |
 | `numlua.broadcast_arrays(...)` | returns multiple broadcast views |
 | `numlua.tile(t, reps)` | repeat whole blocks (materialized); `reps` is a number or table |
 | `numlua.repeat_(t, repeats[, axis])` | repeat elements (materialized); `numlua["repeat"]` is the same function |
 | `numlua.flip(t, axis)` | reverse one axis or a table of axes (materialized) |
 | `numlua.roll(t, shift[, axis])` | cyclic shift; flattens when `axis` is omitted |
-| `numlua.pad(t, pad_width[, mode[, value]])` | `mode` currently only `"constant"` |
+| `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"reflect"`, and `"symmetric"` (materialized) |
 | `numlua.diff(t[, n[, axis]])` | default axis is the last |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted |
 
-`broadcast_to`, `broadcast_arrays`, `transpose`, contiguous `reshape`, and
-contiguous `ravel` are views; mutating the source is visible through the result.
-Operations documented as materialized return independent storage. Tests cover
-the view/copy boundary on large arrays so a regression cannot silently turn a
-view into a full-size copy.
+`pad_width` follows NumPy's common forms: a number pads every axis equally, a
+`{before, after}` pair pads every axis with that pair, and a table of per-axis
+pairs pads each axis separately. `"edge"` repeats the first and last values,
+`"reflect"` mirrors without repeating the edge, and `"symmetric"` mirrors with
+the edge included. Zero-size axes can be extended only with `"constant"`.
+
+### View and copy boundaries
+
+Views share storage with the input, so mutating one is visible through the
+other: `transpose`, `swapaxes`, `moveaxis`, `atleast_1d`, `atleast_2d`,
+`atleast_3d`, `squeeze`, `unsqueeze`, `broadcast_to`, `broadcast_arrays`,
+contiguous `reshape`, and contiguous `ravel`.
+
+These allocate independent storage: `resize`, `pad`, `tile`, `repeat_`, `flip`,
+`roll`, `diff`, `cumsum`, `cumprod`, `argsort`, and `take`. `reshape` and
+`ravel` also copy when their input is not contiguous, because ATen must
+materialize a C-order layout first. Tests cover the view/copy boundary,
+including large arrays, so a regression cannot silently turn a view into a
+full-size copy or make an allocating helper alias its input.
 
 ## Dtype
 

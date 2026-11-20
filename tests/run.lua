@@ -162,6 +162,7 @@ local files = {
   "test_predicates.lua",
   "test_ufuncs.lua",
   "test_manipulation.lua",
+  "test_layout_extensions.lua",
   "test_npz.lua",
   "test_dtype_promotion.lua",
   "test_linalg.lua",
