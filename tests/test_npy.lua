@@ -24,6 +24,11 @@ local function u32(value)
     math.floor(value / 65536) % 256, math.floor(value / 16777216) % 256)
 end
 
+local function u32_at(data, offset)
+  local a, b, c, d = data:byte(offset, offset + 3)
+  return a + b * 256 + c * 65536 + d * 16777216
+end
+
 local function make_header(descr, fortran, shape_text, prefix_size)
   local dict = string.format(
     "{'descr': '%s', 'fortran_order': %s, 'shape': %s, }",
@@ -175,6 +180,117 @@ test("saved headers are valid NPY v1.0 headers", function()
     assert_eq(#data, 10 + header_size + tensor:nbytes())
     os.remove(path)
   end
+end)
+
+test("save writes NPY v2.0 and v3.0 headers on request", function()
+  local tensor = numlua.array({ { 1.5, -2.25, 0 }, { 3.5, 4.5, -0.5 } })
+  local v1_path = tmp_path("write-v1")
+  numlua.save(v1_path, tensor)
+  local v1 = read_bytes(v1_path)
+  local v1_header_size = v1:byte(9) + v1:byte(10) * 256
+
+  local written = {}
+  for _, version in ipairs({ 2, 3 }) do
+    local path = tmp_path("write-v" .. version)
+    assert_true(numlua.save(path, tensor, { version = version }))
+    local data = read_bytes(path)
+    written[version] = data
+
+    assert_eq(data:sub(1, 6), "\147NUMPY")
+    assert_eq(data:byte(7), version)
+    assert_eq(data:byte(8), 0)
+    local header_size = u32_at(data, 9)
+    assert_eq((12 + header_size) % 64, 0,
+      "v" .. version .. " header must be 64-byte aligned")
+    local header = data:sub(13, 12 + header_size)
+    assert_eq(header:sub(-1), "\n")
+    assert_true(header:find("'descr': '<f4'", 1, true) ~= nil)
+    assert_true(header:find("'fortran_order': False", 1, true) ~= nil)
+    assert_true(header:find("'shape': (2, 3)", 1, true) ~= nil)
+    assert_eq(#data, 12 + header_size + tensor:nbytes())
+
+    -- The payload is version-independent; only the prefix/header changes.
+    assert_eq(#data - 12 - header_size, #v1 - 10 - v1_header_size)
+    assert_eq(data:sub(13 + header_size), v1:sub(11 + v1_header_size))
+
+    local loaded = numlua.load(path)
+    assert_dtype(loaded, "float32")
+    assert_shape(loaded, { 2, 3 })
+    assert_true(loaded:equal(tensor))
+    os.remove(path)
+  end
+  os.remove(v1_path)
+
+  -- v2.0 and v3.0 share the same 12-byte prefix layout, so for an ASCII
+  -- header the bytes after the version field are identical.
+  assert_eq(written[2]:sub(9), written[3]:sub(9))
+end)
+
+test("save version option accepts aliases and defaults to v1.0", function()
+  local tensor = numlua.array({ { 10, 20 }, { 30, 40 } })
+  local baseline = tmp_path("version-baseline")
+  numlua.save(baseline, tensor)
+  local v1 = read_bytes(baseline)
+
+  for _, options in ipairs({ {}, { version = 1 }, { version = "1.0" } }) do
+    local path = tmp_path("version-v1-alias")
+    assert_true(numlua.save(path, tensor, options))
+    assert_eq(read_bytes(path), v1)
+    os.remove(path)
+  end
+
+  for _, pair in ipairs({
+    { version = 2, alias = "2.0" },
+    { version = 3, alias = "3.0" },
+  }) do
+    local numeric_path = tmp_path("version-numeric")
+    local string_path = tmp_path("version-string")
+    assert_true(numlua.save(numeric_path, tensor, { version = pair.version }))
+    assert_true(numlua.save(string_path, tensor, { version = pair.alias }))
+    assert_eq(read_bytes(numeric_path), read_bytes(string_path))
+    os.remove(numeric_path)
+    os.remove(string_path)
+  end
+  os.remove(baseline)
+
+  -- 0-D and zero-size arrays use the wider-header path too.
+  local scalar_path = tmp_path("version-scalar")
+  assert_true(numlua.save(scalar_path, numlua.array(7, { dtype = "int64" }),
+    { version = 3 }))
+  local scalar = numlua.load(scalar_path)
+  assert_eq(scalar:dim(), 0)
+  assert_dtype(scalar, "int64")
+  assert_eq(scalar:item(), 7)
+  os.remove(scalar_path)
+
+  local empty_path = tmp_path("version-empty")
+  assert_true(numlua.save(empty_path, numlua.zeros(2, 0), { version = 2 }))
+  assert_shape(numlua.load(empty_path), { 2, 0 })
+  os.remove(empty_path)
+end)
+
+test("save rejects invalid version options before writing", function()
+  local t = numlua.array({ 1, 2, 3 })
+  local path = tmp_path("version-invalid")
+
+  assert_error(function() numlua.save(path, t, "2") end,
+    "options must be a table")
+  assert_error(function() numlua.save(path, t, { version = 4 }) end,
+    "version must be")
+  assert_error(function() numlua.save(path, t, { version = 0 }) end,
+    "version must be")
+  assert_error(function() numlua.save(path, t, { version = 1.5 }) end,
+    "version must be")
+  assert_error(function() numlua.save(path, t, { version = "2" }) end,
+    "version must be")
+  assert_error(function() numlua.save(path, t, { version = true }) end,
+    "version must be")
+  assert_error(function() numlua.save(path, t, { compress = true }) end,
+    "unknown option 'compress'")
+
+  local handle = io.open(path, "rb")
+  assert_true(handle == nil, "invalid options must not create an output file")
+  if handle ~= nil then handle:close() end
 end)
 
 test("bool files use the |b1 descr", function()

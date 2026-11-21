@@ -14,15 +14,16 @@
 --   uint8   -> '|u1'
 --   bool    -> '|b1'
 --
--- Arrays are written as NPY v1.0 in C order.  The reader accepts NPY v1.0,
--- v2.0, and v3.0 headers with the dtypes above and any 1-D/2-D/N-D C-order
--- file; it rejects big-endian files, Fortran order, unsupported versions, and
--- unsupported descr values with clear errors.  v2.0 and v3.0 differ from v1.0
--- only in their 4-byte header-length field (and v3.0's UTF-8 header encoding),
--- which this reader already parses as byte strings.  On little-endian hosts,
--- native-endian '=' descr values are accepted as aliases for the '<'
--- spellings, matching NumPy's dtype parser.  Only little-endian hosts are
--- supported (LuaJIT ffi.abi("le")).
+-- Arrays are written as NPY v1.0 in C order by default; pass
+-- `{ version = 2 }` or `{ version = 3 }` to write v2.0/v3.0 instead.  The
+-- reader accepts NPY v1.0, v2.0, and v3.0 headers with the dtypes above and
+-- any 1-D/2-D/N-D C-order file; it rejects big-endian files, Fortran order,
+-- unsupported versions, and unsupported descr values with clear errors.
+-- v2.0 and v3.0 differ from v1.0 only in their 4-byte header-length field (and
+-- v3.0's UTF-8 header encoding), which this reader already parses as byte
+-- strings.  On little-endian hosts, native-endian '=' descr values are
+-- accepted as aliases for the '<' spellings, matching NumPy's dtype parser.
+-- Only little-endian hosts are supported (LuaJIT ffi.abi("le")).
 --
 
 local ffi = require("ffi")
@@ -33,9 +34,13 @@ local lib = libmod.lib
 local npy = {}
 
 local MAGIC = "\147NUMPY"
-local VERSION_MAJOR = 1
-local VERSION_MINOR = 0
+local DEFAULT_VERSION = 1
 local SUPPORTED_VERSIONS = "1.0, 2.0, 3.0"
+local VERSION_ALIASES = {
+  ["1.0"] = 1,
+  ["2.0"] = 2,
+  ["3.0"] = 3,
+}
 
 local DTYPES = {
   [0] = { descr = "<f4", name = "float32" },
@@ -86,6 +91,37 @@ local function read_u32(data, offset)
     data:byte(offset + 2) * 65536 + data:byte(offset + 3) * 16777216
 end
 
+local function write_u32(value)
+  return string.char(value % 256, math.floor(value / 256) % 256,
+    math.floor(value / 65536) % 256, math.floor(value / 16777216) % 256)
+end
+
+-- Validate the optional save() options table.  Only `version` is understood,
+-- and unknown keys are rejected so a typo cannot silently write v1.0.
+local function parse_save_options(options)
+  if options == nil then return DEFAULT_VERSION end
+  if type(options) ~= "table" then
+    error("numlua.save: options must be a table or nil", 3)
+  end
+  for key in pairs(options) do
+    if key ~= "version" then
+      error("numlua.save: unknown option '" .. tostring(key) .. "'", 3)
+    end
+  end
+  local requested = options.version
+  if requested == nil then return DEFAULT_VERSION end
+  local version = requested
+  if type(requested) == "string" then
+    version = VERSION_ALIASES[requested]
+  end
+  if version ~= 1 and version ~= 2 and version ~= 3 then
+    error(string.format(
+      "numlua.save: version must be 1, 2, or 3 (or '1.0', '2.0', '3.0'), " ..
+      "got %s", tostring(requested)), 3)
+  end
+  return version
+end
+
 local function shape_to_string(shape)
   if #shape == 0 then
     return "()"
@@ -100,14 +136,16 @@ local function shape_to_string(shape)
   return "(" .. table.concat(parts, ", ") .. ")"
 end
 
-local function make_header(descr, shape)
+local function make_header(descr, shape, version)
   local dict = string.format(
     "{'descr': '%s', 'fortran_order': False, 'shape': %s, }",
     descr, shape_to_string(shape))
   -- NPY v1.0 pads the header with spaces, terminated by '\n', so that the
   -- complete prefix (magic + version + uint16 length + header) is a multiple
-  -- of 64 bytes.
-  local total_without_padding = 10 + #dict + 1
+  -- of 64 bytes.  v2.0/v3.0 use a uint32 length, so their 12-byte prefix
+  -- changes the padding but keeps the same 64-byte alignment rule.
+  local prefix_size = version == 1 and 10 or 12
+  local total_without_padding = prefix_size + #dict + 1
   local padding = (64 - (total_without_padding % 64)) % 64
   return dict .. string.rep(" ", padding) .. "\n"
 end
@@ -159,8 +197,10 @@ local function read_file(path)
   return data
 end
 
--- Write a tensor to path as an NPY v1.0 C-order file.  Returns true.
-function npy.save(path, tensor)
+-- Write a tensor to path as a C-order .npy file.  The default is NPY v1.0;
+-- pass an options table with `version = 2`/`3` (or "2.0"/"3.0") to write the
+-- wider-header versions.  Returns true.
+function npy.save(path, tensor, options)
   if type(path) ~= "string" or path == "" then
     error("numlua.save expects a non-empty file path", 2)
   end
@@ -170,6 +210,7 @@ function npy.save(path, tensor)
   if not host_is_little_endian() then
     error("numlua.save: only little-endian hosts are supported", 2)
   end
+  local version = parse_save_options(options)
 
   local dtype_id = tensor:dtype_id()
   local info = DTYPES[dtype_id]
@@ -182,13 +223,19 @@ function npy.save(path, tensor)
   -- detach() keeps autograd metadata out of the file; contiguous() makes the
   -- raw buffer C-order regardless of the input's strides.
   local contiguous = tensor:detach():contiguous()
-  local header = make_header(info.descr, contiguous:sizes())
-  if #header > 65535 then
-    error("numlua.save: .npy v1.0 header exceeds 65535 bytes", 2)
+  local header = make_header(info.descr, contiguous:sizes(), version)
+  if version == 1 and #header > 65535 then
+    error("numlua.save: .npy v1.0 header exceeds 65535 bytes " ..
+      "(pass { version = 2 } for a wider header)", 2)
   end
   local header_size = #header
-  local prefix = MAGIC .. string.char(VERSION_MAJOR, VERSION_MINOR) ..
-    string.char(header_size % 256, math.floor(header_size / 256))
+  local prefix = MAGIC .. string.char(version, 0)
+  if version == 1 then
+    prefix = prefix .. string.char(header_size % 256,
+      math.floor(header_size / 256))
+  else
+    prefix = prefix .. write_u32(header_size)
+  end
 
   local handle, open_error = io.open(path, "wb")
   if handle == nil then
