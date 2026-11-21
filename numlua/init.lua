@@ -24,7 +24,7 @@ local npz = require("numlua.npz")
 
 local numlua = {}
 
-numlua.VERSION = "0.4.0"
+numlua.VERSION = "0.5.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
@@ -348,6 +348,28 @@ function numlua.quantile(t, q, axis, keepdims)
   local value = a:mul(1 - fraction):add(b:mul(fraction))
   if not keepdims then value = value:squeeze(axis) end
   return value
+end
+
+function numlua.percentile(t, q, axis, keepdims)
+  if type(q) ~= "number" or q < 0 or q > 100 then
+    error("numlua.percentile: q must be in [0, 100]", 2)
+  end
+  return numlua.quantile(t, q / 100, axis, keepdims)
+end
+
+function numlua.compress(condition, t, axis)
+  check_tensor(condition, "compress condition")
+  check_tensor(t, "compress")
+  if condition:dtype() ~= "bool" then
+    error("numlua.compress expects a boolean condition tensor", 2)
+  end
+  if axis ~= nil then
+    error("numlua.compress with an axis is not implemented yet", 2)
+  end
+  if condition:numel() ~= t:numel() then
+    error("numlua.compress condition must match the input size", 2)
+  end
+  return t:reshape(-1):masked_select(condition:reshape(-1))
 end
 
 function numlua.argmax(t, axis, keepdims)

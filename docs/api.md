@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.4.0"
+print(numlua.VERSION) -- "0.5.0"
 ```
 
 ## Conventions
@@ -236,6 +236,15 @@ Returns the `q`-quantile using linear interpolation between order statistics;
 `q` must be in `[0, 1]`. With no axis the input is flattened and a Lua number
 is returned. With an axis the reduced axis is removed unless `keepdims` is
 true.
+
+### `numlua.percentile(t, q[, axis[, keepdims]])`
+
+Percent-scaled alias for `numlua.quantile`; `q` is in `[0, 100]`.
+
+### `numlua.compress(condition, t[, axis])`
+
+Selects the flattened elements where the boolean `condition` is true. An
+explicit `axis` is not implemented yet.
 
 ### `numlua.argmin(t[, axis[, keepdims]])`
 

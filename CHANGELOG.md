@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-11-21
+
+### Added
+
+- `numlua.percentile` as a percent-scaled quantile alias;
+- `numlua.compress(condition, tensor)` boolean-mask selection;
+- tests for percentile and compress.
+
 ## 0.4.0 — 2026-11-21
 
 ### Added
