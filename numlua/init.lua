@@ -24,7 +24,7 @@ local npz = require("numlua.npz")
 
 local numlua = {}
 
-numlua.VERSION = "0.7.0"
+numlua.VERSION = "0.8.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
@@ -368,6 +368,46 @@ function numlua.quantile(t, q, axis, keepdims)
   end
   return torch.stack(parts, 1)
 end
+local function search_one(values, target, side)
+  local low, high = 1, #values + 1
+  while low < high do
+    local mid = math.floor((low + high) / 2)
+    if values[mid] < target or (side == "right" and values[mid] == target) then
+      low = mid + 1
+    else
+      high = mid
+    end
+  end
+  return low
+end
+
+function numlua.searchsorted(sorted, values, side)
+  check_tensor(sorted, "searchsorted")
+  if sorted:dim() ~= 1 then
+    error("numlua.searchsorted expects a 1-D sorted tensor", 2)
+  end
+  side = side or "left"
+  if side ~= "left" and side ~= "right" then
+    error("numlua.searchsorted side must be 'left' or 'right'", 2)
+  end
+  local haystack = sorted:totable()
+  if type(values) == "number" then
+    return search_one(haystack, values, side)
+  end
+  if torch.is_tensor(values) then values = values:reshape(-1):totable() end
+  if type(values) ~= "table" then
+    error("numlua.searchsorted values must be a number, table, or tensor", 2)
+  end
+  local result = {}
+  for i = 1, #values do result[i] = search_one(haystack, values[i], side) end
+  return torch.tensor(result, { dtype = "int64" })
+end
+
+function numlua.bincount(input, weights, minlength)
+  check_tensor(input, "bincount")
+  return torch.bincount(input, weights, minlength)
+end
+
 function numlua.flatnonzero(t)
   check_tensor(t, "flatnonzero")
   local coords = t:reshape(-1):nonzero()

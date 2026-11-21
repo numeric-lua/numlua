@@ -238,6 +238,16 @@ returns a tensor with the quantile axis first. With no axis the input is flatten
 is returned. With an axis the reduced axis is removed unless `keepdims` is
 true.
 
+### `numlua.searchsorted(sorted, values[, side])`
+
+Binary-search insertion positions in a 1-D sorted tensor. `side` is `"left"`
+(default) or `"right"`. Scalar values return a number; tables/tensors return an
+`int64` tensor.
+
+### `numlua.bincount(input[, weights[, minlength]])`
+
+Count non-negative integer values; delegates to luatorch's `bincount`.
+
 ### `numlua.percentile(t, q[, axis[, keepdims]])`
 
 Percent-scaled alias for `numlua.quantile`; `q` is in `[0, 100]` and may also

@@ -1,4 +1,5 @@
-# numlua 0.7.0
+# numlua 0.8.0
 
-- vector quantile/percentile probability tables;
-- 119 tests.
+- searchsorted left/right;
+- bincount facade;
+- 121 tests.

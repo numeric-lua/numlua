@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 — 2026-11-21
+
+### Added
+
+- `numlua.searchsorted(sorted, values[, side])` with left/right semantics;
+- `numlua.bincount(input[, weights[, minlength]])` facade;
+- tests for search positions and weighted counts.
+
 ## 0.7.0 — 2026-11-21
 
 ### Added
