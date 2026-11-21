@@ -47,6 +47,18 @@ local function craft(path, options)
   return path
 end
 
+-- Rewrite a saved file's descr byte-order marker to '=' (native endian).
+-- The replacement keeps the header length identical.
+local function use_native_endian_descr(path)
+  local data = read_bytes(path)
+  local header_size = data:byte(9) + data:byte(10) * 256
+  local header = data:sub(11, 10 + header_size)
+  local patched, replacements = header:gsub("('descr': ')[<|]", "%1=", 1)
+  assert_eq(replacements, 1)
+  write_bytes(path, data:sub(1, 10) .. patched ..
+    data:sub(11 + header_size))
+end
+
 test("save/load round-trip for every supported dtype and shape", function()
   local cases = {
     {
@@ -222,6 +234,45 @@ test("load rejects Fortran-order files", function()
   os.remove(path)
 end)
 
+test("load accepts native-endian '=' descr values", function()
+  local cases = {
+    { dtype = "float16", values = { 1.5, -2.25, 0, 3.25 } },
+    { dtype = "float32", values = { 1.5, -2.25, 0, 3.25 } },
+    { dtype = "float64", values = { math.pi, -0.125, 2.5, -42 } },
+    { dtype = "int8", values = { -128, -1, 0, 127 } },
+    { dtype = "int16", values = { -32768, -1, 0, 32767 } },
+    { dtype = "int32", values = { -2147483648, -1, 0, 2147483647 } },
+    { dtype = "int64", values = { -3, -1, 0, 42 } },
+    { dtype = "uint8", values = { 0, 1, 127, 255 } },
+    { dtype = "bool", values = { true, false, true, false } },
+  }
+  for _, case in ipairs(cases) do
+    -- luatorch cannot build a float16 tensor directly from Lua numbers.
+    local source
+    if case.dtype == "float16" then
+      source = numlua.array(case.values,
+        { dtype = "float32" }):to("float16")
+    else
+      source = numlua.array(case.values, { dtype = case.dtype })
+    end
+    local path = tmp_path("native-endian-" .. case.dtype)
+    assert_true(numlua.save(path, source))
+    use_native_endian_descr(path)
+
+    local data = read_bytes(path)
+    local header_size = data:byte(9) + data:byte(10) * 256
+    assert_true(data:sub(11, 10 + header_size):find(
+      "'descr': '=", 1, true) ~= nil, "descr was not rewritten")
+
+    local loaded = numlua.load(path)
+    assert_dtype(loaded, case.dtype)
+    assert_shape(loaded, { 4 })
+    assert_tensor(loaded, source:totable(), 0)
+    assert_true(loaded:equal(source))
+    os.remove(path)
+  end
+end)
+
 test("load rejects unsupported descr values", function()
   local path = craft(tmp_path("unsupported"), {
     descr = "<u4",
@@ -229,6 +280,16 @@ test("load rejects unsupported descr values", function()
   })
   assert_error(function() numlua.load(path) end, "unsupported .npy descr")
   os.remove(path)
+
+  -- '=' selects the host byte order, but it must not make an unsupported
+  -- dtype acceptable; the original spelling appears in the error.
+  local native_path = craft(tmp_path("unsupported-native"), {
+    descr = "=u4",
+    payload_size = 24,
+  })
+  assert_error(function() numlua.load(native_path) end,
+    "unsupported .npy descr '=u4'")
+  os.remove(native_path)
 end)
 
 test("load rejects malformed and non-NPY files", function()

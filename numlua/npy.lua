@@ -17,7 +17,9 @@
 -- Arrays are written in C order.  The reader accepts any 1-D/2-D/N-D C-order
 -- file with the dtypes above and rejects big-endian files, Fortran order,
 -- NPY versions other than 1.0, and unsupported descr values with clear
--- errors.  Only little-endian hosts are supported (LuaJIT ffi.abi("le")).
+-- errors.  On little-endian hosts, native-endian '=' descr values are accepted
+-- as aliases for the '<' spellings, matching NumPy's dtype parser.  Only
+-- little-endian hosts are supported (LuaJIT ffi.abi("le")).
 --
 
 local ffi = require("ffi")
@@ -267,6 +269,11 @@ function npy.load(path)
   end
 
   local info = LOAD_DTYPES[descr]
+  if info == nil and descr:sub(1, 1) == "=" then
+    -- '=' selects the host byte order.  Only little-endian hosts reach this
+    -- point, so it is an alias for the '<' spelling, as in NumPy.
+    info = LOAD_DTYPES["<" .. descr:sub(2)]
+  end
   if info == nil then
     error("numlua.load: unsupported .npy descr '" .. descr ..
       "' (supported: " .. SUPPORTED_DESCR .. ")", 2)
