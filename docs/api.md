@@ -497,6 +497,15 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted |
 | `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
 
+`broadcast_to` and `broadcast_arrays` follow NumPy's right-aligned rules,
+including 0-D inputs and zero-size axes: a size-1 axis broadcast against a
+zero-size axis produces a zero-size result, while mismatched non-1 axes raise
+`numlua.broadcast_arrays: incompatible shapes ...`. `take` requires an integer
+index tensor (`int64`, `int32`, `int16`, `int8`, or `uint8`); non-integer
+indices, out-of-range indices, and selecting with non-empty indices from an
+empty tensor or empty axis are errors. With no axis, 0-D and non-contiguous
+inputs are flattened in C order before selection. All selections are 1-based.
+
 `pad_width` follows NumPy's common forms: a number pads every axis equally, a
 `{before, after}` pair pads every axis with that pair, and a table of per-axis
 pairs pads each axis separately. `"edge"` repeats the first and last values,
@@ -591,10 +600,24 @@ tensors are supported; non-contiguous tensors are written in C order.
 
 ### `numlua.savez(path, arrays)`
 
-Writes a ZIP archive of `.npy` members and returns `true`. `arrays` is a table
-mapping non-empty array names to luatorch tensors. Entries are always written
-with the stored (uncompressed) ZIP method, so writing has no compression
-dependency and matches `np.savez`.
+Writes a ZIP archive of `.npy` members using the stored (uncompressed) method
+and returns `true`. `arrays` is a table mapping non-empty array names to
+luatorch tensors. This matches `np.savez` and has no compression dependency.
+
+### `numlua.savez_compressed(path, arrays[, options])`
+
+Writes the same archive with every member deflated (ZIP method 8), matching
+`np.savez_compressed`, and returns `true`. Compression uses the optional system
+zlib loaded through LuaJIT FFI; no package beyond the zlib already used for
+reading deflate archives is required.
+
+By default the call fails with a
+`numlua.savez_compressed: deflate compression requires a system zlib library`
+error when zlib cannot be loaded, before any file is created. Pass
+`{ fallback = "stored" }` to write stored entries instead; the call then returns
+`true, "stored"` so the fallback is observable. Other `fallback` values and
+non-table options are rejected. `NUMLUA_DISABLE_ZLIB=1` forces the no-zlib path
+for testing.
 
 ### `numlua.loadz(path)`
 
@@ -604,12 +627,14 @@ the `.npy` suffix removed. Supported ZIP compression methods are:
 | method | written by | availability |
 | --- | --- | --- |
 | stored (0) | `np.savez`, `numlua.savez` | always, dependency-free |
-| deflate (8) | `np.savez_compressed` | read-only; requires system zlib |
+| deflate (8) | `np.savez_compressed`, `numlua.savez_compressed` | read/write; requires system zlib |
 
 Deflate support is optional and detected lazily through LuaJIT FFI: on Linux
 the loader tries `libz`, `libz.so.1`, and `libz.so`, and on macOS it also tries
-`libz.dylib`. No LuaRocks or compression package is required. Stored archives
-work when zlib is absent; encountering a deflate entry then raises a
+`libz.dylib`. No LuaRocks or compression package is required. `savez_compressed`
+emits raw DEFLATE streams, so the result is an ordinary ZIP archive readable by
+NumPy and other tools. Stored archives work when zlib is absent; encountering a
+deflate entry then raises a
 `numlua.loadz: deflate-compressed entry ... requires a system zlib library`
 error. `NUMLUA_DISABLE_ZLIB=1` forces the no-zlib path for testing.
 
@@ -722,8 +747,9 @@ dtype, or backend constraints are forwarded as-is.
   or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
   squeezed to 1-D. `bool` is not supported by either text function.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.
-- `.npz` writing is always stored; reading supports stored and deflate entries.
-  Deflate reading requires a system zlib library through LuaJIT FFI, while
-  stored archives and all writing remain dependency-free.
+- `.npz` writing is stored by default and deflate through
+  `savez_compressed`; reading supports stored and deflate entries. Deflate
+  needs a system zlib library through LuaJIT FFI, while stored archives and
+  writing remain dependency-free.
 - LuaRocks installs the Lua facade; the native `libluatorch.so` must be built
   separately against libtorch.

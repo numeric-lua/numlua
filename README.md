@@ -154,7 +154,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Predicates/selection | `where`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
-| NumPy I/O | `save`, `load`, `savez`, `loadz` |
+| NumPy I/O | `save`, `load`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt` |
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
@@ -172,21 +172,27 @@ directly through its tensor adapter. See `examples/plot.lua`.
 `numlua.savez(path, { arrays = tensor, ... })` writes a stored (uncompressed)
 ZIP archive of `.npy` members; `numlua.loadz(path)` returns a table keyed by
 array name. This matches the common `np.savez` output and needs no compression
-library.
+library. `numlua.savez_compressed` writes deflate-compressed members through
+the optional system zlib, matching `np.savez_compressed`; without zlib it
+raises a clear error unless `{ fallback = "stored" }` is passed, in which case
+it writes stored entries and returns `true, "stored"`.
 
 `numlua.loadz` accepts these ZIP compression methods:
 
 | method | written by | availability |
 | --- | --- | --- |
 | stored (0) | `np.savez`, `numlua.savez` | always, dependency-free |
-| deflate (8) | `np.savez_compressed` | read-only; requires a system zlib library |
+| deflate (8) | `np.savez_compressed`, `numlua.savez_compressed` | read/write; requires a system zlib library |
 
 Deflate support is optional. When zlib is present, it is loaded through LuaJIT
 FFI (`libz`/`libz.so.1` on Linux, `libz.dylib` on macOS); there is no mandatory
-LuaRocks or compression dependency. If a deflate entry is encountered and zlib
-cannot be loaded, `loadz` fails with an error naming the entry and explaining
-that zlib is required. Encrypted, multi-disk, ZIP64, and other compression
-methods are rejected explicitly. Stored archives continue to work without zlib.
+LuaRocks or compression dependency. `savez_compressed` emits raw DEFLATE
+streams, so its archives are ordinary ZIP files readable by NumPy and other
+tools. If zlib is absent, `savez_compressed` fails before creating a file (or
+falls back to stored when requested), and a deflate entry encountered by
+`loadz` fails with an error naming the entry and explaining that zlib is
+required. Encrypted, multi-disk, ZIP64, and other compression methods are
+rejected explicitly. Stored archives continue to work without zlib.
 Set `NUMLUA_DISABLE_ZLIB=1` to exercise the no-zlib path in tests.
 
 ## `.npy` I/O
@@ -283,8 +289,8 @@ elementwise ufuncs, reductions, predicates and conditional selection, linear
 algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
 1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
 round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
-corruption paths, layout view/copy semantics, and error paths. It currently
-contains 121 tests.
+corruption paths, layout view/copy semantics, broadcast/take edge shapes, and
+error paths. It currently contains 128 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes

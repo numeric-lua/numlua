@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `numlua.savez_compressed(path, arrays[, options])`, writing deflate-compressed
+  `.npz` members (ZIP method 8, raw DEFLATE) through the existing optional
+  system zlib FFI, with `{ fallback = "stored" }` for zlib-less environments and
+  a clear error otherwise;
+- tests for compressed round-trip, method-8 headers, archive-size reduction,
+  zlib-disabled error/fallback behavior, and option validation;
+- broadcast/take edge-shape coverage: 0-D inputs, zero-size axes, high-rank
+  right alignment, singleton axes, empty index tensors, and 0-D/empty `take`.
+
+### Fixed
+
+- `broadcast_arrays` now broadcasts a size-1 axis against a zero-size axis to a
+  zero-size result, matching NumPy, instead of failing inside ATen `expand`;
+- `take` rejects non-integer index tensors with a `numlua.take:` error instead
+  of silently casting them, and reports selection with non-empty indices from
+  an empty tensor or empty axis clearly.
+
+### Tests
+
+- 128 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+
 ## 0.8.0 — 2026-11-21
 
 ### Added
