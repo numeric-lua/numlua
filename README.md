@@ -332,7 +332,7 @@ corruption paths, ZIP32 writer limits, native-endian `.npy` headers, NPY v2.0
 and v3.0 headers and `.npz` members, empty and pre-suffixed `.npz` members,
 layout view/copy semantics, broadcast/take/take_along_axis/put edge shapes,
 deflate expansion guardrails, release metadata, and error paths.
-It currently contains 151 tests.
+It currently contains 156 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
