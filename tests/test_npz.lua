@@ -46,6 +46,30 @@ local function valid_archive(name)
   return file, read_bytes(file)
 end
 
+local function file_exists(file)
+  local handle = io.open(file, "rb")
+  if handle == nil then return false end
+  handle:close()
+  return true
+end
+
+-- Lower the internal ZIP32 writer limits for one test, restoring them even
+-- when an assertion fails.  This keeps overflow tests fast and avoids
+-- allocating multi-gigabyte arrays.
+local function with_writer_limits(overrides, fn)
+  local limits = npz._writer_limits
+  local saved = {}
+  for key, value in pairs(overrides) do
+    saved[key] = limits[key]
+    limits[key] = value
+  end
+  local ok, err = pcall(fn)
+  for key in pairs(saved) do
+    limits[key] = saved[key]
+  end
+  if not ok then error(err, 0) end
+end
+
 local function corpus()
   return generator.generate(TMPDIR)
 end
@@ -399,4 +423,79 @@ test("loadz validates local headers against the central directory", function()
     "local header size mismatch")
   os.remove(file)
   os.remove(valid)
+end)
+
+test("savez enforces the ZIP32 entry-count limit", function()
+  local file = path("entry-limit")
+  with_writer_limits({ max_entries = 2 }, function()
+    assert_error(function()
+      numlua.savez(file, {
+        a = numlua.array(1),
+        b = numlua.array(2),
+        c = numlua.array(3),
+      })
+    end, "at most 2 entries")
+  end)
+  assert_false(file_exists(file))
+end)
+
+test("savez enforces ZIP32 member-name and size limits", function()
+  local long_name = string.rep("x", 65536)
+  local file = path("name-limit")
+  assert_error(function()
+    numlua.savez(file, { [long_name] = numlua.array(1) })
+  end, "ZIP32 names are limited to 65535 bytes")
+  assert_false(file_exists(file))
+
+  -- A scalar .npy member is 132 bytes, so a 100-byte limit rejects the
+  -- uncompressed payload before any output file is opened.
+  file = path("entry-size-limit")
+  with_writer_limits({ max_u32 = 100 }, function()
+    assert_error(function()
+      numlua.savez(file, { x = numlua.array(1) })
+    end, "ZIP32 entries are limited to 100 bytes")
+  end)
+  assert_false(file_exists(file))
+
+  if npz.zlib_available() then
+    -- With compression enabled the deflated size is checked first; a one-byte
+    -- limit exercises that branch.
+    file = path("compressed-size-limit")
+    with_writer_limits({ max_u32 = 1 }, function()
+      assert_error(function()
+        numlua.savez_compressed(file, { x = numlua.array(1) })
+      end, "compressed entry 'x'")
+    end)
+    assert_false(file_exists(file))
+  end
+end)
+
+test("savez enforces the ZIP32 archive-offset limit", function()
+  local file = path("offset-limit")
+  -- Each scalar member occupies 163 local bytes (30-byte header, 1-byte name,
+  -- 132-byte .npy payload); the second pushes the central-directory offset
+  -- past 270 while both individual payloads remain under the limit.
+  with_writer_limits({ max_u32 = 270 }, function()
+    assert_error(function()
+      numlua.savez(file, {
+        a = numlua.array(1),
+        b = numlua.array(2),
+      })
+    end, "central-directory offsets are limited to 270 bytes")
+  end)
+  assert_false(file_exists(file))
+end)
+
+test("savez accepts archives exactly at the ZIP32 entry limit", function()
+  local file = path("entry-limit-ok")
+  with_writer_limits({ max_entries = 2 }, function()
+    assert_true(numlua.savez(file, {
+      a = numlua.array(1),
+      b = numlua.array(2),
+    }))
+  end)
+  local loaded = numlua.loadz(file)
+  assert_eq(loaded.a:item(), 1)
+  assert_eq(loaded.b:item(), 2)
+  os.remove(file)
 end)

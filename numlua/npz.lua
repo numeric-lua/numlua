@@ -15,6 +15,16 @@ local npy = require("numlua.npy")
 
 local M = {}
 
+-- ZIP32 field widths.  `_writer_limits` is an internal test hook: the suite
+-- lowers these limits to exercise overflow errors without allocating
+-- multi-gigabyte arrays.  It is not part of the public API and callers must
+-- not mutate it.
+M._writer_limits = {
+  max_entries = 0xffff,
+  max_u16 = 0xffff,
+  max_u32 = 0xffffffff,
+}
+
 local function u16(value)
   return string.char(value % 256, math.floor(value / 256) % 256)
 end
@@ -303,13 +313,31 @@ local function write_archive(path, arrays, function_name, compressed, fallback)
     fallback_used = true
   end
 
+  local limits = M._writer_limits or {}
+  local max_entries = limits.max_entries or 0xffff
+  local max_u16 = limits.max_u16 or 0xffff
+  local max_u32 = limits.max_u32 or 0xffffffff
+
   local names = {}
   for name in pairs(arrays) do names[#names + 1] = name end
   table.sort(names)
+  if #names > max_entries then
+    error(string.format(
+      "numlua.%s: ZIP32 archives hold at most %d entries (got %d); " ..
+      "ZIP64 writing is not supported", function_name, max_entries,
+      #names), 2)
+  end
+
   local local_parts, central_parts = {}, {}
   local offset = 0
   for _, name in ipairs(names) do
     local file_name = name:match("%.npy$") and name or name .. ".npy"
+    if #file_name > max_u16 then
+      error(string.format(
+        "numlua.%s: member name is %d bytes; ZIP32 names are limited to " ..
+        "%d bytes (ZIP64 writing is not supported)", function_name,
+        #file_name, max_u16), 2)
+    end
     local temp = os.tmpname()
     npy.save(temp, arrays[name])
     local handle = assert(io.open(temp, "rb"))
@@ -325,6 +353,18 @@ local function write_archive(path, arrays, function_name, compressed, fallback)
           name .. "': " .. tostring(deflate_error), 2)
       end
       method, stored = 8, deflated
+      if #stored > max_u32 then
+        error(string.format(
+          "numlua.%s: compressed entry '%s' is %d bytes; ZIP32 entries " ..
+          "are limited to %d bytes (ZIP64 writing is not supported)",
+          function_name, name, #stored, max_u32), 2)
+      end
+    end
+    if #payload > max_u32 then
+      error(string.format(
+        "numlua.%s: entry '%s' is %d bytes; ZIP32 entries are limited to " ..
+        "%d bytes (ZIP64 writing is not supported)", function_name, name,
+        #payload, max_u32), 2)
     end
     local local_header = "PK\003\004" .. u16(20) .. u16(0) .. u16(method) ..
       u16(0) .. u16(0) .. u32(crc) .. u32(#stored) .. u32(#payload) ..
@@ -336,8 +376,20 @@ local function write_archive(path, arrays, function_name, compressed, fallback)
       u32(#stored) .. u32(#payload) .. u16(#file_name) .. u16(0) ..
       u16(0) .. u16(0) .. u16(0) .. u32(0) .. u32(offset) .. file_name
     offset = offset + #local_header + #stored
+    if offset > max_u32 then
+      error(string.format(
+        "numlua.%s: archive data is %d bytes; ZIP32 central-directory " ..
+        "offsets are limited to %d bytes (ZIP64 writing is not supported)",
+        function_name, offset, max_u32), 2)
+    end
   end
   local central = table.concat(central_parts)
+  if #central > max_u32 then
+    error(string.format(
+      "numlua.%s: central directory is %d bytes; ZIP32 limits it to %d " ..
+      "bytes (ZIP64 writing is not supported)", function_name, #central,
+      max_u32), 2)
+  end
   local body = table.concat(local_parts) .. central
   local eocd = "PK\005\006" .. u16(0) .. u16(0) .. u16(#names) ..
     u16(#names) .. u32(#central) .. u32(#body - #central) .. u16(0)
