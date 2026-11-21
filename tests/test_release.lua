@@ -54,6 +54,21 @@ end)
 
 test("new public selection API is documented", function()
   local api = read_file(root .. "/docs/api.md")
-  assert_true(api:find("numlua.put", 1, true) ~= nil,
-    "docs/api.md does not document numlua.put")
+  for _, symbol in ipairs({ "numlua.put", "numlua.take_along_axis" }) do
+    assert_true(api:find(symbol, 1, true) ~= nil,
+      "docs/api.md does not document " .. symbol)
+  end
+
+  -- The reader gained v2.0/v3.0 support; the docs must say so.
+  assert_true(api:find("v2.0", 1, true) ~= nil and
+      api:find("v3.0", 1, true) ~= nil,
+    "docs/api.md does not document NPY v2.0/v3.0 reading")
+  assert_true(api:find('-- "' .. numlua.VERSION .. '"', 1, true) ~= nil,
+    "docs/api.md version example does not match numlua.VERSION")
+
+  local readme = read_file(root .. "/README.md")
+  assert_true(readme:find("Status: " .. numlua.VERSION, 1, true) ~= nil,
+    "README.md status does not match numlua.VERSION")
+  assert_true(readme:find("numlua-" .. numlua.VERSION .. "-1.rockspec",
+    1, true) ~= nil, "README.md does not name the current rockspec")
 end)

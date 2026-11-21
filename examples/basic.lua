@@ -88,6 +88,11 @@ numlua.put(edited, { 9 }, -1, "wrap")
 print("after put:\n" .. edited:format())
 assert(edited:get(1) == 10 and edited:get(3) == -1 and edited:get(6) == 60)
 
+local matrix = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
+local sorted = numlua.take_along_axis(matrix, numlua.argsort(matrix, 2), 2)
+print("argsort + take_along_axis:\n" .. sorted:format())
+assert(sorted:equal(numlua.array({ { 10, 20, 30 }, { 40, 50, 60 } })))
+
 heading("Elementwise ufuncs")
 local roots = numlua.sqrt(numlua.array({ 1.0, 4.0, 9.0 }))
 print("square roots:\n" .. roots:format())

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 — 2026-11-21
 
 ### Added
 
@@ -23,7 +23,10 @@
   broadcasting, negative and omitted axes, every integer index dtype, empty
   selections, non-contiguous inputs, and its error paths;
 - v2.0/v3.0 `.npy` round-trips, crafted v2.0 headers, truncated and unsupported
-  version errors, and `.npz` archives whose members use v2.0/v3.0 headers.
+  version errors, and `.npz` archives whose members use v2.0/v3.0 headers;
+- 156 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`,
+  including release-metadata checks for the documented selection APIs and NPY
+  version support.
 
 ## 0.11.0 — 2026-11-21
 
