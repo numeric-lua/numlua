@@ -170,6 +170,7 @@ local files = {
   "test_linalg_facade.lua",
   "test_dtype.lua",
   "test_npy.lua",
+  "test_npy_versions.lua",
   "test_npy_fixtures.lua",
   "test_generated_fixtures.lua",
   "test_txt.lua",
