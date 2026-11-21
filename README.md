@@ -80,6 +80,16 @@ numlua.put(edited, { 9 }, -1, "wrap")     -- wraps index 9 to index 3
 print(edited:format())
 ```
 
+Per-slice selection follows `np.take_along_axis`; combining it with `argsort`
+sorts along one axis without a separate sort function:
+
+```lua
+local matrix = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
+print(numlua.take_along_axis(matrix, numlua.argsort(matrix, 2), 2):format())
+-- tensor([[10, 20, 30],
+--         [40, 50, 60]])
+```
+
 ## Requirements
 
 - LuaJIT 2.1 (the primary and tested target).
@@ -158,7 +168,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize` |
 | Combine | `concatenate`, `stack` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take`, `put` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take`, `take_along_axis`, `put` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
 | Reductions | `sum`, `mean`, `max`, `min`, `argmax`, `argmin` |
 | Predicates/selection | `where`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
@@ -169,8 +179,8 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `pad`,
-`tile`, `repeat_`, `flip`, `roll`, `diff`, `cumsum`, `cumprod`, `argsort`, and
-`take` allocate independent storage; see
+`tile`, `repeat_`, `flip`, `roll`, `diff`, `cumsum`, `cumprod`, `argsort`,
+`take`, and `take_along_axis` allocate independent storage; see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
 `put` is the exception: it writes into its input tensor in place and returns
 it. `pad` supports `constant`, `edge`, `reflect`, and `symmetric` modes.
@@ -217,12 +227,14 @@ Archives that would overflow any of these limits raise a `numlua.savez:` or
 silently truncating ZIP fields. ZIP64 writing is not supported; split very
 large arrays across multiple archives. An empty `arrays` table produces a valid
 empty archive, and keys already ending in `.npy` are stored without a second
-suffix (as in NumPy).
+suffix (as in NumPy). Members may use any NPY header version the reader
+supports (v1.0, v2.0, or v3.0), including archives produced by NumPy.
 
 ## `.npy` I/O
 
 `numlua.save(path, tensor)` writes a NumPy v1.0 `.npy` file in C order.
-`numlua.load(path)` returns a luatorch tensor.
+`numlua.load(path)` returns a luatorch tensor and accepts NPY v1.0, v2.0, and
+v3.0 headers; the writer always emits v1.0.
 
 Supported dtypes:
 
@@ -240,8 +252,9 @@ Supported dtypes:
 
 The reader supports 1-D, 2-D, and N-D arrays (and 0-D scalars) and rejects
 big-endian files, `fortran_order=True`, unsupported `descr` values, NPY versions
-other than 1.0, and truncated data with clear Lua errors. Native-endian `=`
-descr values (`=f4`, `=i8`, ...) are accepted as aliases for the `<` spellings
+other than 1.0, 2.0, and 3.0, and truncated data with clear Lua errors.
+Native-endian `=` descr values (`=f4`, `=i8`, ...) are accepted as aliases for
+the `<` spellings
 on little-endian hosts, matching NumPy's dtype parser. Non-contiguous tensors
 are written in C order. Files are always written little-endian; only
 little-endian hosts are supported. luatorch cannot construct `float16` tensors
@@ -315,10 +328,11 @@ elementwise ufuncs, reductions, predicates and conditional selection, linear
 algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
 1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
 round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
-corruption paths, ZIP32 writer limits, native-endian `.npy` headers, empty and
-pre-suffixed `.npz` members, layout view/copy semantics, broadcast/take/put
-edge shapes, deflate expansion guardrails, release metadata, and error paths.
-It currently contains 147 tests.
+corruption paths, ZIP32 writer limits, native-endian `.npy` headers, NPY v2.0
+and v3.0 headers and `.npz` members, empty and pre-suffixed `.npz` members,
+layout view/copy semantics, broadcast/take/take_along_axis/put edge shapes,
+deflate expansion guardrails, release metadata, and error paths.
+It currently contains 151 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -336,7 +350,7 @@ rather than treating the recorded numbers as constants.
 numlua/
   numlua/init.lua     -- public facade
   numlua/ufunc.lua    -- elementwise ufunc facade over luatorch/ATen
-  numlua/npy.lua      -- .npy v1.0 reader/writer
+  numlua/npy.lua      -- .npy v1-v3 reader, v1.0 writer
   numlua/text.lua     -- whitespace/CSV text reader/writer
   docs/api.md         -- API reference
   examples/basic.lua  -- runnable example
@@ -368,10 +382,11 @@ This is an MVP, not a complete NumPy replacement:
   for those operations;
 - `squeeze` delegates to luatorch; squeezing an axis whose size is not 1 leaves
   that axis unchanged rather than raising NumPy's error;
-- `.npy` support is limited to v1.0, C order, little-endian hosts, and the
-  dtypes above; `load` reads the complete file into memory before copying it
-  into a tensor. Native-endian `=` descr values are accepted only as aliases
-  for the little-endian `<` spellings;
+- `.npy` reading supports v1.0, v2.0, and v3.0 headers; writing always emits
+  v1.0. Files must be C order on little-endian hosts and use the dtypes above;
+  `load` reads the complete file into memory before copying it into a tensor.
+  Native-endian `=` descr values are accepted only as aliases for the
+  little-endian `<` spellings;
 - `.npz` writing is stored by default and deflate through `savez_compressed`;
   reading supports stored and deflate entries. Deflate needs a system zlib
   library loaded through FFI, while stored archives remain dependency-free.

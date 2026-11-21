@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `numlua.take_along_axis(t, indices[, axis])`, the `np.take_along_axis`
+  companion to `take`. Indices are 1-based integer tensors with the same rank
+  as the input; non-axis size-1 dimensions broadcast in either operand; the
+  selection length along the axis comes from the indices; and `axis=nil`
+  flattens both operands. Out-of-range indices, including `0` and negative
+  values, raise a `numlua.take_along_axis:` error, and the result owns
+  independent storage;
+- `numlua.load` accepts NPY v2.0 and v3.0 headers (the 4-byte header-length
+  field, plus v3.0's UTF-8 header encoding) in addition to v1.0. `numlua.save`
+  keeps writing v1.0, and `.npz` members may use any of the three versions;
+- documentation for `take_along_axis`, the v1.0/v2.0/v3.0 reader support, and
+  the view/copy boundary of per-slice selection.
+
+### Tests
+
+- tests for `take_along_axis` across 0-D, 1-D, 2-D, and 3-D inputs, index
+  broadcasting, negative and omitted axes, every integer index dtype, empty
+  selections, non-contiguous inputs, and its error paths;
+- v2.0/v3.0 `.npy` round-trips, crafted v2.0 headers, truncated and unsupported
+  version errors, and `.npz` archives whose members use v2.0/v3.0 headers.
+
 ## 0.11.0 — 2026-11-21
 
 ### Added

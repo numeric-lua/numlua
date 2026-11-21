@@ -495,6 +495,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted |
+| `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
 | `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
 | `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
 
@@ -506,6 +507,24 @@ index tensor (`int64`, `int32`, `int16`, `int8`, or `uint8`); non-integer
 indices, out-of-range indices, and selecting with non-empty indices from an
 empty tensor or empty axis are errors. With no axis, 0-D and non-contiguous
 inputs are flattened in C order before selection. All selections are 1-based.
+
+`numlua.take_along_axis(t, indices[, axis])` is the per-slice companion to
+`take`, matching `np.take_along_axis`. `indices` must be an integer tensor with
+the same rank as `t` and the usual integer index dtypes (`int64`, `int32`,
+`int16`, `int8`, or `uint8`). `axis` selects the axis to index; when it is
+omitted or `nil`, both operands are flattened in C order and `indices` must be
+1-D. Non-axis dimensions may match or be 1 in either operand, following
+NumPy's broadcasting rule, and the length along `axis` comes from `indices`; it
+need not equal the input's length. Indices are 1-based, so `0` and negative
+values are out of range and raise a `numlua.take_along_axis:` error rather than
+NumPy's negative-index wrapping. The result has the broadcast shape and owns
+independent storage.
+
+```lua
+local a = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
+numlua.take_along_axis(a, numlua.argsort(a, 2), 2)
+-- {{10, 20, 30}, {40, 50, 60}}
+```
 
 `numlua.put(t, indices, values[, mode])` is the assignment counterpart to
 `take`. It writes into the flattened elements selected by 1-based `indices`,
@@ -552,12 +571,13 @@ other: `transpose`, `swapaxes`, `moveaxis`, `atleast_1d`, `atleast_2d`,
 contiguous `reshape`, and contiguous `ravel`.
 
 These allocate independent storage: `resize`, `pad`, `tile`, `repeat_`, `flip`,
-`roll`, `diff`, `cumsum`, `cumprod`, `argsort`, and `take`. `reshape` and
-`ravel` also copy when their input is not contiguous, because ATen must
-materialize a C-order layout first. Tests cover the view/copy boundary,
-including large arrays, so a regression cannot silently turn a view into a
-full-size copy or make an allocating helper alias its input. `take` allocates
-an independent result; `put` instead mutates its input in place and returns it.
+`roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `take`, and
+`take_along_axis`. `reshape` and `ravel` also copy when their input is not
+contiguous, because ATen must materialize a C-order layout first. Tests cover
+the view/copy boundary, including large arrays, so a regression cannot silently
+turn a view into a full-size copy or make an allocating helper alias its input.
+`take` and `take_along_axis` allocate independent results; `put` instead
+mutates its input in place and returns it.
 
 ## Dtype
 
@@ -591,6 +611,7 @@ it is not full NumPy type-promotion parity.
 
 Writes a NumPy v1.0 `.npy` file in C order and returns `true`. The tensor is
 detached and made contiguous before writing; autograd metadata is not stored.
+The writer always emits v1.0; files are not upgraded to v2.0/v3.0.
 
 Supported dtypes:
 
@@ -613,8 +634,10 @@ cast with `:to("float16")` first.
 
 ### `numlua.load(path)`
 
-Reads an `.npy` v1.0 file and returns a luatorch tensor. Supports 1-D, 2-D, N-D,
-and 0-D arrays with the dtypes above.
+Reads a NumPy `.npy` v1.0, v2.0, or v3.0 file and returns a luatorch tensor.
+v2.0/v3.0 differ from v1.0 only in the 4-byte header-length field (and v3.0's
+UTF-8 header encoding), which `load` parses directly; `save` still writes
+v1.0. Supports 1-D, 2-D, N-D, and 0-D arrays with the dtypes above.
 
 Native-endian `descr` values (`=f2`, `=f4`, `=f8`, `=i2`, `=i4`, `=i8`, and
 their byte-sized spellings) select the host byte order in NumPy. On the
@@ -626,7 +649,8 @@ Rejected with explicit errors:
 - big-endian `descr` values (`>...`);
 - `fortran_order=True`;
 - unsupported `descr` values;
-- NPY versions other than 1.0;
+- NPY versions other than 1.0, 2.0, and 3.0 (including non-zero minor
+  versions);
 - malformed headers, missing trailing newline, bad magic;
 - data whose byte length does not match `shape * itemsize`;
 - non-file paths or unreadable files.
@@ -675,7 +699,9 @@ for testing.
 ### `numlua.loadz(path)`
 
 Reads an `.npz` archive and returns a table whose keys are member names with
-the `.npy` suffix removed. Supported ZIP compression methods are:
+the `.npy` suffix removed. Members are ordinary `.npy` files, so v1.0, v2.0,
+and v3.0 member headers are all accepted. Supported ZIP compression methods
+are:
 
 | method | written by | availability |
 | --- | --- | --- |
@@ -800,9 +826,12 @@ dtype, or backend constraints are forwarded as-is.
   directly.
 - Broadcasting is not reimplemented; it is whatever luatorch/ATen does for the
   delegated operation.
-- `.npy` is limited to v1.0, C order, little-endian hosts, and the dtypes
-  listed above. Native-endian `=` descr values are only aliases for the
-  little-endian `<` spellings.
+- `.npy` reading supports v1.0, v2.0, and v3.0 headers; writing always emits
+  v1.0. Files must be C order on little-endian hosts and use the dtypes listed
+  above. Native-endian `=` descr values are only aliases for the little-endian
+  `<` spellings.
+- `take_along_axis` uses 1-based indices and rejects negative index values;
+  NumPy's version resolves them relative to the end of the axis.
 - Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
   or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
   squeezed to 1-D. `bool` is not supported by either text function.
