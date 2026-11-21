@@ -10,8 +10,9 @@
   broadcasting;
 - generated `.npy`/`.npz` fixture corpus covering 3-D/2-D shapes, all supported
   dtypes (including `float16`, `int8`, `int16`, `int32`, and `uint8`), empty
-  and 0-D arrays, stored and deflate ZIP members, non-contiguous tensors, and
-  big-endian rejection;
+  and 0-D arrays, stored and deflate ZIP members, and big-endian rejection;
+  non-contiguous write behavior is covered separately by the `.npy`/`.npz`
+  round-trip tests, since a NumPy file payload is C-order by construction;
 - optional deflate-compressed `.npz` reading through a system zlib loaded via
   LuaJIT FFI; stored ZIP reading/writing remains dependency-free and deflate
   fails with a clear error when zlib is unavailable;
