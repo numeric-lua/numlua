@@ -1,5 +1,4 @@
-# numlua 0.6.0
+# numlua 0.7.0
 
-- flatnonzero with 1-based flat indices;
-- take coverage for flat/axis selection;
-- 118 tests.
+- vector quantile/percentile probability tables;
+- 119 tests.

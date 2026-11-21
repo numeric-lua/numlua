@@ -24,7 +24,7 @@ local npz = require("numlua.npz")
 
 local numlua = {}
 
-numlua.VERSION = "0.6.0"
+numlua.VERSION = "0.7.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
@@ -317,32 +317,18 @@ function numlua.median(t, axis, keepdims)
   return value
 end
 
-function numlua.quantile(t, q, axis, keepdims)
-  check_tensor(t, "quantile")
-  check_axis(axis, "quantile")
-  check_keepdims(keepdims, "quantile")
-  if type(q) ~= "number" or q ~= q or q < 0 or q > 1 then
-    error("numlua.quantile: q must be a number in [0, 1]", 2)
-  end
-  if axis == nil then
-    local sorted = t:reshape(-1):sort()
-    local n = sorted:numel()
-    if n == 0 then error("numlua.quantile: empty input", 2) end
-    local position = q * (n - 1) + 1
-    local lower = math.floor(position)
-    local upper = math.min(n, lower + 1)
-    local fraction = position - lower
-    local a = sorted:get(lower)
-    local b = sorted:get(upper)
-    return a + (b - a) * fraction
-  end
-  local sorted = t:sort(axis)
-  local n = sorted:size(axis)
+local function quantile_scalar(sorted, q, axis, keepdims)
+  local n = axis == nil and sorted:numel() or sorted:size(axis)
   if n == 0 then error("numlua.quantile: empty input", 2) end
   local position = q * (n - 1) + 1
   local lower = math.floor(position)
   local upper = math.min(n, lower + 1)
   local fraction = position - lower
+  if axis == nil then
+    local a = sorted:get(lower)
+    local b = sorted:get(upper)
+    return a + (b - a) * fraction
+  end
   local a = sorted:narrow(axis, lower, 1)
   local b = sorted:narrow(axis, upper, 1)
   local value = a:mul(1 - fraction):add(b:mul(fraction))
@@ -350,6 +336,38 @@ function numlua.quantile(t, q, axis, keepdims)
   return value
 end
 
+function numlua.quantile(t, q, axis, keepdims)
+  check_tensor(t, "quantile")
+  check_axis(axis, "quantile")
+  check_keepdims(keepdims, "quantile")
+  if type(q) == "number" then
+    if q ~= q or q < 0 or q > 1 then
+      error("numlua.quantile: q must be in [0, 1]", 2)
+    end
+    local sorted = axis == nil and t:reshape(-1):sort() or t:sort(axis)
+    return quantile_scalar(sorted, q, axis, keepdims)
+  end
+  if type(q) ~= "table" or #q == 0 then
+    error("numlua.quantile: q must be a number or non-empty table", 2)
+  end
+  for _, value in ipairs(q) do
+    if type(value) ~= "number" or value ~= value or value < 0 or value > 1 then
+      error("numlua.quantile: every q entry must be in [0, 1]", 2)
+    end
+  end
+  local sorted = axis == nil and t:reshape(-1):sort() or t:sort(axis)
+  if axis == nil then
+    local values = {}
+    for i, value in ipairs(q) do values[i] = quantile_scalar(sorted, value) end
+    local dtype = t:is_floating_point() and t:dtype() or "float64"
+    return torch.tensor(values, { dtype = dtype })
+  end
+  local parts = {}
+  for i, value in ipairs(q) do
+    parts[i] = quantile_scalar(sorted, value, axis, keepdims)
+  end
+  return torch.stack(parts, 1)
+end
 function numlua.flatnonzero(t)
   check_tensor(t, "flatnonzero")
   local coords = t:reshape(-1):nonzero()
@@ -358,6 +376,16 @@ function numlua.flatnonzero(t)
 end
 
 function numlua.percentile(t, q, axis, keepdims)
+  if type(q) == "table" then
+    local scaled = {}
+    for i, value in ipairs(q) do
+      if type(value) ~= "number" or value < 0 or value > 100 then
+        error("numlua.percentile: q entries must be in [0, 100]", 2)
+      end
+      scaled[i] = value / 100
+    end
+    return numlua.quantile(t, scaled, axis, keepdims)
+  end
   if type(q) ~= "number" or q < 0 or q > 100 then
     error("numlua.percentile: q must be in [0, 100]", 2)
   end

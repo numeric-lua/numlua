@@ -232,14 +232,16 @@ supported by the underlying luatorch median path).
 
 ### `numlua.quantile(t, q[, axis[, keepdims]])`
 
-Returns the `q`-quantile using linear interpolation between order statistics;
-`q` must be in `[0, 1]`. With no axis the input is flattened and a Lua number
+Returns the `q`-quantile using linear interpolation between order statistics.
+`q` may be a number in `[0, 1]` or a non-empty table of probabilities; a table
+returns a tensor with the quantile axis first. With no axis the input is flattened and a Lua number
 is returned. With an axis the reduced axis is removed unless `keepdims` is
 true.
 
 ### `numlua.percentile(t, q[, axis[, keepdims]])`
 
-Percent-scaled alias for `numlua.quantile`; `q` is in `[0, 100]`.
+Percent-scaled alias for `numlua.quantile`; `q` is in `[0, 100]` and may also
+be a table of percentages.
 
 ### `numlua.compress(condition, t[, axis])`
 

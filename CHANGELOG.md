@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-11-21
+
+### Added
+
+- vector `q` tables for `numlua.quantile` and `numlua.percentile`;
+- tests for flat and axis-aligned vector quantiles;
+- 119 tests.
+
 ## 0.6.0 — 2026-11-21
 
 ### Added
