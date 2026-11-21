@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.3.0"
+print(numlua.VERSION) -- "0.4.0"
 ```
 
 ## Conventions
@@ -223,6 +223,19 @@ discards them.
 Returns an `int64` tensor of 1-based indices. If `axis` is omitted, the result
 is the flat C-order index of the maximum (a 0-D tensor). With `axis`, the
 reduced axis is removed unless `keepdims` is true.
+
+### `numlua.median(t[, axis[, keepdims]])`
+
+Returns the median. With no axis this is a Lua number; with an axis it returns
+a tensor with the reduced axis removed unless `keepdims` is true (when
+supported by the underlying luatorch median path).
+
+### `numlua.quantile(t, q[, axis[, keepdims]])`
+
+Returns the `q`-quantile using linear interpolation between order statistics;
+`q` must be in `[0, 1]`. With no axis the input is flattened and a Lua number
+is returned. With an axis the reduced axis is removed unless `keepdims` is
+true.
 
 ### `numlua.argmin(t[, axis[, keepdims]])`
 

@@ -24,7 +24,7 @@ local npz = require("numlua.npz")
 
 local numlua = {}
 
-numlua.VERSION = "0.3.0"
+numlua.VERSION = "0.4.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
@@ -309,6 +309,47 @@ end
 
 -- argmax and argmin return 1-based flat indices when axis is nil, matching
 -- luatorch.  Both delegate the reduction kernel to luatorch.
+function numlua.median(t, axis, keepdims)
+  check_tensor(t, "median")
+  check_axis(axis, "median")
+  check_keepdims(keepdims, "median")
+  local value = t:median(axis, keepdims)
+  return value
+end
+
+function numlua.quantile(t, q, axis, keepdims)
+  check_tensor(t, "quantile")
+  check_axis(axis, "quantile")
+  check_keepdims(keepdims, "quantile")
+  if type(q) ~= "number" or q ~= q or q < 0 or q > 1 then
+    error("numlua.quantile: q must be a number in [0, 1]", 2)
+  end
+  if axis == nil then
+    local sorted = t:reshape(-1):sort()
+    local n = sorted:numel()
+    if n == 0 then error("numlua.quantile: empty input", 2) end
+    local position = q * (n - 1) + 1
+    local lower = math.floor(position)
+    local upper = math.min(n, lower + 1)
+    local fraction = position - lower
+    local a = sorted:get(lower)
+    local b = sorted:get(upper)
+    return a + (b - a) * fraction
+  end
+  local sorted = t:sort(axis)
+  local n = sorted:size(axis)
+  if n == 0 then error("numlua.quantile: empty input", 2) end
+  local position = q * (n - 1) + 1
+  local lower = math.floor(position)
+  local upper = math.min(n, lower + 1)
+  local fraction = position - lower
+  local a = sorted:narrow(axis, lower, 1)
+  local b = sorted:narrow(axis, upper, 1)
+  local value = a:mul(1 - fraction):add(b:mul(fraction))
+  if not keepdims then value = value:squeeze(axis) end
+  return value
+end
+
 function numlua.argmax(t, axis, keepdims)
   check_tensor(t, "argmax")
   check_axis(axis, "argmax")

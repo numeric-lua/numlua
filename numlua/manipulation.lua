@@ -287,6 +287,10 @@ M["repeat"] = function(t, repeats, axis_value)
   if type(repeats) ~= "table" then
     error("numlua.repeat: repeats must be a number or integer table", 2)
   end
+  if axis_value == nil then
+    t = t:reshape(-1)
+    axis_value = 1
+  end
   local dim = axis(axis_value, t:dim(), "repeat")
   if #repeats ~= t:size(dim) then
     error("numlua.repeat: repeats must have one entry per element on the axis", 2)

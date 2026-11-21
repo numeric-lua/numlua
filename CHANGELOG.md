@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — 2026-11-21
+
+### Added
+
+- `numlua.median(t[, axis[, keepdims]])`;
+- `numlua.quantile(t, q[, axis[, keepdims]])` with linear interpolation;
+- tests for flat/axis medians and quantiles.
+
+### Fixed
+
+- `numlua.repeat` with a repeats table and no axis now flattens the input first,
+  matching NumPy.
+
 ## 0.3.0 — 2026-11-21
 
 ### Added
