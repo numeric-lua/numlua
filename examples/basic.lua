@@ -82,6 +82,12 @@ print("any positive = " .. tostring(numlua.any(values:gt(0)):item()))
 print("all above -3 = " .. tostring(numlua.all(values:gt(-3)):item()))
 print("isnan mask:\n" .. numlua.isnan(values):format())
 
+local edited = numlua.arange(6)
+numlua.put(edited, { 1, 6 }, { 10, 60 })
+numlua.put(edited, { 9 }, -1, "wrap")
+print("after put:\n" .. edited:format())
+assert(edited:get(1) == 10 and edited:get(3) == -1 and edited:get(6) == 60)
+
 heading("Elementwise ufuncs")
 local roots = numlua.sqrt(numlua.array({ 1.0, 4.0, 9.0 }))
 print("square roots:\n" .. roots:format())

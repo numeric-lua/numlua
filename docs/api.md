@@ -495,6 +495,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted |
+| `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
 | `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
 
 `broadcast_to` and `broadcast_arrays` follow NumPy's right-aligned rules,
@@ -505,6 +506,37 @@ index tensor (`int64`, `int32`, `int16`, `int8`, or `uint8`); non-integer
 indices, out-of-range indices, and selecting with non-empty indices from an
 empty tensor or empty axis are errors. With no axis, 0-D and non-contiguous
 inputs are flattened in C order before selection. All selections are 1-based.
+
+`numlua.put(t, indices, values[, mode])` is the assignment counterpart to
+`take`. It writes into the flattened elements selected by 1-based `indices`,
+mutates `t` in place, and returns `t`; clone first if a copy is wanted.
+Indices may be an integer tensor (`int64`, `int32`, `int16`, `int8`, or
+`uint8`), a number, or a nested Lua table of integers. Values may be a tensor,
+number, boolean, or nested Lua table; they are flattened in C order and reused
+cyclically when there are fewer values than indices, matching `np.put`.
+Duplicate indices are applied in order, so the last write wins.
+
+`mode` controls indices outside `1 .. t:numel()`:
+
+| mode | behavior |
+| --- | --- |
+| `"raise"` (default) | error naming the offending index |
+| `"wrap"` | wrap cyclically, so `0` selects the last element and `numel + 1` selects the first |
+| `"clip"` | clamp to the first or last element |
+
+Because the facade is 1-based, `0` and negative indices are out of range in
+`"raise"` mode. Values are cast to the target dtype: booleans become `1`/`0`
+for numeric targets, numeric values truth-test for a `bool` target, and
+fractional values truncate toward zero for integer targets. Putting into an
+empty tensor with non-empty indices, or using empty values with non-empty
+indices, raises a `numlua.put:` error.
+
+```lua
+local t = numlua.arange(6)                      -- {0, 1, 2, 3, 4, 5}
+numlua.put(t, { 1, 6 }, { 10, 60 })            -- {10, 1, 2, 3, 4, 60}
+numlua.put(t, { 8 }, -1, "wrap")               -- writes index 2
+numlua.put(t, { 99 }, 0, "clip")               -- writes index 6
+```
 
 `pad_width` follows NumPy's common forms: a number pads every axis equally, a
 `{before, after}` pair pads every axis with that pair, and a table of per-axis
@@ -524,7 +556,8 @@ These allocate independent storage: `resize`, `pad`, `tile`, `repeat_`, `flip`,
 `ravel` also copy when their input is not contiguous, because ATen must
 materialize a C-order layout first. Tests cover the view/copy boundary,
 including large arrays, so a regression cannot silently turn a view into a
-full-size copy or make an allocating helper alias its input.
+full-size copy or make an allocating helper alias its input. `take` allocates
+an independent result; `put` instead mutates its input in place and returns it.
 
 ## Dtype
 
@@ -656,12 +689,18 @@ emits raw DEFLATE streams, so the result is an ordinary ZIP archive readable by
 NumPy and other tools. Stored archives work when zlib is absent; encountering a
 deflate entry then raises a
 `numlua.loadz: deflate-compressed entry ... requires a system zlib library`
-error. `NUMLUA_DISABLE_ZLIB=1` forces the no-zlib path for testing.
+error. `NUMLUA_DISABLE_ZLIB=1` forces the no-zlib path for testing, and the
+zlib-unavailable error names that variable when it is the cause.
 
 The reader validates member CRCs against the uncompressed payload, checks
 local and central-directory headers and sizes before copying, and reports
 corrupt central directories, CRC mismatches, truncation, encryption, multi-disk
 archives, ZIP64 archives, and unsupported compression methods as Lua errors.
+Before allocating a deflate output buffer, it also rejects a declared
+uncompressed size beyond DEFLATE's 1032:1 expansion bound (plus a small framing
+allowance), so a tiny corrupt archive cannot force a multi-gigabyte
+allocation; a wrong size that is still plausible reaches zlib and fails with
+the real size mismatch instead.
 
 ## Text and CSV I/O
 

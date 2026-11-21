@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.11.0 — 2026-11-21
+
+### Added
+
+- `numlua.put(t, indices, values[, mode])`, a `np.put`-shaped flat assignment
+  helper. It writes into the flattened tensor, mutates and returns `t`, accepts
+  integer tensors or Lua tables for indices and values, reuses values
+  cyclically, applies duplicate indices in order (last write wins), and
+  supports `"raise"` (default), `"wrap"`, and `"clip"` modes under the facade's
+  1-based index convention. Values are cast to the target dtype, including
+  bool targets and truncation toward zero for integer targets;
+- tests for `put` on 0-D, 3-D, non-contiguous, bool, and integer targets,
+  including extreme wrap/clip indices and all integer index dtypes.
+
+### Fixed
+
+- `.npz` deflate reads now reject a declared uncompressed size beyond
+  DEFLATE's 1032:1 expansion bound before allocating the output buffer, so a
+  tiny corrupt archive cannot request a multi-gigabyte allocation. A wrong size
+  that is still plausible reaches zlib and reports the real size mismatch, and
+  a legitimate high-ratio member still round-trips;
+- zlib-unavailable errors now name `NUMLUA_DISABLE_ZLIB` when that environment
+  switch, rather than a missing library, disabled compression.
+
+### Tests
+
+- 147 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`,
+  including the new `put` selection cases, the deflate expansion guard, and a
+  release-metadata check that keeps `VERSION`, the rockspec, CHANGELOG,
+  packaged modules, and the documented API in sync.
+
 ## 0.10.0 — 2026-11-21
 
 ### Added

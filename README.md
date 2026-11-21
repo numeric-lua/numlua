@@ -70,6 +70,16 @@ print(numlua.where(values:gt(0), values, 0):format())
 print(numlua.count_nonzero(values):item(), numlua.any(values:gt(0)):item())
 ```
 
+Flat selection writes use the same 1-based indices; `numlua.put` mutates and
+returns the input tensor:
+
+```lua
+local edited = numlua.arange(6)
+numlua.put(edited, { 1, 6 }, { 10, 60 })  -- {10, 1, 2, 3, 4, 60}
+numlua.put(edited, { 9 }, -1, "wrap")     -- wraps index 9 to index 3
+print(edited:format())
+```
+
 ## Requirements
 
 - LuaJIT 2.1 (the primary and tested target).
@@ -148,7 +158,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize` |
 | Combine | `concatenate`, `stack` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take`, `put` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
 | Reductions | `sum`, `mean`, `max`, `min`, `argmax`, `argmin` |
 | Predicates/selection | `where`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
@@ -162,7 +172,8 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 `tile`, `repeat_`, `flip`, `roll`, `diff`, `cumsum`, `cumprod`, `argsort`, and
 `take` allocate independent storage; see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
-`pad` supports `constant`, `edge`, `reflect`, and `symmetric` modes.
+`put` is the exception: it writes into its input tensor in place and returns
+it. `pad` supports `constant`, `edge`, `reflect`, and `symmetric` modes.
 
 `numlua` arrays are ordinary luatorch tensors, so luaplotlib can plot them
 directly through its tensor adapter. See `examples/plot.lua`.
@@ -192,8 +203,12 @@ tools. If zlib is absent, `savez_compressed` fails before creating a file (or
 falls back to stored when requested), and a deflate entry encountered by
 `loadz` fails with an error naming the entry and explaining that zlib is
 required. Encrypted, multi-disk, ZIP64, and other compression methods are
-rejected explicitly. Stored archives continue to work without zlib.
-Set `NUMLUA_DISABLE_ZLIB=1` to exercise the no-zlib path in tests.
+rejected explicitly. A declared deflate output size beyond DEFLATE's 1032:1
+expansion bound is rejected before allocating a buffer, so a tiny corrupt
+archive cannot request a multi-gigabyte allocation. Stored archives continue to
+work without zlib.
+Set `NUMLUA_DISABLE_ZLIB=1` to exercise the no-zlib path in tests; the
+zlib-unavailable error names that variable when it is the cause.
 
 Writing is limited to ZIP32 fields: at most 65535 members, member names of at
 most 65535 bytes, 32-bit member sizes, and a 32-bit central-directory offset.
@@ -301,8 +316,9 @@ algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
 1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
 round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
 corruption paths, ZIP32 writer limits, native-endian `.npy` headers, empty and
-pre-suffixed `.npz` members, layout view/copy semantics, broadcast/take edge
-shapes, and error paths. It currently contains 135 tests.
+pre-suffixed `.npz` members, layout view/copy semantics, broadcast/take/put
+edge shapes, deflate expansion guardrails, release metadata, and error paths.
+It currently contains 147 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
