@@ -24,7 +24,7 @@ local npz = require("numlua.npz")
 
 local numlua = {}
 
-numlua.VERSION = "0.2.0"
+numlua.VERSION = "0.3.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers

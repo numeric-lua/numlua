@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-21
 
 ### Added
 
@@ -8,6 +8,8 @@
   `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`,
   `minimum`, `power`, and `square`, with scalar/tensor operands and ATen
   broadcasting;
+- `argmin(t[, axis[, keepdims]])`, the minimum counterpart of `argmax`, with
+  the same 1-based flat/axis indices and `keepdims` handling;
 - generated `.npy`/`.npz` fixture corpus covering 3-D/2-D shapes, all supported
   dtypes (including `float16`, `int8`, `int16`, `int32`, and `uint8`), empty
   and 0-D arrays, stored and deflate ZIP members, and big-endian rejection;
@@ -19,6 +21,8 @@
 - ZIP integrity validation for corrupt central directories, local/central CRC
   mismatches, truncated archives, encrypted/multi-disk/ZIP64 archives, and
   unsupported compression methods;
+- `linalg.matrix_norm` accepts `ord=-2` (the smallest singular value), rounding
+  out NumPy's supported matrix-norm orders alongside `2` and `"nuc"`;
 - `bench/bench.lua` and `scripts/bench.sh` for construction, reduction,
   broadcasting, layout, and `.npy` I/O comparisons against direct ATen/raw
   Lua baselines;
@@ -34,8 +38,9 @@
 
 ### Tests
 
-- 108 tests, passing with system zlib available and with
-  `NUMLUA_DISABLE_ZLIB=1`.
+- 112 tests, passing with system zlib available and with
+  `NUMLUA_DISABLE_ZLIB=1`; the `.npz` suite now covers encrypted, multi-disk,
+  ZIP64, and inconsistent local-header rejection.
 
 ## 0.2.0 — 2026-11-19
 
