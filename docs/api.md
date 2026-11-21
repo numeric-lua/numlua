@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.5.0"
+print(numlua.VERSION) -- "0.6.0"
 ```
 
 ## Conventions
@@ -483,6 +483,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted |
+| `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
 
 `pad_width` follows NumPy's common forms: a number pads every axis equally, a
 `{before, after}` pair pads every axis with that pair, and a table of per-axis

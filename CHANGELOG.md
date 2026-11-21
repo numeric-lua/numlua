@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 — 2026-11-21
+
+### Added
+
+- `numlua.flatnonzero(t)` returning 1-based flat indices;
+- take coverage for flattened and axis-aligned selection;
+- 118 tests.
+
 ## 0.5.0 — 2026-11-21
 
 ### Added

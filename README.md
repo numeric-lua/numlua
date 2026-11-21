@@ -11,7 +11,7 @@ a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.5.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.6.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`, and text I/O.  It is packaged on LuaRocks and tested against
 > luatorch 0.8.x.
@@ -284,7 +284,7 @@ algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
 1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
 round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
 corruption paths, layout view/copy semantics, and error paths. It currently
-contains 116 tests.
+contains 118 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -343,7 +343,7 @@ This is an MVP, not a complete NumPy replacement:
 - text I/O is intentionally simple: it does not store shape/dtype metadata,
   quote strings, or parse headers, and it rejects `bool` rather than guessing a
   textual boolean spelling;
-- LuaRocks packaging is provided by `numlua-0.5.0-1.rockspec`; the native
+- LuaRocks packaging is provided by `numlua-0.6.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License

@@ -1,5 +1,5 @@
-# numlua 0.5.0
+# numlua 0.6.0
 
-- `numlua.percentile` alias;
-- `numlua.compress` boolean-mask selection;
-- 116 tests.
+- flatnonzero with 1-based flat indices;
+- take coverage for flat/axis selection;
+- 118 tests.

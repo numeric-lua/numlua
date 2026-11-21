@@ -24,7 +24,7 @@ local npz = require("numlua.npz")
 
 local numlua = {}
 
-numlua.VERSION = "0.5.0"
+numlua.VERSION = "0.6.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
@@ -348,6 +348,13 @@ function numlua.quantile(t, q, axis, keepdims)
   local value = a:mul(1 - fraction):add(b:mul(fraction))
   if not keepdims then value = value:squeeze(axis) end
   return value
+end
+
+function numlua.flatnonzero(t)
+  check_tensor(t, "flatnonzero")
+  local coords = t:reshape(-1):nonzero()
+  if coords:numel() == 0 then return coords:reshape(-1) end
+  return coords:narrow(2, 1, 1):squeeze(2)
 end
 
 function numlua.percentile(t, q, axis, keepdims)
