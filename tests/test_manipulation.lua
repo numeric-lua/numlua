@@ -232,6 +232,67 @@ test("take validates index tensors and axes", function()
   end
 end)
 
+test("take accepts scalar and N-D index tensors", function()
+  local t = numlua.array({ { 10, 20, 30 }, { 40, 50, 60 } })
+
+  -- A 0-D index behaves like NumPy's scalar index: the selected axis (or the
+  -- flattened input) disappears from the result shape.
+  local flat_scalar = numlua.take(t, numlua.array(2, { dtype = "int64" }))
+  assert_eq(flat_scalar:dim(), 0)
+  assert_eq(flat_scalar:item(), 20)
+  local axis_scalar = numlua.take(t, numlua.array(1, { dtype = "int32" }), 2)
+  assert_shape(axis_scalar, { 2 })
+  assert_tensor(axis_scalar, { 10, 40 })
+
+  -- An N-D index tensor contributes its own shape in place of the axis.
+  local picked = numlua.take(t,
+    numlua.array({ { 3, 1 }, { 1, 3 } }, { dtype = "int64" }), 2)
+  assert_shape(picked, { 2, 2, 2 })
+  assert_tensor(picked, {
+    { { 30, 10 }, { 10, 30 } },
+    { { 60, 40 }, { 40, 60 } },
+  })
+  local flat_picked = numlua.take(t,
+    numlua.array({ { 5, 1 }, { 6, 2 } }, { dtype = "uint8" }))
+  assert_shape(flat_picked, { 2, 2 })
+  assert_tensor(flat_picked, { { 50, 10 }, { 60, 20 } })
+
+  -- Empty N-D indices keep their leading dimensions.
+  local empty_indices = numlua.zeros(0, 2):to("int64")
+  assert_shape(numlua.take(t, empty_indices), { 0, 2 })
+  assert_shape(numlua.take(t, empty_indices, 2), { 2, 0, 2 })
+
+  -- 0-D inputs still flatten correctly with scalar and N-D indices.
+  local scalar = numlua.array(7)
+  assert_eq(numlua.take(scalar,
+    numlua.array(1, { dtype = "int64" })):dim(), 0)
+  assert_shape(numlua.take(scalar,
+    numlua.array({ { 1, 1 } }, { dtype = "int64" })), { 1, 2 })
+end)
+
+test("take reports 1-based index range errors explicitly", function()
+  local t = numlua.array({ { 10, 20, 30 }, { 40, 50, 60 } })
+  local function indices(...)
+    return numlua.array(...)
+  end
+
+  assert_error(function()
+    numlua.take(t, indices(0, { dtype = "int64" }))
+  end, "index 0 is out of range for the flattened input with size 6")
+  assert_error(function()
+    numlua.take(t, indices(7, { dtype = "int64" }))
+  end, "index 7 is out of range for the flattened input with size 6")
+  assert_error(function()
+    numlua.take(t, indices(-1, { dtype = "int64" }))
+  end, "index -1 is out of range for the flattened input with size 6")
+  assert_error(function()
+    numlua.take(t, indices({ { 1, 4 } }, { dtype = "int32" }), 2)
+  end, "index 4 is out of range for axis 2 with size 3")
+  assert_true(tostring(select(2, pcall(numlua.take, t,
+    indices(0, { dtype = "int64" })))):find("indices are 1-based", 1, true)
+    ~= nil)
+end)
+
 test("take_along_axis selects one value per position along an axis", function()
   local t = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
   local order = numlua.argsort(t, 2)
@@ -483,3 +544,39 @@ test("put wrap and clip accept extreme indices", function()
   numlua.put(t, { -100, 100 }, { 10, 30 }, "clip")
   assert_tensor(t, { 10, 1, 30 })
 end)
+
+test("put accepts 0-D and empty N-D index tensors", function()
+  local t = numlua.arange(6)
+  numlua.put(t, numlua.array(2, { dtype = "int64" }), 20)
+  assert_eq(t:get(2), 20)
+
+  numlua.put(t, numlua.array({ { 4, 6 } }, { dtype = "int32" }),
+    { 40, 60 })
+  assert_eq(t:get(4), 40)
+  assert_eq(t:get(6), 60)
+
+  -- Empty index tensors of any rank are a no-op, with empty values.
+  local empty_indices = numlua.zeros(0, 2):to("int64")
+  assert_true(numlua.put(t, empty_indices, {}) == t)
+  assert_true(numlua.put(t, empty_indices, numlua.zeros(0)) == t)
+  assert_tensor(t, { 0, 20, 2, 40, 4, 60 })
+end)
+
+test("put rejects non-finite indices in every mode", function()
+  local t = numlua.arange(6)
+  for _, mode in ipairs({ "raise", "wrap", "clip" }) do
+    assert_error(function() numlua.put(t, { math.huge }, 9, mode) end,
+      "finite integers")
+    assert_error(function() numlua.put(t, { -math.huge }, 9, mode) end,
+      "finite integers")
+    assert_error(function() numlua.put(t, { 0 / 0 }, 9, mode) end,
+      "finite integers")
+    assert_error(function() numlua.put(t, math.huge, 9, mode) end,
+      "finite integers")
+    assert_error(function() numlua.put(t, -math.huge, 9, mode) end,
+      "finite integers")
+  end
+  -- Rejected indices must not partially mutate the tensor.
+  assert_tensor(t, { 0, 1, 2, 3, 4, 5 })
+end)
+

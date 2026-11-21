@@ -541,28 +541,73 @@ local TAKE_INDEX_DTYPES = {
   uint8 = true,
 }
 
-function M.take(t, indices, axis_value)
-  tensor(t, "take")
+local function check_take_indices(indices)
   if not torch.is_tensor(indices) then
-    error("numlua.take: indices must be an integer Tensor", 2)
+    error("numlua.take: indices must be an integer Tensor", 3)
   end
   local dtype = indices:dtype()
   if not TAKE_INDEX_DTYPES[dtype] then
-    error("numlua.take: indices must be an integer Tensor, got " .. dtype, 2)
+    error("numlua.take: indices must be an integer Tensor, got " .. dtype, 3)
   end
+end
+
+-- Validate 1-based index values before index_select so errors name the
+-- facade's convention and the offending index instead of ATen's 0-based
+-- message.
+local function check_take_range(indices, size, label)
+  if indices:numel() == 0 then return end
+  local lowest = indices:min():item()
+  local highest = indices:max():item()
+  if lowest < 1 or highest > size then
+    local offending = lowest < 1 and lowest or highest
+    error(string.format(
+      "numlua.take: index %d is out of range for %s with size %d " ..
+      "(indices are 1-based)", offending, label, size), 3)
+  end
+end
+
+-- NumPy's take() shape rule: indices replace the selected axis (or the whole
+-- flattened input when no axis is given), and an integer index removes it.
+local function take_shape(input_shape, index_shape, dim)
+  local target = {}
+  if dim ~= nil then
+    for index = 1, dim - 1 do
+      target[#target + 1] = input_shape[index]
+    end
+  end
+  for index = 1, #index_shape do
+    target[#target + 1] = index_shape[index]
+  end
+  if dim ~= nil then
+    for index = dim + 1, #input_shape do
+      target[#target + 1] = input_shape[index]
+    end
+  end
+  return target
+end
+
+function M.take(t, indices, axis_value)
+  tensor(t, "take")
+  check_take_indices(indices)
+  local index_shape = indices:sizes()
+  local flat_indices = indices:reshape({ indices:numel() })
   if axis_value == nil then
     if t:numel() == 0 and indices:numel() > 0 then
       error("numlua.take: cannot take from an empty tensor " ..
         "with non-empty indices", 2)
     end
-    return t:reshape({ t:numel() }):index_select(1, indices)
+    check_take_range(flat_indices, t:numel(), "the flattened input")
+    local selected = t:reshape({ t:numel() }):index_select(1, flat_indices)
+    return selected:reshape(take_shape(t:sizes(), index_shape, nil))
   end
   local normalized = axis(axis_value, t:dim(), "take")
   if t:size(normalized) == 0 and indices:numel() > 0 then
     error("numlua.take: cannot take from empty axis " .. normalized ..
       " with non-empty indices", 2)
   end
-  return t:index_select(normalized, indices)
+  check_take_range(flat_indices, t:size(normalized), "axis " .. normalized)
+  local selected = t:index_select(normalized, flat_indices)
+  return selected:reshape(take_shape(t:sizes(), index_shape, normalized))
 end
 
 -- take_along_axis follows NumPy's shape rule: indices and input have the same
@@ -665,7 +710,15 @@ local function flatten_put_indices(value)
       for index = 1, #item do visit(item[index]) end
       return
     end
-    if type(item) ~= "number" or item % 1 ~= 0 then
+    if type(item) ~= "number" then
+      error("numlua.put: indices must be integers", 0)
+    end
+    -- NaN and infinities have no meaningful wrap/clip result; reject them
+    -- explicitly instead of letting a NaN target reach Tensor:set.
+    if item ~= item or item == math.huge or item == -math.huge then
+      error("numlua.put: indices must be finite integers", 0)
+    end
+    if item % 1 ~= 0 then
       error("numlua.put: indices must be integers", 0)
     end
     result[#result + 1] = item
@@ -700,6 +753,9 @@ local function put_indices(value)
     return value:reshape({ value:numel() }):totable()
   end
   if type(value) == "number" then
+    if value ~= value or value == math.huge or value == -math.huge then
+      error("numlua.put: indices must be finite integers", 2)
+    end
     if value % 1 ~= 0 then
       error("numlua.put: indices must be integers", 2)
     end
