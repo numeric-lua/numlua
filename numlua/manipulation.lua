@@ -565,6 +565,166 @@ function M.take(t, indices, axis_value)
   return t:index_select(normalized, indices)
 end
 
+local PUT_MODES = {
+  raise = true,
+  wrap = true,
+  clip = true,
+}
+
+-- Flatten a nested Lua table of put indices, accepting only integers.  The
+-- facade is 1-based, so a value of 0 is never valid; each mode decides what
+-- to do with indices outside 1 .. numel(t).
+local function flatten_put_indices(value)
+  local result = {}
+  local function visit(item)
+    if type(item) == "table" then
+      for index = 1, #item do visit(item[index]) end
+      return
+    end
+    if type(item) ~= "number" or item % 1 ~= 0 then
+      error("numlua.put: indices must be integers", 0)
+    end
+    result[#result + 1] = item
+  end
+  visit(value)
+  return result
+end
+
+local function flatten_put_values(value)
+  local result = {}
+  local function visit(item)
+    if type(item) == "table" then
+      for index = 1, #item do visit(item[index]) end
+      return
+    end
+    if type(item) ~= "number" and type(item) ~= "boolean" then
+      error("numlua.put: values must be numbers or booleans", 0)
+    end
+    result[#result + 1] = item
+  end
+  visit(value)
+  return result
+end
+
+local function put_indices(value)
+  if torch.is_tensor(value) then
+    local dtype = value:dtype()
+    if not TAKE_INDEX_DTYPES[dtype] then
+      error("numlua.put: indices must be an integer Tensor, got " .. dtype, 2)
+    end
+    if value:numel() == 0 then return {} end
+    return value:reshape({ value:numel() }):totable()
+  end
+  if type(value) == "number" then
+    if value % 1 ~= 0 then
+      error("numlua.put: indices must be integers", 2)
+    end
+    return { value }
+  end
+  if type(value) == "table" then
+    return flatten_put_indices(value)
+  end
+  error("numlua.put: indices must be an integer Tensor, number, or table", 2)
+end
+
+local function put_values(value)
+  if torch.is_tensor(value) then
+    if value:numel() == 0 then return {} end
+    return value:reshape({ value:numel() }):totable()
+  end
+  if type(value) == "number" or type(value) == "boolean" then
+    return { value }
+  end
+  if type(value) == "table" then
+    return flatten_put_values(value)
+  end
+  error("numlua.put: values must be a Tensor, number, boolean, or table", 2)
+end
+
+-- Convert Lua values to what Tensor:set expects for the target dtype.
+-- Integer targets follow a C-style cast (truncation toward zero) instead of
+-- luatorch's floor, and booleans become 1/0 there.  A bool target truth-tests
+-- numeric values, matching NumPy's cast to bool.
+local function cast_put_values(values, dtype)
+  local boolean_target = dtype == "bool"
+  local integral_target = not boolean_target and not dtype:match("float")
+  local result = {}
+  for index = 1, #values do
+    local value = values[index]
+    if boolean_target then
+      if type(value) == "boolean" then
+        result[index] = value
+      else
+        result[index] = value ~= 0
+      end
+    elseif type(value) == "boolean" then
+      result[index] = value and 1 or 0
+    elseif integral_target and type(value) == "number" and value % 1 ~= 0 then
+      result[index] = value >= 0 and math.floor(value) or math.ceil(value)
+    else
+      result[index] = value
+    end
+  end
+  return result
+end
+
+-- np.put-shaped flat assignment.  numlua is 1-based, so the valid range is
+-- 1 .. numel(t) and negative indices are out of range (wrap/clip handle them
+-- with those 1-based bounds).  The input tensor is modified and returned, as
+-- in NumPy; clone first when a copy is wanted.
+function M.put(t, indices, values, mode)
+  tensor(t, "put")
+  mode = mode or "raise"
+  if not PUT_MODES[mode] then
+    error(string.format(
+      "numlua.put: mode must be 'raise', 'wrap', or 'clip', got %s",
+      tostring(mode)), 2)
+  end
+  local targets = put_indices(indices)
+  local replacements = cast_put_values(put_values(values), t:dtype())
+  local count = t:numel()
+
+  if #targets == 0 then return t end
+  if count == 0 then
+    error("numlua.put: cannot put into an empty tensor " ..
+      "with non-empty indices", 2)
+  end
+  if #replacements == 0 then
+    error("numlua.put: values must not be empty when indices are " ..
+      "non-empty", 2)
+  end
+
+  local flat = t:reshape({ count })
+  for position = 1, #targets do
+    local raw = targets[position]
+    local target
+    if mode == "raise" then
+      if raw < 1 or raw > count then
+        error(string.format(
+          "numlua.put: index %d is out of range for a tensor with %d " ..
+          "elements", raw, count), 2)
+      end
+      target = raw
+    elseif mode == "wrap" then
+      target = ((raw - 1) % count) + 1
+    elseif raw < 1 then
+      target = 1
+    elseif raw > count then
+      target = count
+    else
+      target = raw
+    end
+    flat:set(target, replacements[((position - 1) % #replacements) + 1])
+  end
+
+  -- A contiguous reshape above is a view, so the writes already landed in t.
+  -- For non-contiguous inputs reshape materializes a copy; copy it back.
+  if not t:is_contiguous() then
+    t:copy_(flat:reshape(t:sizes()))
+  end
+  return t
+end
+
 M.repeat_ = M["repeat"]
 
 return M

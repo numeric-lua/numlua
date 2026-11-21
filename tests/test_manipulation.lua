@@ -236,3 +236,102 @@ test("flatnonzero returns 1-based flat indices", function()
   local t = numlua.array({ 0, 5, 0, 7 })
   assert_tensor(numlua.flatnonzero(t), { 2, 4 })
 end)
+
+test("put writes flat positions with cycling values", function()
+  local t = numlua.arange(6)
+  local returned = numlua.put(t, { 1, 3, 5 }, { 10, 30 })
+  assert_true(returned == t)
+  assert_tensor(t, { 10, 1, 30, 3, 10, 5 })
+
+  -- Duplicate indices apply in order, so the last write wins.
+  numlua.put(t, { 2, 2, 2 }, { 7, 8, 9 })
+  assert_eq(t:get(2), 9)
+
+  -- Tensor indices and values behave like flat Lua tables.
+  local u = numlua.zeros(4)
+  numlua.put(u, numlua.array({ 2, 4 }, { dtype = "int32" }),
+    numlua.array({ 5, 6 }))
+  assert_tensor(u, { 0, 5, 0, 6 })
+
+  -- Every integer dtype accepted by take is accepted here too.
+  for _, dtype in ipairs({ "int64", "int32", "int16", "int8", "uint8" }) do
+    local v = numlua.zeros(2)
+    numlua.put(v, numlua.array({ 1 }, { dtype = dtype }), 3)
+    assert_tensor(v, { 3, 0 })
+  end
+end)
+
+test("put modes raise, wrap, and clip out-of-range indices", function()
+  local t = numlua.arange(5)
+  assert_error(function() numlua.put(t, { 6 }, { 9 }) end, "out of range")
+  assert_error(function() numlua.put(t, { 0 }, { 9 }) end, "out of range")
+  assert_error(function() numlua.put(t, { -1 }, { 9 }) end, "out of range")
+
+  -- 1-based wrap: 6 -> 1, 0 -> 5, -1 -> 4.
+  numlua.put(t, { 6, 0, -1 }, { 60, 0, -1 }, "wrap")
+  assert_eq(t:get(1), 60)
+  assert_eq(t:get(5), 0)
+  assert_eq(t:get(4), -1)
+
+  local clipped = numlua.arange(5)
+  numlua.put(clipped, { 0, 6, -3 }, { 10, 20, 30 }, "clip")
+  assert_eq(clipped:get(1), 30) -- -3 clips to 1, and the last write wins
+  assert_eq(clipped:get(5), 20)
+
+  assert_error(function() numlua.put(t, { 1 }, { 9 }, "reflect") end,
+    "mode must")
+end)
+
+test("put handles 0-D, non-contiguous, bool, and integer targets", function()
+  local scalar = numlua.array(1.5)
+  numlua.put(scalar, 1, 2.5)
+  assert_eq(scalar:item(), 2.5)
+
+  local base = numlua.arange(6):reshape(2, 3)
+  local view = numlua.transpose(base)
+  assert_false(view:is_contiguous())
+  numlua.put(view, { 2, 5 }, { 20, 50 })
+  assert_tensor(view, { { 0, 20 }, { 1, 4 }, { 50, 5 } })
+  assert_tensor(base, { { 0, 1, 50 }, { 20, 4, 5 } })
+
+  local mask = numlua.array({ false, false, false })
+  numlua.put(mask, { 1, 2 }, { 0, 2 })
+  assert_tensor(mask, { false, true, false })
+  numlua.put(mask, { 3 }, 1)
+  assert_tensor(mask, { false, true, true })
+
+  -- Integer targets truncate fractional values toward zero.
+  local ints = numlua.array({ 1, 2 }, { dtype = "int64" })
+  numlua.put(ints, { 1, 2 }, { -2.9, 2.9 })
+  assert_tensor(ints, { -2, 2 })
+
+  -- A bool target truth-tests integer values from an integer tensor.
+  local flags = numlua.array({ 0, 1 }, { dtype = "int64" })
+  numlua.put(mask, { 1, 3 }, flags)
+  assert_tensor(mask, { false, true, true })
+end)
+
+test("put validates indices, values, modes, and empty inputs", function()
+  local t = numlua.zeros(3)
+  assert_error(function() numlua.put(t, { 1.5 }, { 1 }) end, "integers")
+  assert_error(function() numlua.put(t, numlua.array({ 1.5 }), { 1 }) end,
+    "integer Tensor")
+  assert_error(function() numlua.put(t, numlua.array({ true }), { 1 }) end,
+    "integer Tensor")
+  assert_error(function() numlua.put(t, "1", { 1 }) end, "integer Tensor")
+  assert_error(function() numlua.put(t, { 1 }, "x") end, "values must be")
+  assert_error(function() numlua.put(t, { 1 }, {}) end, "must not be empty")
+  assert_error(function() numlua.put(numlua.zeros(0), { 1 }, { 1 }) end,
+    "empty tensor")
+  assert_error(function() numlua.put(t, { 1 }, { 1 }, "bad") end, "mode must")
+
+  -- Empty selections are a no-op, including empty index tensors.
+  assert_true(numlua.put(t, {}, {}) == t)
+  assert_true(numlua.put(t, numlua.array({}, { dtype = "int64" }), {}) == t)
+  assert_tensor(t, { 0, 0, 0 })
+
+  -- Empty targets still reject non-empty indices in every mode.
+  assert_error(function()
+    numlua.put(numlua.zeros(0), { 1 }, { 1 }, "wrap")
+  end, "empty tensor")
+end)
