@@ -124,6 +124,16 @@ local function zlib_disabled_by_environment()
   return value == "1" or value == "true" or value == "yes"
 end
 
+-- Built once per error path so callers get an actionable diagnostic when the
+-- environment switch, rather than a missing library, is why zlib is absent.
+local function zlib_unavailable_reason()
+  if zlib_disabled_by_environment() then
+    return "a system zlib library; loading is disabled by " ..
+      "NUMLUA_DISABLE_ZLIB"
+  end
+  return "a system zlib library; none could be loaded through LuaJIT FFI"
+end
+
 local function load_zlib()
   if zlib_state ~= nil then
     return zlib_state or nil
@@ -183,12 +193,26 @@ local function zlib_error(code, stream)
   return message
 end
 
+-- zlib's documented maximum DEFLATE expansion ratio is 1032:1.  The allowance
+-- covers stream framing, so every size a valid writer can produce is accepted
+-- while an implausible central-directory size is rejected before allocating
+-- the output buffer.  Without this check a tiny corrupt archive could ask for
+-- a multi-gigabyte allocation.
+local MAX_DEFLATE_RATIO = 1032
+local INFLATE_ALLOWANCE = 1024
+
 -- Inflate a raw DEFLATE stream (as stored inside a ZIP method-8 entry) into a
 -- string of exactly `expected` bytes.  Returns nil plus a diagnostic on error.
 local function inflate_raw(compressed, expected)
   local zlib = load_zlib()
   if zlib == nil then
     return nil, "zlib unavailable"
+  end
+  if expected > #compressed * MAX_DEFLATE_RATIO + INFLATE_ALLOWANCE then
+    return nil, string.format(
+      "declared uncompressed size %d is implausible for %d compressed " ..
+      "bytes (deflate expands at most %d:1)", expected, #compressed,
+      MAX_DEFLATE_RATIO)
   end
 
   local stream = ffi.new("numlua_z_stream")
@@ -307,8 +331,8 @@ local function write_archive(path, arrays, function_name, compressed, fallback)
   if compressed and not deflate_ready then
     if fallback ~= "stored" then
       error("numlua." .. function_name .. ": deflate compression requires " ..
-        "a system zlib library; none could be loaded through LuaJIT FFI " ..
-        "(pass { fallback = 'stored' } to write uncompressed entries)", 2)
+        zlib_unavailable_reason() ..
+        " (pass { fallback = 'stored' } to write uncompressed entries)", 2)
     end
     fallback_used = true
   end
@@ -603,8 +627,7 @@ function M.loadz(path)
     end
     if method == 8 and load_zlib() == nil then
       error("numlua.loadz: deflate-compressed entry '" .. name ..
-        "' requires a system zlib library; none could be loaded through " ..
-        "LuaJIT FFI", 2)
+        "' requires " .. zlib_unavailable_reason(), 2)
     end
 
     local payload = member_bytes(data, name, central_offset + 1, method,

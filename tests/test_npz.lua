@@ -35,6 +35,11 @@ local function u16_at(data, offset)
   return low + high * 256
 end
 
+local function u32_at(data, offset)
+  local a, b, c, d = data:byte(offset, offset + 3)
+  return a + b * 256 + c * 65536 + d * 16777216
+end
+
 local function patch(data, offset, replacement)
   return data:sub(1, offset - 1) .. replacement ..
     data:sub(offset + #replacement)
@@ -207,6 +212,58 @@ test("savez_compressed errors or falls back without zlib", function()
   local loaded = numlua.loadz(file)
   assert_tensor(loaded.x, { 0, 1, 2 })
   os.remove(file)
+end)
+
+test("loadz rejects implausible deflate expansion before allocating",
+    function()
+  if not npz.zlib_available() then return end
+  local file = path("inflate-ratio")
+  assert_true(numlua.savez_compressed(file, {
+    x = numlua.array({ 1, 2, 3 }),
+  }))
+  local bytes = read_bytes(file)
+  local local_header = assert(bytes:find("PK\003\004", 1, true))
+  local central = assert(bytes:find("PK\001\002", 1, true))
+  local actual = u32_at(bytes, local_header + 22)
+  assert_true(actual > 0)
+
+  -- A declared size far past deflate's 1032:1 bound is rejected without
+  -- allocating the declared buffer.
+  local implausible = 64 * 1024 * 1024
+  local broken = patch(bytes, local_header + 22, u32(implausible))
+  broken = patch(broken, central + 24, u32(implausible))
+  local broken_file = path("inflate-ratio-broken")
+  write_bytes(broken_file, broken)
+  assert_error(function() numlua.loadz(broken_file) end, "implausible")
+
+  -- A merely wrong size inside the plausible bound reaches zlib and fails
+  -- with the size check rather than the guard, so valid sizes are not
+  -- rejected just because the archive is corrupt.
+  local off_by_one = patch(bytes, local_header + 22, u32(actual + 1))
+  off_by_one = patch(off_by_one, central + 24, u32(actual + 1))
+  local off_file = path("inflate-ratio-off-by-one")
+  write_bytes(off_file, off_by_one)
+  assert_error(function() numlua.loadz(off_file) end,
+    "inflated size mismatch")
+
+  os.remove(file)
+  os.remove(broken_file)
+  os.remove(off_file)
+end)
+
+test("zlib-disabled errors name the environment switch", function()
+  if npz.zlib_available() then return end
+  local value = os.getenv("NUMLUA_DISABLE_ZLIB")
+  if value ~= "1" and value ~= "true" and value ~= "yes" then return end
+
+  local file = path("disabled-diagnostic")
+  assert_error(function()
+    numlua.savez_compressed(file, { x = numlua.arange(3) })
+  end, "NUMLUA_DISABLE_ZLIB")
+
+  local files = corpus()
+  assert_error(function() numlua.loadz(files.npz_deflate) end,
+    "NUMLUA_DISABLE_ZLIB")
 end)
 
 test("savez_compressed validates options and arrays", function()
