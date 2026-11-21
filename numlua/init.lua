@@ -677,6 +677,7 @@ end
 numlua.save = npy.save
 numlua.load = npy.load
 numlua.savez = npz.savez
+numlua.savez_compressed = npz.savez_compressed
 numlua.loadz = npz.loadz
 
 -- ---------------------------------------------------------------------------

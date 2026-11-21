@@ -30,6 +30,11 @@ local function u32(value)
     math.floor(value / 65536) % 256, math.floor(value / 16777216) % 256)
 end
 
+local function u16_at(data, offset)
+  local low, high = data:byte(offset, offset + 1)
+  return low + high * 256
+end
+
 local function patch(data, offset, replacement)
   return data:sub(1, offset - 1) .. replacement ..
     data:sub(offset + #replacement)
@@ -93,6 +98,108 @@ test("savez/loadz preserve C order for non-contiguous tensors", function()
   assert_true(loaded.view:is_contiguous())
   assert_true(loaded.view:equal(source:contiguous()))
   os.remove(file)
+end)
+
+test("savez_compressed writes method-8 entries and round-trips arrays",
+    function()
+  if not npz.zlib_available() then
+    assert_error(function()
+      numlua.savez_compressed(path("compressed-unavailable"), {
+        values = numlua.array({ 1, 2, 3 }),
+      })
+    end, "requires a system zlib")
+    return
+  end
+
+  local file = path("compressed")
+  local view = numlua.transpose(numlua.reshape(
+    numlua.arange(24, { dtype = "int32" }), { 2, 3, 4 }), { 3, 1, 2 })
+  local arrays = {
+    values = numlua.array({ { 1.5, 2.5 }, { 3.5, 4.5 } }),
+    big = numlua.zeros(32, 32),
+    empty = numlua.zeros(0),
+    scalar = numlua.array(1.25),
+    mask = numlua.array({ true, false, true }),
+    view = view,
+  }
+  assert_true(numlua.savez_compressed(file, arrays))
+
+  local bytes = read_bytes(file)
+  local local_header = assert(bytes:find("PK\003\004", 1, true))
+  assert_eq(u16_at(bytes, local_header + 8), 8)
+
+  local stored_file = path("compressed-compare")
+  assert_true(numlua.savez(stored_file, arrays))
+  assert_true(#bytes < #read_bytes(stored_file))
+
+  local loaded = numlua.loadz(file)
+  assert_shape(loaded.values, { 2, 2 })
+  assert_tensor(loaded.values, { { 1.5, 2.5 }, { 3.5, 4.5 } })
+  assert_shape(loaded.big, { 32, 32 })
+  assert_eq(loaded.big:sum():item(), 0)
+  assert_shape(loaded.empty, { 0 })
+  assert_eq(loaded.empty:numel(), 0)
+  assert_eq(loaded.scalar:dim(), 0)
+  assert_eq(loaded.scalar:item(), 1.25)
+  assert_dtype(loaded.mask, "bool")
+  assert_tensor(loaded.mask, { true, false, true })
+  assert_dtype(loaded.view, "int32")
+  assert_shape(loaded.view, { 4, 2, 3 })
+  assert_true(loaded.view:equal(arrays.view))
+  os.remove(file)
+  os.remove(stored_file)
+end)
+
+test("savez_compressed errors or falls back without zlib", function()
+  local file = path("compressed-fallback")
+  if npz.zlib_available() then
+    -- The fallback option is harmless when zlib is present: entries stay
+    -- compressed and no fallback signal is returned.
+    local ok, method = numlua.savez_compressed(file, {
+      x = numlua.arange(3),
+    }, { fallback = "stored" })
+    assert_true(ok)
+    assert_eq(method, nil)
+    local bytes = read_bytes(file)
+    local header = assert(bytes:find("PK\003\004", 1, true))
+    assert_eq(u16_at(bytes, header + 8), 8)
+    os.remove(file)
+    return
+  end
+
+  assert_error(function()
+    numlua.savez_compressed(file, { x = numlua.arange(3) })
+  end, "requires a system zlib")
+  assert_true(io.open(file, "rb") == nil)
+
+  local ok, method = numlua.savez_compressed(file, {
+    x = numlua.arange(3),
+  }, { fallback = "stored" })
+  assert_true(ok)
+  assert_eq(method, "stored")
+  local bytes = read_bytes(file)
+  local header = assert(bytes:find("PK\003\004", 1, true))
+  assert_eq(u16_at(bytes, header + 8), 0)
+  local loaded = numlua.loadz(file)
+  assert_tensor(loaded.x, { 0, 1, 2 })
+  os.remove(file)
+end)
+
+test("savez_compressed validates options and arrays", function()
+  local file = path("compressed-invalid")
+  assert_error(function()
+    numlua.savez_compressed(file, { x = numlua.zeros(2) }, true)
+  end, "options table")
+  assert_error(function()
+    numlua.savez_compressed(file, { x = numlua.zeros(2) },
+      { fallback = "deflate" })
+  end, "fallback must be 'stored'")
+  assert_error(function()
+    numlua.savez_compressed(file, { x = 1 })
+  end, "is not a Tensor")
+  assert_error(function()
+    numlua.savez_compressed("", { x = numlua.zeros(2) })
+  end, "non-empty path")
 end)
 
 test("loadz reads generated deflate entries or fails clearly without zlib",

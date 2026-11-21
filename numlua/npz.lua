@@ -1,11 +1,12 @@
 --
 -- Minimal .npz archive support.
 --
--- Reads and writes ZIP archives using the STORED method (no compression),
--- which is what NumPy's np.savez() uses.  Deflate-compressed entries (method
--- 8, as written by np.savez_compressed) are read when a system zlib library
--- can be loaded through LuaJIT FFI.  Stored archives remain dependency-free;
--- a deflate entry fails with a clear error when zlib is unavailable.
+-- Reads ZIP archives with STORED (method 0) and deflate (method 8) entries.
+-- Writing uses STORED by default, matching NumPy's np.savez(); savez_compressed
+-- writes deflate entries when a system zlib library can be loaded through
+-- LuaJIT FFI.  Stored archives remain dependency-free; requesting deflate
+-- compression without zlib fails with a clear error unless the caller asks to
+-- fall back to stored entries.
 --
 local bit = require("bit")
 local ffi = require("ffi")
@@ -98,6 +99,11 @@ int inflateInit2_(numlua_z_stream *strm, int windowBits,
   const char *version, int stream_size);
 int inflate(numlua_z_stream *strm, int flush);
 int inflateEnd(numlua_z_stream *strm);
+int deflateInit2_(numlua_z_stream *strm, int level, int method,
+  int windowBits, int memLevel, int strategy, const char *version,
+  int stream_size);
+int deflate(numlua_z_stream *strm, int flush);
+int deflateEnd(numlua_z_stream *strm);
 const char *zlibVersion(void);
 ]]
 
@@ -210,8 +216,49 @@ local function inflate_raw(compressed, expected)
   return ffi.string(out, expected)
 end
 
+-- Compress a string into a raw DEFLATE stream (as stored inside a ZIP
+-- method-8 entry).  Returns nil plus a diagnostic on error.
+local function deflate_raw(payload)
+  local zlib = load_zlib()
+  if zlib == nil then
+    return nil, "zlib unavailable"
+  end
+
+  local stream = ffi.new("numlua_z_stream")
+  -- zlib's documented worst-case bound for the default strategy, plus
+  -- headroom for raw-deflate framing.
+  local out_size = #payload + math.floor(#payload / 4096) +
+    math.floor(#payload / 16384) + math.floor(#payload / 33554432) + 64
+  local out = ffi.new("unsigned char[?]", out_size)
+  stream.next_in = ffi.cast("const unsigned char *", payload)
+  stream.avail_in = #payload
+  stream.next_out = out
+  stream.avail_out = out_size
+
+  -- Negative windowBits select a raw DEFLATE stream with no zlib wrapper,
+  -- which is what ZIP method 8 stores.  Level -1 and memLevel 8 are zlib's
+  -- defaults.
+  local code = zlib.deflateInit2_(stream, -1, 8, -15, 8, 0,
+    zlib.zlibVersion(), ffi.sizeof(stream))
+  if code ~= 0 then
+    return nil, zlib_error(code, stream)
+  end
+
+  code = zlib.deflate(stream, 4) -- Z_FINISH
+  if code ~= 1 then -- Z_STREAM_END
+    local message = zlib_error(code, stream)
+    zlib.deflateEnd(stream)
+    return nil, message
+  end
+  local end_code = zlib.deflateEnd(stream)
+  if end_code ~= 0 then
+    return nil, zlib_error(end_code, nil)
+  end
+  return ffi.string(out, tonumber(stream.total_out))
+end
+
 -- ---------------------------------------------------------------------------
--- archive writing (always stored, no zlib dependency)
+-- archive writing (stored by default; deflate through optional zlib)
 -- ---------------------------------------------------------------------------
 
 local function check_archive(path, tensor, name)
@@ -231,8 +278,31 @@ local function check_archive(path, tensor, name)
   end
 end
 
-function M.savez(path, arrays)
-  check_archive(path, arrays, "savez")
+local function compressed_fallback(options)
+  if options == nil then return nil end
+  if type(options) ~= "table" then
+    error("numlua.savez_compressed expects an options table", 2)
+  end
+  local fallback = options.fallback
+  if fallback ~= nil and fallback ~= "stored" then
+    error("numlua.savez_compressed: fallback must be 'stored'", 2)
+  end
+  return fallback
+end
+
+local function write_archive(path, arrays, function_name, compressed, fallback)
+  check_archive(path, arrays, function_name)
+  local deflate_ready = compressed and load_zlib() ~= nil
+  local fallback_used = false
+  if compressed and not deflate_ready then
+    if fallback ~= "stored" then
+      error("numlua." .. function_name .. ": deflate compression requires " ..
+        "a system zlib library; none could be loaded through LuaJIT FFI " ..
+        "(pass { fallback = 'stored' } to write uncompressed entries)", 2)
+    end
+    fallback_used = true
+  end
+
   local names = {}
   for name in pairs(arrays) do names[#names + 1] = name end
   table.sort(names)
@@ -247,16 +317,25 @@ function M.savez(path, arrays)
     handle:close()
     os.remove(temp)
     local crc = crc32(payload)
-    local local_header = "PK\003\004" .. u16(20) .. u16(0) .. u16(0) ..
-      u16(0) .. u16(0) .. u32(crc) .. u32(#payload) .. u32(#payload) ..
+    local method, stored = 0, payload
+    if compressed and deflate_ready then
+      local deflated, deflate_error = deflate_raw(payload)
+      if deflated == nil then
+        error("numlua." .. function_name .. ": cannot deflate entry '" ..
+          name .. "': " .. tostring(deflate_error), 2)
+      end
+      method, stored = 8, deflated
+    end
+    local local_header = "PK\003\004" .. u16(20) .. u16(0) .. u16(method) ..
+      u16(0) .. u16(0) .. u32(crc) .. u32(#stored) .. u32(#payload) ..
       u16(#file_name) .. u16(0) .. file_name
     local_parts[#local_parts + 1] = local_header
-    local_parts[#local_parts + 1] = payload
+    local_parts[#local_parts + 1] = stored
     central_parts[#central_parts + 1] = "PK\001\002" .. u16(20) ..
-      u16(20) .. u16(0) .. u16(0) .. u16(0) .. u16(0) .. u32(crc) ..
-      u32(#payload) .. u32(#payload) .. u16(#file_name) .. u16(0) ..
+      u16(20) .. u16(0) .. u16(method) .. u16(0) .. u16(0) .. u32(crc) ..
+      u32(#stored) .. u32(#payload) .. u16(#file_name) .. u16(0) ..
       u16(0) .. u16(0) .. u16(0) .. u32(0) .. u32(offset) .. file_name
-    offset = offset + #local_header + #payload
+    offset = offset + #local_header + #stored
   end
   local central = table.concat(central_parts)
   local body = table.concat(local_parts) .. central
@@ -264,17 +343,30 @@ function M.savez(path, arrays)
     u16(#names) .. u32(#central) .. u32(#body - #central) .. u16(0)
   local handle, open_error = io.open(path, "wb")
   if handle == nil then
-    error("numlua.savez: cannot open '" .. path .. "': " .. tostring(open_error), 2)
+    error("numlua." .. function_name .. ": cannot open '" .. path .. "': " ..
+      tostring(open_error), 2)
   end
   local ok, write_error = handle:write(body, eocd)
   local close_ok, close_error = handle:close()
   if ok == nil then
-    error("numlua.savez: write failed: " .. tostring(write_error), 2)
+    error("numlua." .. function_name .. ": write failed: " ..
+      tostring(write_error), 2)
   end
   if not close_ok then
-    error("numlua.savez: close failed: " .. tostring(close_error), 2)
+    error("numlua." .. function_name .. ": close failed: " ..
+      tostring(close_error), 2)
   end
+  if fallback_used then return true, "stored" end
   return true
+end
+
+function M.savez(path, arrays)
+  return write_archive(path, arrays, "savez", false)
+end
+
+function M.savez_compressed(path, arrays, options)
+  local fallback = compressed_fallback(options)
+  return write_archive(path, arrays, "savez_compressed", true, fallback)
 end
 
 -- ---------------------------------------------------------------------------
