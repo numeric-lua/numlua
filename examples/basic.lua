@@ -110,6 +110,12 @@ assert(numlua.dtype(restored) == numlua.dtype(product))
 print("restored " .. tostring(restored:nbytes()) .. " payload bytes from " .. path)
 os.remove(path)
 
+local v3_path = root .. "/examples/.basic-demo-v3.npy"
+assert(numlua.save(v3_path, product, { version = 3 }))
+assert(numlua.load(v3_path):equal(product))
+print("restored the same tensor from a v3.0 header")
+os.remove(v3_path)
+
 heading("Text/CSV round-trip")
 local text_path = root .. "/examples/.basic-demo.csv"
 assert(numlua.savetxt(text_path, product, { delimiter = "," }))

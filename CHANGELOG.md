@@ -29,7 +29,7 @@
 
 ### Tests
 
-- 168 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`,
+- 169 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`,
   covering the new writer versions, scalar/N-D `take` shapes, explicit
   selection range errors, finite-index `put` validation, and release metadata.
 

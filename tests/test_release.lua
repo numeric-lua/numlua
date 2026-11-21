@@ -52,7 +52,7 @@ test("rockspec packages every numlua module", function()
   end
 end)
 
-test("new public selection API is documented", function()
+test("new public API and format support are documented", function()
   local api = read_file(root .. "/docs/api.md")
   for _, symbol in ipairs({ "numlua.put", "numlua.take_along_axis" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
@@ -63,6 +63,14 @@ test("new public selection API is documented", function()
   assert_true(api:find("v2.0", 1, true) ~= nil and
       api:find("v3.0", 1, true) ~= nil,
     "docs/api.md does not document NPY v2.0/v3.0 reading")
+  assert_true(api:find("numlua.save(path, tensor[, options])", 1, true) ~= nil,
+    "docs/api.md does not document the save version option")
+  assert_true(api:find("version = 2", 1, true) ~= nil,
+    "docs/api.md does not document writing NPY v2.0")
+  assert_true(api:find("0-D index removes", 1, true) ~= nil,
+    "docs/api.md does not document scalar take indices")
+  assert_true(api:find("finite integers", 1, true) ~= nil,
+    "docs/api.md does not document finite put indices")
   assert_true(api:find('-- "' .. numlua.VERSION .. '"', 1, true) ~= nil,
     "docs/api.md version example does not match numlua.VERSION")
 
@@ -71,4 +79,16 @@ test("new public selection API is documented", function()
     "README.md status does not match numlua.VERSION")
   assert_true(readme:find("numlua-" .. numlua.VERSION .. "-1.rockspec",
     1, true) ~= nil, "README.md does not name the current rockspec")
+  assert_true(readme:find("version = 3", 1, true) ~= nil,
+    "README.md has no NPY v3.0 writing example")
+end)
+
+test("CI smoke job names the current rockspec and version", function()
+  local workflow = read_file(root .. "/.github/workflows/ci.yml")
+  assert_true(workflow:find("numlua-" .. numlua.VERSION .. "-1.rockspec",
+    1, true) ~= nil,
+    "CI smoke job does not name the current rockspec")
+  assert_true(workflow:find('assert(n.VERSION=="' .. numlua.VERSION .. '")',
+    1, true) ~= nil,
+    "CI smoke job does not assert the current numlua.VERSION")
 end)
