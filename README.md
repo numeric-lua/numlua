@@ -80,6 +80,19 @@ numlua.put(edited, { 9 }, -1, "wrap")     -- wraps index 9 to index 3
 print(edited:format())
 ```
 
+`numlua.take` uses the same 1-based indices and accepts scalar (0-D) or N-D
+integer index tensors. The index shape replaces the selected axis; a 0-D index
+removes it, matching `np.take`:
+
+```lua
+local grid = numlua.array({ { 10, 20, 30 }, { 40, 50, 60 } })
+print(numlua.take(grid, numlua.array(2, { dtype = "int64" })):item())
+-- 20 (flat scalar index)
+print(numlua.take(grid,
+  numlua.array({ { 3, 1 }, { 1, 2 } }, { dtype = "int64" }), 2):format())
+-- (2, 2, 2) tensor selected along the last axis
+```
+
 Per-slice selection follows `np.take_along_axis`; combining it with `argsort`
 sorts along one axis without a separate sort function:
 
@@ -234,7 +247,9 @@ supports (v1.0, v2.0, or v3.0), including archives produced by NumPy.
 
 `numlua.save(path, tensor)` writes a NumPy v1.0 `.npy` file in C order.
 `numlua.load(path)` returns a luatorch tensor and accepts NPY v1.0, v2.0, and
-v3.0 headers; the writer always emits v1.0.
+v3.0 headers. Pass `{ version = 2 }` or `{ version = 3 }` (or `"2.0"`/`"3.0"`)
+as the third argument to write v2.0/v3.0; the default remains v1.0, so existing
+output is byte-identical.
 
 Supported dtypes:
 
@@ -270,6 +285,10 @@ local a = numlua.array({ { 1.5, 2.5 }, { 3.5, 4.5 } })
 numlua.save("arrays.npy", a)
 local b = numlua.load("arrays.npy")
 assert(b:equal(a))
+
+-- Opt in to the wider v2.0/v3.0 header format when the reader supports it.
+numlua.save("arrays-v3.npy", a, { version = 3 })
+assert(numlua.load("arrays-v3.npy"):equal(a))
 ```
 
 ## Text/CSV I/O
@@ -329,10 +348,11 @@ algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
 1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
 round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
 corruption paths, ZIP32 writer limits, native-endian `.npy` headers, NPY v2.0
-and v3.0 headers and `.npz` members, empty and pre-suffixed `.npz` members,
-layout view/copy semantics, broadcast/take/take_along_axis/put edge shapes,
-deflate expansion guardrails, release metadata, and error paths.
-It currently contains 156 tests.
+and v3.0 readers and writers, byte-level writer conformance, `.npz` members,
+empty and pre-suffixed `.npz` members, layout view/copy semantics,
+broadcast/take/take_along_axis/put edge shapes, deflate expansion guardrails,
+release metadata, and error paths.
+It currently contains 168 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -350,7 +370,7 @@ rather than treating the recorded numbers as constants.
 numlua/
   numlua/init.lua     -- public facade
   numlua/ufunc.lua    -- elementwise ufunc facade over luatorch/ATen
-  numlua/npy.lua      -- .npy v1-v3 reader, v1.0 writer
+  numlua/npy.lua      -- .npy v1-v3 reader/writer (v1.0 default)
   numlua/text.lua     -- whitespace/CSV text reader/writer
   docs/api.md         -- API reference
   examples/basic.lua  -- runnable example
@@ -382,11 +402,11 @@ This is an MVP, not a complete NumPy replacement:
   for those operations;
 - `squeeze` delegates to luatorch; squeezing an axis whose size is not 1 leaves
   that axis unchanged rather than raising NumPy's error;
-- `.npy` reading supports v1.0, v2.0, and v3.0 headers; writing always emits
-  v1.0. Files must be C order on little-endian hosts and use the dtypes above;
-  `load` reads the complete file into memory before copying it into a tensor.
-  Native-endian `=` descr values are accepted only as aliases for the
-  little-endian `<` spellings;
+- `.npy` reading supports v1.0, v2.0, and v3.0 headers; writing defaults to
+  v1.0 and can emit v2.0/v3.0 with the `version` option. Files must be C order
+  on little-endian hosts and use the dtypes above; `load` reads the complete
+  file into memory before copying it into a tensor. Native-endian `=` descr
+  values are accepted only as aliases for the little-endian `<` spellings;
 - `.npz` writing is stored by default and deflate through `savez_compressed`;
   reading supports stored and deflate entries. Deflate needs a system zlib
   library loaded through FFI, while stored archives remain dependency-free.

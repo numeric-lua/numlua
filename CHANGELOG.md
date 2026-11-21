@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.13.0 — 2026-11-21
+
+### Added
+
+- `numlua.save(path, tensor[, options])` can write NPY v2.0 or v3.0 with
+  `{ version = 2 }` / `{ version = 3 }` (the dotted strings `"2.0"`/`"3.0"` are
+  accepted too). The default remains v1.0, so existing output stays
+  byte-identical. v2.0/v3.0 use the 4-byte header-length field and the same
+  64-byte header alignment; unknown options and invalid versions are rejected
+  before the output file is opened, and a forced v1.0 header above 65535 bytes
+  still raises;
+- `numlua.take` accepts 0-D and N-D integer index tensors. The selected axis is
+  replaced by the index shape, a 0-D index removes the axis (a scalar result
+  when `axis` is omitted), and the flattened-input form returns exactly the
+  index shape, matching `np.take`'s result-shape rule. Out-of-range values now
+  raise a `numlua.take:` error naming the offending 1-based index, the axis or
+  flattened input, and its size, instead of forwarding ATen's 0-based message;
+- byte-level NPY writer conformance tests covering all three header versions,
+  the 64-byte alignment rule, header-length widths, every supported dtype, and
+  0-D/empty/non-contiguous tensors.
+
+### Changed
+
+- `numlua.put` rejects NaN and infinite indices with a clear
+  `numlua.put: indices must be finite integers` error in every mode, before any
+  write is attempted.
+
+### Tests
+
+- 168 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`,
+  covering the new writer versions, scalar/N-D `take` shapes, explicit
+  selection range errors, finite-index `put` validation, and release metadata.
+
 ## 0.12.0 — 2026-11-21
 
 ### Added
