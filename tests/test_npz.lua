@@ -251,6 +251,27 @@ test("loadz rejects implausible deflate expansion before allocating",
   os.remove(off_file)
 end)
 
+test("loadz accepts highly compressible deflate members", function()
+  if not npz.zlib_available() then return end
+  local file = path("compressible")
+  local zeros = numlua.zeros(1024 * 1024, { dtype = "int8" })
+  assert_true(numlua.savez_compressed(file, { zeros = zeros }))
+
+  local bytes = read_bytes(file)
+  local local_header = assert(bytes:find("PK\003\004", 1, true))
+  assert_eq(u16_at(bytes, local_header + 8), 8)
+  local compressed = u32_at(bytes, local_header + 18)
+  local uncompressed = u32_at(bytes, local_header + 22)
+  assert_true(uncompressed > compressed * 100,
+    "test input is not highly compressible")
+
+  -- The expansion-ratio guard must not reject a legitimate high-ratio stream.
+  local loaded = numlua.loadz(file)
+  assert_shape(loaded.zeros, { 1024 * 1024 })
+  assert_eq(loaded.zeros:numel(), 1024 * 1024)
+  os.remove(file)
+end)
+
 test("zlib-disabled errors name the environment switch", function()
   if npz.zlib_available() then return end
   local value = os.getenv("NUMLUA_DISABLE_ZLIB")

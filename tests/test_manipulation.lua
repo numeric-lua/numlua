@@ -335,3 +335,27 @@ test("put validates indices, values, modes, and empty inputs", function()
     numlua.put(numlua.zeros(0), { 1 }, { 1 }, "wrap")
   end, "empty tensor")
 end)
+
+test("put flattens 3-D inputs and nested values in C order", function()
+  local cube = numlua.arange(24):reshape(2, 3, 4)
+  numlua.put(cube, { 2, 24 }, { -1, -24 })
+  assert_eq(cube:get(1, 1, 2), -1)
+  assert_eq(cube:get(2, 3, 4), -24)
+
+  -- Nested value tables are flattened in C order, like np.put.
+  numlua.put(cube, { 3, 4 }, { { 30 }, { 40 } })
+  assert_eq(cube:get(1, 1, 3), 30)
+  assert_eq(cube:get(1, 1, 4), 40)
+
+  -- Values longer than the index list are ignored, matching np.put.
+  numlua.put(cube, { 1 }, { 100, 200, 300 })
+  assert_eq(cube:get(1, 1, 1), 100)
+end)
+
+test("put wrap and clip accept extreme indices", function()
+  local t = numlua.zeros(3)
+  numlua.put(t, { -1000000, 1000000 }, { 1, 2 }, "wrap")
+  assert_tensor(t, { 2, 1, 0 })
+  numlua.put(t, { -100, 100 }, { 10, 30 }, "clip")
+  assert_tensor(t, { 10, 1, 30 })
+end)

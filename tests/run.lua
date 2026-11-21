@@ -173,6 +173,7 @@ local files = {
   "test_generated_fixtures.lua",
   "test_txt.lua",
   "test_errors.lua",
+  "test_release.lua",
 }
 
 for _, file in ipairs(files) do
