@@ -11,7 +11,7 @@ a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.9.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.10.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`, and text I/O.  It is packaged on LuaRocks and tested against
 > luatorch 0.17.x.
@@ -195,6 +195,15 @@ required. Encrypted, multi-disk, ZIP64, and other compression methods are
 rejected explicitly. Stored archives continue to work without zlib.
 Set `NUMLUA_DISABLE_ZLIB=1` to exercise the no-zlib path in tests.
 
+Writing is limited to ZIP32 fields: at most 65535 members, member names of at
+most 65535 bytes, 32-bit member sizes, and a 32-bit central-directory offset.
+Archives that would overflow any of these limits raise a `numlua.savez:` or
+`numlua.savez_compressed:` error before the output file is created, instead of
+silently truncating ZIP fields. ZIP64 writing is not supported; split very
+large arrays across multiple archives. An empty `arrays` table produces a valid
+empty archive, and keys already ending in `.npy` are stored without a second
+suffix (as in NumPy).
+
 ## `.npy` I/O
 
 `numlua.save(path, tensor)` writes a NumPy v1.0 `.npy` file in C order.
@@ -216,7 +225,9 @@ Supported dtypes:
 
 The reader supports 1-D, 2-D, and N-D arrays (and 0-D scalars) and rejects
 big-endian files, `fortran_order=True`, unsupported `descr` values, NPY versions
-other than 1.0, and truncated data with clear Lua errors. Non-contiguous tensors
+other than 1.0, and truncated data with clear Lua errors. Native-endian `=`
+descr values (`=f4`, `=i8`, ...) are accepted as aliases for the `<` spellings
+on little-endian hosts, matching NumPy's dtype parser. Non-contiguous tensors
 are written in C order. Files are always written little-endian; only
 little-endian hosts are supported. luatorch cannot construct `float16` tensors
 directly from Lua tables, so create a tensor in another dtype and cast it with
@@ -289,8 +300,9 @@ elementwise ufuncs, reductions, predicates and conditional selection, linear
 algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
 1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
 round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
-corruption paths, layout view/copy semantics, broadcast/take edge shapes, and
-error paths. It currently contains 128 tests.
+corruption paths, ZIP32 writer limits, native-endian `.npy` headers, empty and
+pre-suffixed `.npz` members, layout view/copy semantics, broadcast/take edge
+shapes, and error paths. It currently contains 135 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -342,16 +354,19 @@ This is an MVP, not a complete NumPy replacement:
   that axis unchanged rather than raising NumPy's error;
 - `.npy` support is limited to v1.0, C order, little-endian hosts, and the
   dtypes above; `load` reads the complete file into memory before copying it
-  into a tensor;
+  into a tensor. Native-endian `=` descr values are accepted only as aliases
+  for the little-endian `<` spellings;
 - `.npz` writing is stored by default and deflate through `savez_compressed`;
   reading supports stored and deflate entries. Deflate needs a system zlib
   library loaded through FFI, while stored archives remain dependency-free.
   Deflate writing without zlib raises a clear error unless the stored fallback
-  is requested.
+  is requested. Writer output is ZIP32-only and rejects entry counts above
+  65535, names above 65535 bytes, or member/archive sizes that do not fit
+  32-bit fields; ZIP64 writing is not supported.
 - text I/O is intentionally simple: it does not store shape/dtype metadata,
   quote strings, or parse headers, and it rejects `bool` rather than guessing a
   textual boolean spelling;
-- LuaRocks packaging is provided by `numlua-0.9.0-1.rockspec`; the native
+- LuaRocks packaging is provided by `numlua-0.10.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License

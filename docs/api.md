@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.9.0"
+print(numlua.VERSION) -- "0.10.0"
 ```
 
 ## Conventions
@@ -583,6 +583,11 @@ cast with `:to("float16")` first.
 Reads an `.npy` v1.0 file and returns a luatorch tensor. Supports 1-D, 2-D, N-D,
 and 0-D arrays with the dtypes above.
 
+Native-endian `descr` values (`=f2`, `=f4`, `=f8`, `=i2`, `=i4`, `=i8`, and
+their byte-sized spellings) select the host byte order in NumPy. On the
+supported little-endian hosts, `load` accepts them as aliases for the `<`
+spellings; the data is still copied as little-endian bytes.
+
 Rejected with explicit errors:
 
 - big-endian `descr` values (`>...`);
@@ -603,6 +608,21 @@ tensors are supported; non-contiguous tensors are written in C order.
 Writes a ZIP archive of `.npy` members using the stored (uncompressed) method
 and returns `true`. `arrays` is a table mapping non-empty array names to
 luatorch tensors. This matches `np.savez` and has no compression dependency.
+An empty `arrays` table writes a valid empty archive. Keys already ending in
+`.npy` are stored unchanged; other keys get a `.npy` suffix, as in NumPy.
+
+Writing is ZIP32-only and validates all field widths before opening the output
+file:
+
+- at most 65535 members;
+- each member name (including the `.npy` suffix) at most 65535 bytes;
+- each uncompressed and compressed member at most 4294967295 bytes;
+- the central-directory offset at most 4294967295 bytes.
+
+An archive that would overflow any of these limits raises a
+`numlua.savez:`/`numlua.savez_compressed:` error naming the limit instead of
+silently wrapping a ZIP field. No output file is created on such an error.
+ZIP64 writing is not supported.
 
 ### `numlua.savez_compressed(path, arrays[, options])`
 
@@ -742,7 +762,8 @@ dtype, or backend constraints are forwarded as-is.
 - Broadcasting is not reimplemented; it is whatever luatorch/ATen does for the
   delegated operation.
 - `.npy` is limited to v1.0, C order, little-endian hosts, and the dtypes
-  listed above.
+  listed above. Native-endian `=` descr values are only aliases for the
+  little-endian `<` spellings.
 - Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
   or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
   squeezed to 1-D. `bool` is not supported by either text function.
@@ -750,6 +771,8 @@ dtype, or backend constraints are forwarded as-is.
 - `.npz` writing is stored by default and deflate through
   `savez_compressed`; reading supports stored and deflate entries. Deflate
   needs a system zlib library through LuaJIT FFI, while stored archives and
-  writing remain dependency-free.
+  writing remain dependency-free. Writer output is ZIP32-only; archives above
+  the 16-bit entry/name limits or 32-bit size/offset limits fail explicitly,
+  and ZIP64 writing is not supported.
 - LuaRocks installs the Lua facade; the native `libluatorch.so` must be built
   separately against libtorch.

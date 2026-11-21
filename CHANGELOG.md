@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.10.0 — 2026-11-21
+
+### Added
+
+- `numlua.load` accepts native-endian (`=`) `descr` values (`=f4`, `=i8`, ...)
+  as aliases for the little-endian `<` spellings on little-endian hosts,
+  matching NumPy's dtype parser; unsupported `=` dtypes are still rejected with
+  the original spelling in the error;
+- `.npz` edge coverage for empty archives and array keys already ending in
+  `.npy`.
+
+### Fixed
+
+- ZIP writer limits are now enforced instead of silently wrapping fields:
+  archives with more than 65535 members, member names above 65535 bytes,
+  per-entry compressed or uncompressed sizes above 4294967295 bytes, or a
+  central-directory offset above 4294967295 bytes raise an explicit
+  `numlua.savez:`/`numlua.savez_compressed:` error before the output file is
+  opened. ZIP64 writing remains unsupported.
+
+### Tests
+
+- 135 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`,
+  including the new limit-boundary, no-partial-file, native-endian, empty
+  archive, and pre-suffixed-key cases.
+
 ## 0.9.0 — 2026-11-21
 
 ### Added
