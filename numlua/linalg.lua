@@ -126,8 +126,9 @@ function linalg.lstsq(a, b, rcond)
   return linalg.pinv(a, rcond):matmul(b)
 end
 
--- matrix_norm(t[, ord]) supports the Frobenius/2 norm (default), 1, infinity,
--- and nuclear norm for a 2-D matrix.  ord=2 and "nuc" use the SVD.
+-- matrix_norm(t[, ord]) supports the Frobenius norm (default), the spectral
+-- and smallest-singular-value norms (2 and -2), 1, infinity, and the nuclear
+-- norm for a 2-D matrix.  ord=2, ord=-2, and "nuc" use the SVD.
 function linalg.matrix_norm(t, ord)
   matrix(t, "matrix_norm")
   ord = ord or "fro"
@@ -141,9 +142,10 @@ function linalg.matrix_norm(t, ord)
     return t:abs():sum(1):min()
   elseif ord == -math.huge then
     return t:abs():sum(2):min()
-  elseif ord == 2 or ord == "nuc" then
+  elseif ord == 2 or ord == -2 or ord == "nuc" then
     local _, s = t:svd(false)
     if ord == "nuc" then return s:sum() end
+    if ord == -2 then return s:min() end
     return s:max()
   end
   error("numlua.linalg.matrix_norm: unsupported ord " .. tostring(ord), 2)

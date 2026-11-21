@@ -415,7 +415,13 @@ Additional matrix helpers:
 | --- | --- |
 | `linalg.pinv(t[, rcond])` | Moore-Penrose pseudoinverse via SVD |
 | `linalg.lstsq(a, b[, rcond])` | minimum-norm least-squares solution |
-| `linalg.matrix_norm(t[, ord])` | `"fro"`/2 (default), `1`, `-1`, infinity, `-infinity`, `2`, `"nuc"` |
+| `linalg.matrix_norm(t[, ord])` | `"fro"` (default; `"f"` alias), `"nuc"`, `1`, `-1`, `2`, `-2`, infinity, or `-infinity` |
+
+`matrix_norm` returns a 0-D tensor. `ord=2` is the spectral norm (largest
+singular value), `ord=-2` the smallest singular value, and `"nuc"` the nuclear
+norm; all three use the SVD. `"fro"` is the default Frobenius norm, and the
+remaining orders follow NumPy's max/min absolute column- or row-sum rules.
+Unsupported orders raise a `numlua.linalg.matrix_norm:` error.
 
 `lstsq` uses the SVD pseudoinverse; it is a convenience wrapper, not a LAPACK
 driver.

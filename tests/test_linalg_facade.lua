@@ -100,8 +100,44 @@ end)
 test("matrix_norm covers common orders", function()
   local t = numlua.array({ { 1, -2 }, { 3, 4 } }, { dtype = "float64" })
   assert_near(numlua.linalg.matrix_norm(t):item(), math.sqrt(30), 1e-8)
+  assert_near(numlua.linalg.matrix_norm(t, "f"):item(), math.sqrt(30), 1e-8)
   assert_near(numlua.linalg.matrix_norm(t, 1):item(), 6, 1e-8)
+  assert_near(numlua.linalg.matrix_norm(t, -1):item(), 4, 1e-8)
   assert_near(numlua.linalg.matrix_norm(t, math.huge):item(), 7, 1e-8)
+  assert_near(numlua.linalg.matrix_norm(t, -math.huge):item(), 3, 1e-8)
   local nuclear = numlua.linalg.matrix_norm(t, "nuc"):item()
   assert_true(nuclear > 0)
+  assert_shape(numlua.linalg.matrix_norm(t), {})
+end)
+
+test("matrix_norm supports spectral and smallest singular values", function()
+  -- A rectangular matrix with exact singular values 2 and 1.
+  local t = numlua.array({
+    { 1, 0 },
+    { 0, 2 },
+    { 0, 0 },
+  }, { dtype = "float64" })
+
+  assert_near(numlua.linalg.matrix_norm(t, 2):item(), 2, 1e-8)
+  assert_near(numlua.linalg.matrix_norm(t, -2):item(), 1, 1e-8)
+  assert_near(numlua.linalg.matrix_norm(t, "nuc"):item(), 3, 1e-8)
+
+  -- Matrix 1/infinity norms use the max/min column/row sums.
+  assert_near(numlua.linalg.matrix_norm(t, 1):item(), 2, 1e-8)
+  assert_near(numlua.linalg.matrix_norm(t, -1):item(), 1, 1e-8)
+  assert_near(numlua.linalg.matrix_norm(t, math.huge):item(), 2, 1e-8)
+  assert_near(numlua.linalg.matrix_norm(t, -math.huge):item(), 0, 1e-8)
+  assert_near(numlua.linalg.matrix_norm(t):item(), math.sqrt(5), 1e-8)
+
+  local spectral = numlua.linalg.matrix_norm(t, 2)
+  assert_shape(spectral, {})
+  assert_dtype(spectral, "float64")
+  assert_dtype(numlua.linalg.matrix_norm(t, -2), "float64")
+
+  assert_error(function() numlua.linalg.matrix_norm(t, 0) end,
+    "unsupported ord")
+  assert_error(function() numlua.linalg.matrix_norm(t, "frobenius") end,
+    "unsupported ord")
+  assert_error(function() numlua.linalg.matrix_norm(numlua.zeros(3)) end,
+    "expects a matrix")
 end)
