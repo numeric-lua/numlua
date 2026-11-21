@@ -15,6 +15,59 @@ test("broadcast_to and broadcast_arrays share a shape", function()
   end, "incompatible")
 end)
 
+test("broadcast handles 0-D, zero-size, and high-rank shapes", function()
+  -- A 0-D scalar expands to any shape, including an empty one.
+  local scalar = numlua.array(7)
+  local wide = numlua.broadcast_to(scalar, { 2, 3 })
+  assert_shape(wide, { 2, 3 })
+  assert_tensor(wide, { { 7, 7, 7 }, { 7, 7, 7 } })
+  local empty_scalar = numlua.broadcast_to(scalar, { 0, 2 })
+  assert_shape(empty_scalar, { 0, 2 })
+
+  -- Size-1 axes grow, and a zero-size axis wins over size 1 (NumPy rules).
+  local empty = numlua.zeros(0, 1)
+  local single = numlua.zeros(1, 4)
+  local a, b = numlua.broadcast_arrays(empty, single)
+  assert_shape(a, { 0, 4 })
+  assert_shape(b, { 0, 4 })
+  assert_eq(a:numel(), 0)
+
+  -- Right alignment across ranks: {2,1,4,1} against {3,1,5}.
+  local high, low = numlua.broadcast_arrays(
+    numlua.zeros(2, 1, 4, 1), numlua.zeros(3, 1, 5))
+  assert_shape(high, { 2, 3, 4, 5 })
+  assert_shape(low, { 2, 3, 4, 5 })
+
+  -- A single input broadcasts to its own shape.
+  local only = numlua.broadcast_arrays(numlua.zeros(2, 3))
+  assert_shape(only, { 2, 3 })
+end)
+
+test("broadcast rejects incompatible and malformed shapes", function()
+  assert_error(function()
+    numlua.broadcast_arrays(numlua.zeros(0), numlua.zeros(2))
+  end, "incompatible")
+  assert_error(function() numlua.broadcast_arrays() end,
+    "at least one tensor")
+  assert_error(function()
+    numlua.broadcast_arrays(numlua.zeros(2), 3)
+  end, "expects a tensor")
+  assert_error(function() numlua.broadcast_to(3, { 2 }) end,
+    "expects a tensor")
+  assert_error(function() numlua.broadcast_to(numlua.zeros(2), {}) end,
+    "non-empty shape")
+  assert_error(function() numlua.broadcast_to(numlua.zeros(2), { -1 }) end,
+    "non-negative")
+  assert_error(function() numlua.broadcast_to(numlua.zeros(2), 2) end,
+    "shape table")
+  assert_error(function()
+    numlua.broadcast_to(numlua.zeros(2, 3), { 3, 2 })
+  end)
+  assert_error(function()
+    numlua.broadcast_to(numlua.zeros(2, 3), { 3 })
+  end)
+end)
+
 test("tile repeats whole blocks", function()
   local vector = numlua.array({ 1, 2 })
   assert_tensor(numlua.tile(vector, 3), { 1, 2, 1, 2, 1, 2 })
@@ -104,6 +157,79 @@ test("take selects flat and axis-aligned values", function()
   local row = numlua.take(t, numlua.array({ 3, 1 }, { dtype = "int64" }), 2)
   assert_shape(row, { 2, 2 })
   assert_tensor(row, { { 30, 10 }, { 60, 40 } })
+end)
+
+test("take handles 0-D, empty, and zero-size-axis shapes", function()
+  local scalar = numlua.array(7)
+  local one = numlua.take(scalar, numlua.array({ 1 }, { dtype = "int64" }))
+  assert_shape(one, { 1 })
+  assert_tensor(one, { 7 })
+  assert_eq(numlua.take(scalar,
+    numlua.array({}, { dtype = "int64" })):numel(), 0)
+
+  local empty = numlua.zeros(0)
+  assert_eq(numlua.take(empty,
+    numlua.array({}, { dtype = "int64" })):numel(), 0)
+  assert_error(function()
+    numlua.take(empty, numlua.array({ 1 }, { dtype = "int64" }))
+  end, "empty tensor")
+
+  local t = numlua.arange(24):reshape(2, 3, 4)
+  local flat = numlua.take(t, numlua.array({ 4, 1, 4 }, { dtype = "int64" }))
+  assert_shape(flat, { 3 })
+  assert_tensor(flat, { 3, 0, 3 })
+  local middle = numlua.take(t,
+    numlua.array({ 2, 1 }, { dtype = "int32" }), 2)
+  assert_shape(middle, { 2, 2, 4 })
+  local negated = numlua.take(t,
+    numlua.array({ 2, 1 }, { dtype = "int32" }), -2)
+  assert_shape(negated, { 2, 2, 4 })
+  assert_true(negated:equal(middle))
+
+  local zero = numlua.zeros(0, 3)
+  assert_shape(numlua.take(zero,
+    numlua.array({ 1, 3 }, { dtype = "int64" }), 2), { 0, 2 })
+  assert_shape(numlua.take(zero,
+    numlua.array({}, { dtype = "int64" }), 1), { 0, 3 })
+  assert_error(function()
+    numlua.take(zero, numlua.array({ 1 }, { dtype = "int64" }), 1)
+  end, "empty axis")
+
+  -- A size-1 selection axis is a normal shape, repeated indices are allowed,
+  -- and a non-contiguous input is flattened in C order before selection.
+  assert_shape(numlua.take(numlua.zeros(2, 1, 3),
+    numlua.array({ 1, 1 }, { dtype = "int64" }), 2), { 2, 2, 3 })
+  assert_tensor(numlua.take(numlua.array({ 10, 20 }),
+    numlua.array({ 2, 2, 1 }, { dtype = "int64" })), { 20, 20, 10 })
+  local transposed = numlua.transpose(numlua.array({
+    { 10, 20, 30 },
+    { 40, 50, 60 },
+  }))
+  assert_tensor(numlua.take(transposed,
+    numlua.array({ 2, 4 }, { dtype = "int64" })), { 40, 50 })
+end)
+
+test("take validates index tensors and axes", function()
+  local t = numlua.array({ 10, 20, 30 })
+  assert_error(function() numlua.take(t, numlua.array({ 1.5 })) end,
+    "integer Tensor")
+  assert_error(function() numlua.take(t, numlua.array({ true })) end,
+    "integer Tensor")
+  assert_error(function()
+    numlua.take(t, numlua.array({ 1 }, { dtype = "int64" }), 0)
+  end, "non-zero integer")
+  assert_error(function()
+    numlua.take(t, numlua.array({ 1 }, { dtype = "int64" }), 2)
+  end, "out of range")
+  assert_error(function()
+    numlua.take(t, numlua.array({ 4 }, { dtype = "int64" }))
+  end, "out of range")
+
+  -- Every integer dtype is accepted and treated as 1-based.
+  for _, dtype in ipairs({ "int64", "int32", "int16", "int8", "uint8" }) do
+    assert_tensor(numlua.take(t,
+      numlua.array({ 2 }, { dtype = dtype })), { 20 })
+  end
 end)
 
 test("flatnonzero returns 1-based flat indices", function()

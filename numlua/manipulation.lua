@@ -58,12 +58,19 @@ local function broadcast_shape(shapes)
     for index = 1, #shape do
       local target = offset + index
       local current, incoming = result[target], shape[index]
-      if current ~= 1 and incoming ~= 1 and current ~= incoming then
-        error(string.format(
-          "numlua.broadcast_arrays: incompatible shapes at dimension %d " ..
-          "(%d vs %d)", target, current, incoming), 3)
+      if current ~= incoming then
+        -- Right-aligned broadcasting: a size-1 axis can grow to any size,
+        -- including 0.  A zero-size axis therefore wins over 1, as in NumPy.
+        if current == 1 then
+          result[target] = incoming
+        elseif incoming == 1 then
+          result[target] = current
+        else
+          error(string.format(
+            "numlua.broadcast_arrays: incompatible shapes at dimension %d " ..
+            "(%d vs %d)", target, current, incoming), 3)
+        end
       end
-      result[target] = math.max(current, incoming)
     end
   end
   return result
@@ -526,15 +533,36 @@ function M.argsort(t, axis_value, descending)
   return indices
 end
 
+local TAKE_INDEX_DTYPES = {
+  int64 = true,
+  int32 = true,
+  int16 = true,
+  int8 = true,
+  uint8 = true,
+}
+
 function M.take(t, indices, axis_value)
   tensor(t, "take")
   if not torch.is_tensor(indices) then
     error("numlua.take: indices must be an integer Tensor", 2)
   end
+  local dtype = indices:dtype()
+  if not TAKE_INDEX_DTYPES[dtype] then
+    error("numlua.take: indices must be an integer Tensor, got " .. dtype, 2)
+  end
   if axis_value == nil then
+    if t:numel() == 0 and indices:numel() > 0 then
+      error("numlua.take: cannot take from an empty tensor " ..
+        "with non-empty indices", 2)
+    end
     return t:reshape({ t:numel() }):index_select(1, indices)
   end
-  return t:index_select(axis(axis_value, t:dim(), "take"), indices)
+  local normalized = axis(axis_value, t:dim(), "take")
+  if t:size(normalized) == 0 and indices:numel() > 0 then
+    error("numlua.take: cannot take from empty axis " .. normalized ..
+      " with non-empty indices", 2)
+  end
+  return t:index_select(normalized, indices)
 end
 
 M.repeat_ = M["repeat"]
