@@ -30,6 +30,7 @@ test("shape and reduction helpers validate tensors", function()
     { "max", function() numlua.max(1) end },
     { "min", function() numlua.min(1) end },
     { "argmax", function() numlua.argmax(1) end },
+    { "argmin", function() numlua.argmin(1) end },
     { "dot", function() numlua.dot(1, 1) end },
     { "matmul", function() numlua.matmul(1, 1) end },
     { "dtype", function() numlua.dtype(1) end },
@@ -61,6 +62,10 @@ test("reduce helpers reject non-integer axes", function()
     "axis must be an integer")
   assert_error(function() numlua.argmax(t, 0) end,
     "axis 0 is invalid")
+  assert_error(function() numlua.argmin(t, 0) end,
+    "axis 0 is invalid")
+  assert_error(function() numlua.argmin(t, 1, "yes") end,
+    "keepdims must be a boolean")
   assert_error(function() numlua.mean(t, 1, "yes") end,
     "keepdims must be a boolean")
 end)

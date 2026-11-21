@@ -296,7 +296,7 @@ function numlua.max(t, axis, keepdims)
   check_axis(axis, "max")
   check_keepdims(keepdims, "max")
   -- luatorch returns (values, indices) for a dimensional max; numlua's max
-  -- returns values only.  Use numlua.argmax for indices.
+  -- returns values only.  Use numlua.argmax/argmin for indices.
   return (t:max(axis, keepdims))
 end
 
@@ -307,12 +307,20 @@ function numlua.min(t, axis, keepdims)
   return (t:min(axis, keepdims))
 end
 
--- argmax returns 1-based flat indices when axis is nil, matching luatorch.
+-- argmax and argmin return 1-based flat indices when axis is nil, matching
+-- luatorch.  Both delegate the reduction kernel to luatorch.
 function numlua.argmax(t, axis, keepdims)
   check_tensor(t, "argmax")
   check_axis(axis, "argmax")
   check_keepdims(keepdims, "argmax")
   return t:argmax(axis, keepdims)
+end
+
+function numlua.argmin(t, axis, keepdims)
+  check_tensor(t, "argmin")
+  check_axis(axis, "argmin")
+  check_keepdims(keepdims, "argmin")
+  return t:argmin(axis, keepdims)
 end
 
 -- ---------------------------------------------------------------------------

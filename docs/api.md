@@ -16,11 +16,11 @@ print(numlua.VERSION) -- "0.2.0"
 
 - **Axes and indices are 1-based.** `axis=1` is the first axis. Negative axes
   count from the end (`-1` is the last axis), as in luatorch.
-- `argmax` results are 1-based. With no axis, the result is a flat C-order
-  index into the tensor.
+- `argmax` and `argmin` results are 1-based. With no axis, the result is a flat
+  C-order index into the tensor.
 - Reductions return tensors. `numlua.sum(a):item()` extracts a Lua number from
   the 0-D all-axis result.
-- `max` and `min` return values only. Use `argmax` for indices.
+- `max` and `min` return values only. Use `argmax`/`argmin` for indices.
 - `dtype` accepts luatorch dtype names (`"float32"`, `"float64"`, `"int64"`,
   `"bool"`, ...) or luatorch dtype ids (`torch.float32`, ...).
 - Options tables are the luatorch option tables; `dtype` is the commonly used
@@ -223,6 +223,20 @@ discards them.
 Returns an `int64` tensor of 1-based indices. If `axis` is omitted, the result
 is the flat C-order index of the maximum (a 0-D tensor). With `axis`, the
 reduced axis is removed unless `keepdims` is true.
+
+### `numlua.argmin(t[, axis[, keepdims]])`
+
+The minimum counterpart of `argmax`: returns an `int64` tensor of 1-based
+indices, using a flat C-order index when `axis` is omitted. The same 1-based
+axis and `keepdims` rules apply. The reduction is luatorch's `argmin` kernel;
+numlua only validates arguments and exposes the name.
+
+```lua
+local t = numlua.array({ { 4, 7 }, { 2, 6 } })
+numlua.argmin(t):item()     -- 3, the flat index of 2
+numlua.argmin(t, 1)         -- {2, 2}
+numlua.argmin(t, 2)         -- {1, 1}
+```
 
 ## Predicates and selection
 

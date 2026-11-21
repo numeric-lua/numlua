@@ -63,6 +63,28 @@ test("argmax uses 1-based indices and int64 tensors", function()
   assert_shape(numlua.argmax(t, 1, true), { 1, 4 })
 end)
 
+test("argmin mirrors argmax with 1-based indices", function()
+  local t = integer_matrix()
+  local flat = numlua.argmin(t)
+  assert_dtype(flat, "int64")
+  assert_shape(flat, {})
+  assert_eq(flat:item(), 1)
+
+  assert_tensor(numlua.argmin(t, 1), { 1, 1, 1, 1 })
+  assert_tensor(numlua.argmin(t, 2), { 1, 1, 1 })
+  assert_tensor(numlua.argmin(t, -1), { 1, 1, 1 })
+  assert_shape(numlua.argmin(t, 2, true), { 3, 1 })
+
+  local signed = numlua.array({ { -3, 2 }, { 0, -1 } },
+    { dtype = "float64" })
+  assert_tensor(numlua.argmin(signed, 1), { 1, 2 })
+  assert_tensor(numlua.argmin(signed, 2), { 1, 2 })
+
+  local scalar = numlua.array(5)
+  assert_shape(numlua.argmin(scalar), {})
+  assert_eq(numlua.argmin(scalar):item(), 1)
+end)
+
 test("reductions reject invalid axes and keepdims", function()
   local t = integer_matrix()
   assert_error(function() numlua.sum(t, 0) end, "axis 0 is invalid")

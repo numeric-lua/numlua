@@ -36,6 +36,7 @@ print(a:format())
 print(numlua.sum(a, 1):format())   -- column sums
 print(numlua.mean(a):item())       -- one number
 print(numlua.argmax(a):item())     -- 1-based flat index
+print(numlua.argmin(a):item())     -- 1-based flat index of the minimum
 
 local values = numlua.array({ 1, 4, 9 })
 print(numlua.sqrt(values):format())                -- {1, 2, 3}
@@ -115,12 +116,13 @@ luajit examples/basic.lua
 ## Conventions (read this before porting NumPy code)
 
 - **Axes and indices are 1-based.** `axis=1` is NumPy's `axis=0`, and the first
-  `argmax` result is `1`, not `0`. This is the numeric-lua convention.
+  `argmax`/`argmin` result is `1`, not `0`. This is the numeric-lua convention.
 - **Functions return luatorch tensors.** Reductions never return bare Lua
   numbers. All-axis reductions return a 0-dimensional tensor; call `:item()`
   when you want a number.
 - **`max`/`min` return values only.** Luatorch's dimensional `max` also returns
-  indices; `numlua` discards them. Use `numlua.argmax` for indices.
+  indices; `numlua` discards them. Use `numlua.argmax`/`numlua.argmin` for
+  indices.
 - **Default dtypes follow luatorch.** `array({1, 2, 3})` is `float32` because
   Lua numbers do not distinguish integers. Pass `{dtype = "int64"}` for
   integers. `zeros`, `ones`, `eye`, and `linspace` default to `float32`.
@@ -148,7 +150,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Combine | `concatenate`, `stack` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
-| Reductions | `sum`, `mean`, `max`, `min`, `argmax` |
+| Reductions | `sum`, `mean`, `max`, `min`, `argmax`, `argmin` |
 | Predicates/selection | `where`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
