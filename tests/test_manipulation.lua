@@ -232,6 +232,130 @@ test("take validates index tensors and axes", function()
   end
 end)
 
+test("take_along_axis selects one value per position along an axis", function()
+  local t = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
+  local order = numlua.argsort(t, 2)
+  assert_tensor(order, { { 1, 3, 2 }, { 2, 3, 1 } })
+  local sorted = numlua.take_along_axis(t, order, 2)
+  assert_tensor(sorted, { { 10, 20, 30 }, { 40, 50, 60 } })
+  assert_dtype(sorted, "float32")
+
+  -- argmax(..., keepdims=true) produces the gather shape used by NumPy's
+  -- "maximum values" recipe.
+  local maxima = numlua.take_along_axis(t, numlua.argmax(t, 2, true), 2)
+  assert_shape(maxima, { 2, 1 })
+  assert_tensor(maxima, { { 30 }, { 60 } })
+
+  -- Negative axes count from the end, and the axis length comes from indices.
+  assert_tensor(numlua.take_along_axis(t,
+    numlua.array({ { 3, 1 }, { 2, 1 } }, { dtype = "int32" }), -1),
+    { { 20, 10 }, { 40, 60 } })
+  local wide = numlua.take_along_axis(t,
+    numlua.array({ { 1, 2, 3, 1, 2 }, { 3, 2, 1, 3, 2 } },
+      { dtype = "int64" }), 2)
+  assert_shape(wide, { 2, 5 })
+  assert_tensor(wide, { { 10, 30, 20, 10, 30 }, { 50, 40, 60, 50, 40 } })
+  assert_tensor(numlua.take_along_axis(t,
+    numlua.array({ { 2 }, { 3 } }, { dtype = "int64" }), 2),
+    { { 30 }, { 50 } })
+
+  -- Non-axis size-1 dimensions broadcast in either operand.
+  local row = numlua.array({ { 10, 20, 30 } })
+  assert_tensor(numlua.take_along_axis(row,
+    numlua.array({ { 3, 1 }, { 2, 1 } }, { dtype = "int64" }), 2),
+    { { 30, 10 }, { 20, 10 } })
+  local column = numlua.array({ { 10, 20 }, { 30, 40 }, { 50, 60 } })
+  assert_shape(numlua.take_along_axis(column,
+    numlua.array({ { 1, 2 } }, { dtype = "int64" }), 1), { 1, 2 })
+  assert_tensor(numlua.take_along_axis(column,
+    numlua.array({ { 1, 2 }, { 3, 1 }, { 2, 3 } }, { dtype = "int64" }), 1),
+    { { 10, 40 }, { 50, 20 }, { 30, 60 } })
+
+  -- axis=nil flattens in C order, as in np.take_along_axis.
+  assert_tensor(numlua.take_along_axis(t,
+    numlua.array({ 6, 1, 4 }, { dtype = "int64" })), { 50, 10, 60 })
+  assert_tensor(numlua.take_along_axis(numlua.array(7),
+    numlua.array({ 1, 1 }, { dtype = "int64" })), { 7, 7 })
+
+  -- 3-D gather, every integer index dtype, empty selections, and a
+  -- non-contiguous input.
+  local cube = numlua.arange(24):reshape(2, 3, 4)
+  local indices = numlua.array({ { { 1, 2 }, { 1, 2 }, { 1, 2 } },
+    { { 3, 4 }, { 3, 4 }, { 3, 4 } } }, { dtype = "int64" })
+  local picked = numlua.take_along_axis(cube, indices, 3)
+  assert_shape(picked, { 2, 3, 2 })
+  assert_tensor(picked, { { { 0, 1 }, { 4, 5 }, { 8, 9 } },
+    { { 14, 15 }, { 18, 19 }, { 22, 23 } } })
+  for _, dtype in ipairs({ "int64", "int32", "int16", "int8", "uint8" }) do
+    assert_tensor(numlua.take_along_axis(t,
+      numlua.array({ { 1 } }, { dtype = dtype }), 2), { { 10 }, { 60 } })
+  end
+  local empty = numlua.take_along_axis(t,
+    numlua.zeros(2, 0, { dtype = "int64" }), 2)
+  assert_shape(empty, { 2, 0 })
+  assert_eq(empty:numel(), 0)
+  assert_shape(numlua.take_along_axis(numlua.zeros(2, 0),
+    numlua.zeros(2, 0, { dtype = "int64" }), 2), { 2, 0 })
+  local transposed = numlua.transpose(t)
+  assert_tensor(numlua.take_along_axis(transposed,
+    numlua.array({ { 1, 2 }, { 1, 2 }, { 1, 2 } }, { dtype = "int64" }), 2),
+    { { 10, 60 }, { 30, 40 }, { 20, 50 } })
+
+  -- The result owns independent storage.
+  local result = numlua.take_along_axis(t,
+    numlua.array({ { 1, 3 } }, { dtype = "int64" }), 2)
+  result:set(1, 1, 999)
+  assert_eq(t:get(1, 1), 10)
+end)
+
+test("take_along_axis validates rank, axes, shapes, and indices", function()
+  local t = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
+  local one = numlua.array({ { 1 } }, { dtype = "int64" })
+  assert_error(function() numlua.take_along_axis({}, one, 2) end,
+    "expects a tensor")
+  assert_error(function() numlua.take_along_axis(t, { 1 }) end,
+    "integer Tensor")
+  assert_error(function()
+    numlua.take_along_axis(t, numlua.array({ { 1.5 } }))
+  end, "integer Tensor")
+  assert_error(function()
+    numlua.take_along_axis(t, numlua.array({ { true } }))
+  end, "integer Tensor")
+  assert_error(function() numlua.take_along_axis(t, one, 0) end,
+    "non-zero integer")
+  assert_error(function() numlua.take_along_axis(t, one, 3) end,
+    "out of range")
+  assert_error(function()
+    numlua.take_along_axis(t,
+      numlua.array({ 1 }, { dtype = "int64" }), 2)
+  end, "same rank")
+  assert_error(function()
+    numlua.take_along_axis(t,
+      numlua.array({ { 1 }, { 1 }, { 1 } }, { dtype = "int64" }), 2)
+  end, "broadcast")
+  assert_error(function()
+    numlua.take_along_axis(t,
+      numlua.array({ { 4 } }, { dtype = "int64" }), 2)
+  end, "out of range")
+  assert_error(function()
+    numlua.take_along_axis(t,
+      numlua.array({ { 0 } }, { dtype = "int64" }), 2)
+  end, "out of range")
+  assert_error(function()
+    numlua.take_along_axis(t,
+      numlua.array({ { -1 } }, { dtype = "int64" }), 2)
+  end, "out of range")
+  assert_error(function() numlua.take_along_axis(t, one) end, "must be 1-D")
+  assert_error(function()
+    numlua.take_along_axis(t,
+      numlua.array({ { 1 }, { 1 } }, { dtype = "int64" }), nil)
+  end, "must be 1-D")
+  assert_error(function()
+    numlua.take_along_axis(numlua.zeros(2, 0),
+      numlua.array({ { 1 }, { 1 } }, { dtype = "int64" }), 2)
+  end, "out of range")
+end)
+
 test("flatnonzero returns 1-based flat indices", function()
   local t = numlua.array({ 0, 5, 0, 7 })
   assert_tensor(numlua.flatnonzero(t), { 2, 4 })

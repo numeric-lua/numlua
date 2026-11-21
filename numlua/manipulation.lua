@@ -565,6 +565,90 @@ function M.take(t, indices, axis_value)
   return t:index_select(normalized, indices)
 end
 
+-- take_along_axis follows NumPy's shape rule: indices and input have the same
+-- rank, non-axis dimensions broadcast in either direction (1 against N), and
+-- the length along the axis comes from indices.  ATen's gather needs matching
+-- non-axis sizes, so numlua expands both operands to the broadcast shape.
+local function check_along_indices(indices)
+  if not torch.is_tensor(indices) then
+    error("numlua.take_along_axis: indices must be an integer Tensor", 3)
+  end
+  local dtype = indices:dtype()
+  if not TAKE_INDEX_DTYPES[dtype] then
+    error("numlua.take_along_axis: indices must be an integer Tensor, got " ..
+      dtype, 3)
+  end
+end
+
+-- Validate 1-based index values before gather so errors name the facade's
+-- convention and the offending index instead of ATen's 0-based message.
+local function check_along_range(indices, size, label)
+  if indices:numel() == 0 then return end
+  local lowest = indices:min():item()
+  local highest = indices:max():item()
+  if lowest < 1 or highest > size then
+    local offending = lowest < 1 and lowest or highest
+    error(string.format(
+      "numlua.take_along_axis: index %d is out of range for %s with size %d " ..
+      "(indices are 1-based)", offending, label, size), 3)
+  end
+end
+
+function M.take_along_axis(t, indices, axis_value)
+  tensor(t, "take_along_axis")
+  check_along_indices(indices)
+  if axis_value == nil then
+    -- NumPy flattens both operands when axis is None and requires a 1-D
+    -- index tensor.
+    if indices:dim() ~= 1 then
+      error("numlua.take_along_axis: when axis is omitted, indices must be " ..
+        "1-D", 2)
+    end
+    check_along_range(indices, t:numel(), "the flattened input")
+    return t:reshape({ t:numel() }):index_select(1, indices)
+  end
+
+  local ndim = t:dim()
+  local dim = axis(axis_value, ndim, "take_along_axis")
+  if indices:dim() ~= ndim then
+    error(string.format(
+      "numlua.take_along_axis: indices must have the same rank as the input " ..
+      "(got %d for a %d-D input)", indices:dim(), ndim), 2)
+  end
+
+  local input_shape = t:sizes()
+  local index_shape = indices:sizes()
+  local input_target = {}
+  local index_target = {}
+  for index = 1, ndim do
+    if index == dim then
+      input_target[index] = input_shape[index]
+      index_target[index] = index_shape[index]
+    else
+      local current, incoming = input_shape[index], index_shape[index]
+      local target
+      if current == incoming then
+        target = current
+      elseif current == 1 then
+        target = incoming
+      elseif incoming == 1 then
+        target = current
+      else
+        error(string.format(
+          "numlua.take_along_axis: shapes do not broadcast on axis %d " ..
+          "(input %d, indices %d)", index, current, incoming), 2)
+      end
+      input_target[index] = target
+      index_target[index] = target
+    end
+  end
+
+  check_along_range(indices, input_shape[dim], "axis " .. dim)
+  local input = t:expand(input_target)
+  local index_tensor = indices:expand(index_target)
+  return input:gather(dim, index_tensor)
+end
+
 local PUT_MODES = {
   raise = true,
   wrap = true,
