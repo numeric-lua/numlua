@@ -11,10 +11,10 @@ a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.8.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.9.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`, and text I/O.  It is packaged on LuaRocks and tested against
-> luatorch 0.8.x.
+> luatorch 0.17.x.
 
 ## Why a facade?
 
@@ -343,13 +343,15 @@ This is an MVP, not a complete NumPy replacement:
 - `.npy` support is limited to v1.0, C order, little-endian hosts, and the
   dtypes above; `load` reads the complete file into memory before copying it
   into a tensor;
-- `.npz` writing is always stored; only reading deflate entries is supported.
-  Deflate reading needs a system zlib library loaded through FFI, while stored
-  archives remain dependency-free.
+- `.npz` writing is stored by default and deflate through `savez_compressed`;
+  reading supports stored and deflate entries. Deflate needs a system zlib
+  library loaded through FFI, while stored archives remain dependency-free.
+  Deflate writing without zlib raises a clear error unless the stored fallback
+  is requested.
 - text I/O is intentionally simple: it does not store shape/dtype metadata,
   quote strings, or parse headers, and it rejects `bool` rather than guessing a
   textual boolean spelling;
-- LuaRocks packaging is provided by `numlua-0.8.0-1.rockspec`; the native
+- LuaRocks packaging is provided by `numlua-0.9.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License
