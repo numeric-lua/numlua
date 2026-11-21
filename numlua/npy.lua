@@ -1,7 +1,7 @@
 --
 -- numlua / npy.lua
 --
--- Minimal, dependency-free NumPy .npy v1.0 reader/writer.
+-- Minimal, dependency-free NumPy .npy reader/writer.
 --
 -- Supported dtypes:
 --   float16 -> '<f2'
@@ -14,12 +14,15 @@
 --   uint8   -> '|u1'
 --   bool    -> '|b1'
 --
--- Arrays are written in C order.  The reader accepts any 1-D/2-D/N-D C-order
--- file with the dtypes above and rejects big-endian files, Fortran order,
--- NPY versions other than 1.0, and unsupported descr values with clear
--- errors.  On little-endian hosts, native-endian '=' descr values are accepted
--- as aliases for the '<' spellings, matching NumPy's dtype parser.  Only
--- little-endian hosts are supported (LuaJIT ffi.abi("le")).
+-- Arrays are written as NPY v1.0 in C order.  The reader accepts NPY v1.0,
+-- v2.0, and v3.0 headers with the dtypes above and any 1-D/2-D/N-D C-order
+-- file; it rejects big-endian files, Fortran order, unsupported versions, and
+-- unsupported descr values with clear errors.  v2.0 and v3.0 differ from v1.0
+-- only in their 4-byte header-length field (and v3.0's UTF-8 header encoding),
+-- which this reader already parses as byte strings.  On little-endian hosts,
+-- native-endian '=' descr values are accepted as aliases for the '<'
+-- spellings, matching NumPy's dtype parser.  Only little-endian hosts are
+-- supported (LuaJIT ffi.abi("le")).
 --
 
 local ffi = require("ffi")
@@ -32,6 +35,7 @@ local npy = {}
 local MAGIC = "\147NUMPY"
 local VERSION_MAJOR = 1
 local VERSION_MINOR = 0
+local SUPPORTED_VERSIONS = "1.0, 2.0, 3.0"
 
 local DTYPES = {
   [0] = { descr = "<f4", name = "float32" },
@@ -73,6 +77,13 @@ end
 
 local function last_error()
   return ffi.string(lib.lt_last_error())
+end
+
+-- NPY v2.0 and v3.0 store the header length as a little-endian uint32 instead
+-- of v1.0's uint16.
+local function read_u32(data, offset)
+  return data:byte(offset) + data:byte(offset + 1) * 256 +
+    data:byte(offset + 2) * 65536 + data:byte(offset + 3) * 16777216
 end
 
 local function shape_to_string(shape)
@@ -227,20 +238,30 @@ function npy.load(path)
     error("numlua.load: not an NPY file (bad magic)", 2)
   end
   local major, minor = data:byte(7), data:byte(8)
-  if major ~= VERSION_MAJOR or minor ~= VERSION_MINOR then
+  if minor ~= 0 or major < 1 or major > 3 then
     error(string.format(
-      "numlua.load: unsupported NPY version %d.%d (only 1.0 is supported)",
-      major, minor), 2)
+      "numlua.load: unsupported NPY version %d.%d (supported: %s)",
+      major, minor, SUPPORTED_VERSIONS), 2)
   end
 
-  local header_size = data:byte(9) + data:byte(10) * 256
+  local prefix_size, header_size
+  if major == 1 then
+    prefix_size = 10
+    header_size = data:byte(9) + data:byte(10) * 256
+  else
+    if #data < 12 then
+      error("numlua.load: truncated .npy file (missing header)", 2)
+    end
+    prefix_size = 12
+    header_size = read_u32(data, 9)
+  end
   if header_size < 1 then
     error("numlua.load: malformed .npy header (zero length)", 2)
   end
-  if #data < 10 + header_size then
+  if #data < prefix_size + header_size then
     error("numlua.load: truncated .npy header", 2)
   end
-  local header = data:sub(11, 10 + header_size)
+  local header = data:sub(prefix_size + 1, prefix_size + header_size)
   if header:sub(-1) ~= "\n" then
     error("numlua.load: malformed .npy header (missing trailing newline)", 2)
   end
@@ -285,7 +306,7 @@ function npy.load(path)
     numel = numel * shape[i]
   end
   local expected_bytes = numel * info.size
-  local payload = data:sub(10 + header_size + 1)
+  local payload = data:sub(prefix_size + header_size + 1)
   if #payload ~= expected_bytes then
     error(string.format(
       "numlua.load: shape/data size mismatch: expected %d bytes, got %d",

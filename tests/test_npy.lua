@@ -19,11 +19,16 @@ local function write_bytes(path, data)
   handle:close()
 end
 
-local function make_header(descr, fortran, shape_text)
+local function u32(value)
+  return string.char(value % 256, math.floor(value / 256) % 256,
+    math.floor(value / 65536) % 256, math.floor(value / 16777216) % 256)
+end
+
+local function make_header(descr, fortran, shape_text, prefix_size)
   local dict = string.format(
     "{'descr': '%s', 'fortran_order': %s, 'shape': %s, }",
     descr, fortran, shape_text)
-  local total_without_padding = 10 + #dict + 1
+  local total_without_padding = (prefix_size or 10) + #dict + 1
   local padding = (64 - (total_without_padding % 64)) % 64
   return dict .. string.rep(" ", padding) .. "\n"
 end
@@ -34,15 +39,20 @@ local function craft(path, options)
   local descr = options.descr or "<f4"
   local fortran = options.fortran or "False"
   local shape_text = options.shape_text or "(2, 3)"
-  local header = make_header(descr, fortran, shape_text)
+  local version = options.version or { 1, 0 }
+  local prefix_size = version[1] == 1 and 10 or 12
+  local header = make_header(descr, fortran, shape_text, prefix_size)
   if options.strip_newline then
     header = header:sub(1, -2)
   end
-  local version = options.version or { 1, 0 }
   local magic = options.magic or "\147NUMPY"
   local payload = options.payload or string.rep("\0", options.payload_size or 0)
-  local prefix = magic .. string.char(version[1], version[2]) ..
-    string.char(#header % 256, math.floor(#header / 256))
+  local prefix = magic .. string.char(version[1], version[2])
+  if version[1] == 1 then
+    prefix = prefix .. string.char(#header % 256, math.floor(#header / 256))
+  else
+    prefix = prefix .. u32(#header)
+  end
   write_bytes(path, prefix .. header .. payload)
   return path
 end
@@ -57,6 +67,22 @@ local function use_native_endian_descr(path)
   assert_eq(replacements, 1)
   write_bytes(path, data:sub(1, 10) .. patched ..
     data:sub(11 + header_size))
+end
+
+-- Rewrite a saved v1.0 file with a v2.0/v3.0 version and 4-byte header-length
+-- field.  The header is re-padded for the wider prefix, and the payload is
+-- preserved byte for byte.
+local function rewrite_with_version(source, target, major, minor)
+  local data = read_bytes(source)
+  local header_size = data:byte(9) + data:byte(10) * 256
+  local header = data:sub(11, 10 + header_size)
+  local payload = data:sub(11 + header_size)
+  local dict = assert(header:match("^(.-)%s*\n$"))
+  local total_without_padding = 12 + #dict + 1
+  local padding = (64 - (total_without_padding % 64)) % 64
+  local new_header = dict .. string.rep(" ", padding) .. "\n"
+  write_bytes(target, "\147NUMPY" .. string.char(major, minor) ..
+    u32(#new_header) .. new_header .. payload)
 end
 
 test("save/load round-trip for every supported dtype and shape", function()
@@ -273,6 +299,47 @@ test("load accepts native-endian '=' descr values", function()
   end
 end)
 
+test("load reads NPY v2.0 and v3.0 headers", function()
+  -- A v2.0 file with the same 2x3 float32 payload as a v1.0 save loads
+  -- identically; the only format difference is the 4-byte header length.
+  local crafted = craft(tmp_path("v2-crafted"), {
+    version = { 2, 0 },
+    payload = string.rep("\0\0\128\63", 6),
+  })
+  assert_tensor(numlua.load(crafted), { { 1, 1, 1 }, { 1, 1, 1 } })
+  os.remove(crafted)
+
+  local source = tmp_path("version-source")
+  local tensor = numlua.array({ { 1.5, -2.25 }, { 0, 3.5 } })
+  numlua.save(source, tensor)
+  for _, version in ipairs({ { 2, 0 }, { 3, 0 } }) do
+    local target = tmp_path("version-" .. version[1])
+    rewrite_with_version(source, target, version[1], version[2])
+    local data = read_bytes(target)
+    assert_eq(data:byte(7), version[1])
+    assert_eq(data:byte(8), version[2])
+    local loaded = numlua.load(target)
+    assert_dtype(loaded, "float32")
+    assert_shape(loaded, { 2, 2 })
+    assert_true(loaded:equal(tensor))
+    os.remove(target)
+  end
+  os.remove(source)
+
+  -- 0-D arrays take the wider-header path too.
+  local scalar = numlua.array(7, { dtype = "int64" })
+  local scalar_path = tmp_path("v3-scalar")
+  numlua.save(scalar_path, scalar)
+  local target = scalar_path .. ".v3"
+  rewrite_with_version(scalar_path, target, 3, 0)
+  local scalar_loaded = numlua.load(target)
+  assert_eq(scalar_loaded:dim(), 0)
+  assert_dtype(scalar_loaded, "int64")
+  assert_eq(scalar_loaded:item(), 7)
+  os.remove(scalar_path)
+  os.remove(target)
+end)
+
 test("load rejects unsupported descr values", function()
   local path = craft(tmp_path("unsupported"), {
     descr = "<u4",
@@ -299,12 +366,39 @@ test("load rejects malformed and non-NPY files", function()
   os.remove(bad_magic)
 
   local version_path = craft(tmp_path("version"), {
-    version = { 2, 0 },
+    version = { 4, 0 },
     payload_size = 24,
   })
   assert_error(function() numlua.load(version_path) end,
-    "unsupported NPY version 2.0")
+    "unsupported NPY version 4.0")
   os.remove(version_path)
+
+  -- A supported major version with a non-zero minor is still unknown.
+  local minor_path = craft(tmp_path("version-minor"), {
+    version = { 2, 1 },
+    payload_size = 24,
+  })
+  assert_error(function() numlua.load(minor_path) end,
+    "unsupported NPY version 2.1")
+  os.remove(minor_path)
+
+  -- v2.0/v3.0 truncation must fail before reading a partial header.
+  local truncated_v2 = tmp_path("v2-truncated")
+  write_bytes(truncated_v2, "\147NUMPY" .. string.char(2, 0) ..
+    u32(1000) .. "{'descr': '<f4'")
+  assert_error(function() numlua.load(truncated_v2) end,
+    "truncated .npy header")
+  os.remove(truncated_v2)
+
+  local zero_v2 = tmp_path("v2-zero")
+  write_bytes(zero_v2, "\147NUMPY" .. string.char(2, 0) .. u32(0))
+  assert_error(function() numlua.load(zero_v2) end, "zero length")
+  os.remove(zero_v2)
+
+  local short_v2 = tmp_path("v2-short")
+  write_bytes(short_v2, "\147NUMPY" .. string.char(2, 0) .. "\1\0")
+  assert_error(function() numlua.load(short_v2) end, "missing header")
+  os.remove(short_v2)
 
   local no_newline = craft(tmp_path("no-newline"), {
     strip_newline = true,

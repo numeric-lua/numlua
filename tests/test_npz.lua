@@ -45,6 +45,20 @@ local function patch(data, offset, replacement)
     data:sub(offset + #replacement)
 end
 
+-- Rewrite v1.0 .npy bytes with a v2.0/v3.0 version and 4-byte header length.
+-- The header is re-padded for the wider prefix and the payload is unchanged.
+local function npy_with_version(bytes, major)
+  local header_size = bytes:byte(9) + bytes:byte(10) * 256
+  local header = bytes:sub(11, 10 + header_size)
+  local payload = bytes:sub(11 + header_size)
+  local dict = assert(header:match("^(.-)%s*\n$"))
+  local total_without_padding = 12 + #dict + 1
+  local padding = (64 - (total_without_padding % 64)) % 64
+  local new_header = dict .. string.rep(" ", padding) .. "\n"
+  return "\147NUMPY" .. string.char(major, 0) .. u32(#new_header) ..
+    new_header .. payload
+end
+
 local function valid_archive(name)
   local file = path(name)
   assert_true(numlua.savez(file, { x = numlua.array({ 1, 2, 3 }) }))
@@ -110,6 +124,26 @@ test("savez/loadz round-trip several arrays", function()
   assert_dtype(loaded.unsigned, "uint8")
   assert_tensor(loaded.unsigned, { 0, 127, 255 })
   os.remove(file)
+end)
+
+test("loadz reads NPY v2.0 and v3.0 members", function()
+  local tensor = numlua.array({ { 1.5, -2.25 }, { 0, 3.5 } })
+  local source = TMPDIR .. "/npz-version-source.npy"
+  assert_true(numlua.save(source, tensor))
+  local bytes = read_bytes(source)
+  local file = path("npy-versions")
+  generator.write_npz(file, {
+    { name = "two.npy", payload = npy_with_version(bytes, 2) },
+    { name = "three.npy", payload = npy_with_version(bytes, 3) },
+  })
+
+  local loaded = numlua.loadz(file)
+  assert_dtype(loaded.two, "float32")
+  assert_tensor(loaded.two, { { 1.5, -2.25 }, { 0, 3.5 } })
+  assert_dtype(loaded.three, "float32")
+  assert_tensor(loaded.three, { { 1.5, -2.25 }, { 0, 3.5 } })
+  os.remove(file)
+  os.remove(source)
 end)
 
 test("savez/loadz preserve C order for non-contiguous tensors", function()
