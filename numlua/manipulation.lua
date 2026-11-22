@@ -1153,6 +1153,77 @@ function M.apply_along_axis(func, axis_value, t, ...)
   return out
 end
 
+-- Convert one apply_over_axes callback result to a tensor.  NumPy requires an
+-- ndarray; numlua also accepts the scalar and Lua-table spellings that
+-- apply_along_axis accepts, then applies the same rank rule.
+local function apply_over_axes_result(value)
+  if torch.is_tensor(value) then
+    return value
+  end
+  if type(value) == "number" or type(value) == "boolean" then
+    return torch.tensor(value)
+  end
+  if type(value) == "table" then
+    local ok, result = pcall(torch.tensor, value)
+    if not ok then
+      error("numlua.apply_over_axes: function returned an invalid " ..
+        "table: " .. tostring(result), 3)
+    end
+    return result
+  end
+  error("numlua.apply_over_axes: function must return a tensor, scalar, " ..
+    "or table, got " .. type(value), 3)
+end
+
+-- apply_over_axes(func, t, axes[, ...]) mirrors np.apply_over_axes.  Axes are
+-- applied in order to the current value and may repeat.  A callback result
+-- that keeps the rank is used as-is (NumPy's keepdims-style callback); a
+-- result that removed the selected axis is re-expanded at that 1-based
+-- position, which keeps the rank stable across axes.  Any other rank change is
+-- an error, as in NumPy.  Extra positional arguments are forwarded to the
+-- callback, matching apply_along_axis.
+function M.apply_over_axes(func, t, axes_value, ...)
+  tensor(t, "apply_over_axes")
+  if type(func) ~= "function" then
+    error("numlua.apply_over_axes expects a function as the first " ..
+      "argument", 2)
+  end
+  if t:dim() == 0 then
+    error("numlua.apply_over_axes: function is not applied to a scalar " ..
+      "(0-D) tensor", 2)
+  end
+  local axes = axes_value
+  if type(axes) == "number" then
+    axes = { axes }
+  end
+  if type(axes) ~= "table" then
+    error("numlua.apply_over_axes expects an axis or a table of axes, got " ..
+      type(axes_value), 2)
+  end
+
+  local args = { ... }
+  local arg_count = select("#", ...)
+  local value = t
+  for index = 1, #axes do
+    local ndim = value:dim()
+    local dim = axis(axes[index], ndim, "apply_over_axes")
+    local result = apply_over_axes_result(func(value, dim,
+      unpack(args, 1, arg_count)))
+    if result:dim() == ndim then
+      value = result
+    elseif result:dim() == ndim - 1 then
+      value = result:unsqueeze(dim)
+    else
+      error(string.format(
+        "numlua.apply_over_axes: function is not returning an array of the " ..
+        "correct shape (got a %d-D result for %d-D input on axis %d; " ..
+        "expected %d-D or %d-D)", result:dim(), ndim, dim, ndim, ndim - 1),
+        2)
+    end
+  end
+  return value
+end
+
 local PUT_MODES = {
   raise = true,
   wrap = true,
