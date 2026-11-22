@@ -502,6 +502,82 @@ function numlua.where(condition, x, y)
     as_where_operand(x, "x"), as_where_operand(y, "y"))
 end
 
+-- select() mirrors np.select: conditions are tested in order, the first true
+-- condition wins, and `default` (0 when omitted) is used where every condition
+-- is false.  Conditions and choices accept tensors or Lua scalars, like
+-- where(); ATen performs the broadcasting and dtype promotion.
+local function select_condition(value, index)
+  if torch.is_tensor(value) or type(value) == "number" or
+      type(value) == "boolean" then
+    return as_condition(value)
+  end
+  error(string.format(
+    "numlua.select: condition %d must be a tensor, number, or boolean, " ..
+    "got %s", index, type(value)), 3)
+end
+
+local function select_choice(value, index)
+  if torch.is_tensor(value) then
+    return value
+  end
+  if type(value) == "number" or type(value) == "boolean" then
+    return torch.tensor(value)
+  end
+  error(string.format(
+    "numlua.select: choice %d must be a tensor, number, or boolean, got %s",
+    index, type(value)), 3)
+end
+
+local function select_default(value)
+  if value == nil then
+    return torch.tensor(0)
+  end
+  if torch.is_tensor(value) then
+    return value
+  end
+  if type(value) == "number" or type(value) == "boolean" then
+    return torch.tensor(value)
+  end
+  error(string.format(
+    "numlua.select: default must be a tensor, number, or boolean, got %s",
+    type(value)), 3)
+end
+
+function numlua.select(condlist, choicelist, default)
+  if type(condlist) ~= "table" or #condlist == 0 then
+    error("numlua.select expects a non-empty table of conditions", 2)
+  end
+  if type(choicelist) ~= "table" or #choicelist == 0 then
+    error("numlua.select expects a non-empty table of choices", 2)
+  end
+  if #condlist ~= #choicelist then
+    error(string.format(
+      "numlua.select: condition and choice lists must have the same length " ..
+      "(got %d conditions and %d choices)", #condlist, #choicelist), 2)
+  end
+
+  local conditions, choices = {}, {}
+  for index = 1, #condlist do
+    conditions[index] = select_condition(condlist[index], index)
+    choices[index] = select_choice(choicelist[index], index)
+  end
+  local result = select_default(default)
+
+  -- Folding from the last condition to the first makes the first matching
+  -- condition win, matching np.select instead of the last.
+  for index = #conditions, 1, -1 do
+    local ok, selected = pcall(torch.where, conditions[index],
+      choices[index], result)
+    if not ok then
+      error("numlua.select: condition " .. index ..
+        " and its choice do not broadcast with the result: " ..
+        tostring(selected), 3)
+    end
+    result = selected
+  end
+  return result
+end
+
 local function check_clip_bound(value, name)
   if type(value) == "number" or torch.is_tensor(value) then
     return value
