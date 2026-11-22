@@ -14,7 +14,7 @@ the actual computation.
 > **Status: 0.17.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`, and text I/O.  It is packaged on LuaRocks and tested against
-> luatorch 0.17.x.
+> luatorch 0.25.x.
 
 ## Why a facade?
 
