@@ -88,6 +88,14 @@ test("new public API and format support are documented", function()
   assert_true(api:find('-- "' .. numlua.VERSION .. '"', 1, true) ~= nil,
     "docs/api.md version example does not match numlua.VERSION")
 
+  for _, option in ipairs({ "skiprows", "max_rows", "usecols", "unpack",
+      "ndmin", "header", "footer", "comments", "newline" }) do
+    assert_true(api:find("`" .. option .. "`", 1, true) ~= nil,
+      "docs/api.md does not document the text option " .. option)
+  end
+  assert_true(api:find("per-column formats", 1, true) ~= nil,
+    "docs/api.md does not document per-column fmt tables")
+
   local readme = read_file(root .. "/README.md")
   assert_true(readme:find("Status: " .. numlua.VERSION, 1, true) ~= nil,
     "README.md status does not match numlua.VERSION")
@@ -109,6 +117,10 @@ test("new public API and format support are documented", function()
     "README.md does not demonstrate numlua.apply_along_axis")
   assert_true(readme:find("numlua.apply_over_axes", 1, true) ~= nil,
     "README.md does not demonstrate numlua.apply_over_axes")
+  for _, option in ipairs({ "usecols", "ndmin", "header", "newline" }) do
+    assert_true(readme:find(option, 1, true) ~= nil,
+      "README.md does not mention the text option " .. option)
+  end
 end)
 
 test("CI smoke job names the current rockspec and version", function()

@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.18.0"
+print(numlua.VERSION) -- "0.19.0"
 ```
 
 ## Conventions
@@ -1011,8 +1011,8 @@ applies to data rows and to the header/footer lines; it defaults to `"\n"`.
 Pass `comments = ""` to write bare header/footer text. Header and footer text
 are written even for empty vectors and zero-column matrices.
 
-A custom `fmt` is applied to every value. A table supplies one format per
-column, in left-to-right order; each entry may be a `printf` string or a
+A custom `fmt` is applied to every value. A `fmt` table supplies one format
+per column, in left-to-right order; each entry may be a `printf` string or a
 function, so strings and functions can be mixed. The table length must equal
 the number of output columns, and a 1-D vector has one column:
 
@@ -1079,11 +1079,14 @@ dtype, or backend constraints are forwarded as-is.
   restored at the same position); NumPy's scalar and table return spellings
   are not accepted by `np.apply_over_axes`, which expects an ndarray.
 - Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
-  or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
-  squeezed to 1-D. `bool` is not supported by either text function. Unknown
-  option keys are rejected, and `int64` text output can round values beyond the
-  exactly representable double range; use `.npy` when exact large integers
-  matter.
+  or parsed header metadata. `savetxt` header/footer text is written as
+  comments, so `loadtxt` ignores it rather than interpreting it. `loadtxt`
+  defaults to `float32`, and one-row/one-column files are squeezed to 1-D
+  unless `ndmin = 2`. `usecols` uses **1-based** column numbers (NumPy uses
+  0-based columns), though negative columns count from the end in both. `bool`
+  is not supported by either text function. Unknown option keys are rejected,
+  and `int64` text output can round values beyond the exactly representable
+  double range; use `.npy` when exact large integers matter.
 - `argsort`'s `descending` flag is a numlua extension; NumPy has no positional
   descending argument. The flag must be a boolean or `nil`.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.

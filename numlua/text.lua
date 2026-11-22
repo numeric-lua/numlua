@@ -11,12 +11,22 @@
 --              savetxt defaults to a single space.
 --   comments   loadtxt comment marker(s), as a string or table of strings.
 --              Defaults to "#"; false or "" disables comment stripping.
+--              savetxt defaults to "# " for header/footer prefixes.
 --   dtype      loadtxt result dtype (default "float32").
---   fmt        savetxt printf-style format string or function.
+--   fmt        savetxt printf-style format string or function, or a table with
+--              one format per column.
+--   skiprows   loadtxt physical lines to skip before parsing (default 0).
+--   max_rows   loadtxt data rows to read after skipping (default all).
+--   usecols    loadtxt 1-based column number or table of column numbers.
+--   unpack     loadtxt transpose a 2-D result.
+--   ndmin      loadtxt minimum rank, 0/1/2 (default 0).
+--   header     savetxt comment-prefixed text before the data.
+--   footer     savetxt comment-prefixed text after the data.
+--   newline    savetxt line terminator (default "\n").
 --
 -- Text files do not record shape or dtype.  A one-row or one-column file loads
--- as 1-D; files with two or more rows and columns load as 2-D.  bool is not a
--- supported text dtype; use an integral dtype and 0/1 values instead.
+-- as 1-D unless ndmin=2; files with two or more rows and columns load as 2-D.
+-- bool is not a supported text dtype; use an integral dtype and 0/1 values.
 --
 
 local torch = require("torch")

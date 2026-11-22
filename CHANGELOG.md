@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.19.0 — 2026-11-22
+
+### Added
+
+- `numlua.loadtxt(..., { skiprows = n, max_rows = m })`, matching the
+  corresponding NumPy options: `skiprows` counts physical lines including
+  comments and blanks, `max_rows` counts data rows after the skip, and rows
+  beyond the limit are not parsed.
+- `numlua.loadtxt(..., { usecols = ..., unpack = ... })`. `usecols` accepts a
+  single 1-based column or a table of columns, preserves the requested order
+  and duplicates, accepts negative columns (`-1` is the last), and converts
+  only the selected fields. `unpack = true` transposes a 2-D result after
+  squeezing/`ndmin`, following NumPy.
+- `numlua.loadtxt(..., { ndmin = 0|1|2 })`. `ndmin = 2` keeps the physical
+  row/column shape, so one-row and one-column files become `(1, N)` and
+  `(N, 1)` instead of 1-D vectors; empty input becomes `(0, 1)` and is
+  transposed when `unpack` is also set.
+- `numlua.savetxt(..., { header = ..., footer = ..., comments = ...,
+  newline = ... })`, following `np.savetxt`. Header/footer lines are
+  comment-prefixed (default `"# "`), multi-line values are prefixed per line,
+  and `newline` applies to data and annotations. Existing output is unchanged
+  when these options are omitted.
+- `numlua.savetxt` accepts a `fmt` table with one format string or function per
+  column, in addition to the existing single string/function form.
+
+### Changed
+
+- `numlua.loadtxt` now validates `skiprows`, `max_rows`, `usecols`, `unpack`,
+  and `ndmin` with `numlua.loadtxt:` errors instead of forwarding Lua type or
+  arithmetic failures.
+- `numlua.savetxt` validates `header`, `footer`, `comments`, `newline`, and
+  per-column `fmt` tables before opening the output file.
+
+### Tests
+
+- 237 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_txt.lua` covers physical-line skipping, data-row limits and early
+  stop, 1-based/negative/duplicate `usecols`, unused malformed fields,
+  `unpack` on 1-D/2-D/empty input, every `ndmin` mode, header/footer/comment
+  framing, custom newlines, per-column format tables, empty/zero-column
+  output, and the validation error paths.
+
 ## 0.18.0 — 2026-11-22
 
 ### Added
