@@ -388,11 +388,13 @@ assert(b:equal(a))
 
 `loadtxt` ignores blank lines and comments, requires every data row to have the
 same number of fields, and reports malformed rows or invalid numbers with the
-line number. One-row and one-column files become 1-D tensors (NumPy's default
-squeeze behavior), and an all-comment/empty file loads as an empty 1-D tensor.
-The default load dtype is `float32`; pass `dtype` to load integers or wider
-floats exactly. Text files do not store shape or dtype, so a 1xN or Nx1 matrix
-cannot be distinguished from a vector after loading.
+line number. `skiprows` skips physical lines (including comments and blanks),
+while `max_rows` limits the number of data rows read after that skip; `max_rows`
+does not count blank or comment lines. One-row and one-column files become 1-D
+tensors (NumPy's default squeeze behavior), and an all-comment/empty file loads
+as an empty 1-D tensor. The default load dtype is `float32`; pass `dtype` to load
+integers or wider floats exactly. Text files do not store shape or dtype, so a
+1xN or Nx1 matrix cannot be distinguished from a vector after loading.
 
 `savetxt` writes sufficient digits for `float16`/`float32`/`float64`
 round-trips, writes `nan`/`inf` explicitly, and supports a `fmt` format string

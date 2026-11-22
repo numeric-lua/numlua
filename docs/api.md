@@ -911,6 +911,8 @@ luatorch tensor. Options:
 | `delimiter` | whitespace runs | field separator, such as `","` or `"\t"` |
 | `comments` | `"#"` | comment marker, a table of markers, or `false`/`""` to disable |
 | `dtype` | `"float32"` | result dtype (a luatorch dtype name or id) |
+| `skiprows` | `0` | number of physical lines to skip before parsing |
+| `max_rows` | all | maximum number of data rows to read after skipping |
 
 Blank lines and comments are ignored. Comment text starts at the first occurrence
 of any configured marker on a line, so both full-line and trailing comments work.
@@ -920,6 +922,13 @@ load as 1-D tensors, following NumPy's default squeeze behavior; a file with no
 data rows returns an empty 1-D tensor. Numeric fields accept decimal, scientific,
 `nan`, `inf`, and `-inf` spellings. Unknown option keys raise a
 `numlua.loadtxt: unknown option ...` error instead of being ignored.
+
+`skiprows` counts physical lines, including comments and blank lines, exactly
+like NumPy. `max_rows` is applied after that skip and counts data rows only:
+blank and comment lines do not consume the limit, and `max_rows = 0` returns an
+empty 1-D tensor without parsing data rows. Both options must be non-negative
+integers. Rows beyond `max_rows` are not parsed, so an error there is not
+reported.
 
 ```lua
 -- data.csv:

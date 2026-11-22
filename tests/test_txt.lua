@@ -500,3 +500,59 @@ test("text formatting covers delimiters, integer bounds, and float16",
   end, "invalid number '' in column 3")
   os.remove(trailing)
 end)
+
+test("loadtxt skiprows counts physical lines and max_rows data rows",
+    function()
+  local path = write_text(tmp_path("row-window"),
+    "# header\n" ..
+    "\n" ..
+    "10 11\n" ..
+    "# between\n" ..
+    "20 21\n" ..
+    "30 31\n")
+
+  -- skiprows counts comments and blank lines, not data rows.
+  assert_tensor(numlua.loadtxt(path, { skiprows = 3 }),
+    { { 20, 21 }, { 30, 31 } })
+  assert_tensor(numlua.loadtxt(path, { skiprows = 4 }),
+    { { 20, 21 }, { 30, 31 } })
+  assert_tensor(numlua.loadtxt(path, { skiprows = 5 }), { 30, 31 })
+
+  -- max_rows counts data rows only; comment/blank lines do not consume it.
+  assert_tensor(numlua.loadtxt(path, { max_rows = 1 }), { 10, 11 })
+  assert_tensor(numlua.loadtxt(path, { max_rows = 2 }),
+    { { 10, 11 }, { 20, 21 } })
+
+  -- The window is applied after skipping, and max_rows=0 reads no data.
+  assert_tensor(numlua.loadtxt(path, { skiprows = 3, max_rows = 1 }),
+    { 20, 21 })
+  local none = numlua.loadtxt(path, { max_rows = 0 })
+  assert_shape(none, { 0 })
+  assert_eq(none:numel(), 0)
+
+  -- Skipping every line is an empty result rather than an error.
+  local empty = numlua.loadtxt(path, { skiprows = 99 })
+  assert_shape(empty, { 0 })
+  os.remove(path)
+
+  local malformed = write_text(tmp_path("skipped-malformed"),
+    "not numbers\n1 2\n3 4\n")
+  assert_tensor(numlua.loadtxt(malformed, { skiprows = 1 }),
+    { { 1, 2 }, { 3, 4 } })
+  assert_error(function()
+    numlua.loadtxt(malformed, { skiprows = 1, max_rows = 1, delimiter = "," })
+  end, "line 2: invalid number '1 2' in column 1")
+  os.remove(malformed)
+end)
+
+test("loadtxt validates skiprows and max_rows", function()
+  local path = write_text(tmp_path("window-errors"), "1 2\n")
+  for _, option in ipairs({ "skiprows", "max_rows" }) do
+    for _, value in ipairs({ -1, 1.5, "1", true }) do
+      assert_error(function()
+        numlua.loadtxt(path, { [option] = value })
+      end, option .. " must be a non-negative integer")
+    end
+  end
+  os.remove(path)
+end)

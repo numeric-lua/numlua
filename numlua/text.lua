@@ -48,6 +48,8 @@ local LOAD_OPTIONS = {
   delimiter = true,
   comments = true,
   dtype = true,
+  skiprows = true,
+  max_rows = true,
 }
 
 local SAVE_OPTIONS = {
@@ -75,6 +77,18 @@ local function check_delimiter(delimiter, name)
       "numlua.%s: delimiter must be a non-empty string or nil", name), 3)
   end
   return delimiter
+end
+
+local function check_nonnegative_integer(value, option, name)
+  if value == nil then
+    return nil
+  end
+  if type(value) ~= "number" or value % 1 ~= 0 or value < 0 then
+    error(string.format(
+      "numlua.%s: %s must be a non-negative integer or nil, got %s",
+      name, option, tostring(value)), 3)
+  end
+  return value
 end
 
 local function comment_markers(comments)
@@ -219,12 +233,18 @@ function text.loadtxt(path, options)
   local delimiter = check_delimiter(options.delimiter, "loadtxt")
   local markers = comment_markers(options.comments)
   local dtype = check_load_dtype(options.dtype)
+  local skiprows = check_nonnegative_integer(
+    options.skiprows, "skiprows", "loadtxt")
+  local max_rows = check_nonnegative_integer(
+    options.max_rows, "max_rows", "loadtxt")
 
   local data = read_file(path)
   local rows = {}
   local columns = nil
 
-  if data ~= "" then
+  -- max_rows=0 reads no data rows at all, but still validates/open-reads the
+  -- path and options first, like NumPy.
+  if data ~= "" and max_rows ~= 0 then
     -- Split on CRLF and lone CR as well as LF, matching Python's splitlines
     -- and NumPy's text reader.  Numeric fields never contain a carriage
     -- return, so normalizing before splitting cannot merge or split values.
@@ -235,27 +255,34 @@ function text.loadtxt(path, options)
     local line_number = 0
     for raw in data:gmatch("([^\n]*)\n") do
       line_number = line_number + 1
-      local line = strip_comments(raw, markers)
-      if trim(line) ~= "" then
-        local fields = split_fields(line, delimiter)
-        if columns == nil then
-          columns = #fields
-        elseif #fields ~= columns then
-          error(string.format(
-            "numlua.loadtxt: line %d has %d column(s), expected %d",
-            line_number, #fields, columns), 2)
-        end
-        local row = {}
-        for column = 1, #fields do
-          local value = parse_number(fields[column])
-          if value == nil then
+      -- skiprows counts physical lines, including comments and blank lines,
+      -- exactly like NumPy's skiprows.  max_rows below counts data rows only.
+      if line_number > (skiprows or 0) then
+        local line = strip_comments(raw, markers)
+        if trim(line) ~= "" then
+          local fields = split_fields(line, delimiter)
+          if columns == nil then
+            columns = #fields
+          elseif #fields ~= columns then
             error(string.format(
-              "numlua.loadtxt: line %d: invalid number '%s' in column %d",
-              line_number, fields[column], column), 2)
+              "numlua.loadtxt: line %d has %d column(s), expected %d",
+              line_number, #fields, columns), 2)
           end
-          row[column] = value
+          local row = {}
+          for column = 1, #fields do
+            local value = parse_number(fields[column])
+            if value == nil then
+              error(string.format(
+                "numlua.loadtxt: line %d: invalid number '%s' in column %d",
+                line_number, fields[column], column), 2)
+            end
+            row[column] = value
+          end
+          rows[#rows + 1] = row
+          if max_rows ~= nil and #rows >= max_rows then
+            break
+          end
         end
-        rows[#rows + 1] = row
       end
     end
   end
