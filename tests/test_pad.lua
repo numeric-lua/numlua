@@ -32,6 +32,164 @@ local function wrap_expected(values, pads)
   return build(values, 1)
 end
 
+-- Flatten a nested Lua array into C-order storage plus its shape, and rebuild
+-- it afterwards.  The reference pad below walks this form directly, so it does
+-- not reuse any of the implementation's index or reduction helpers.
+local function flatten_nested(values)
+  local flat, shape = {}, {}
+  local function walk(value, depth)
+    if type(value) ~= "table" then
+      flat[#flat + 1] = value
+      return
+    end
+    shape[depth] = #value
+    for index = 1, #value do walk(value[index], depth + 1) end
+  end
+  walk(values, 1)
+  return flat, shape
+end
+
+local function rebuild_nested(flat, shape)
+  local position = 0
+  local function build(depth)
+    if depth > #shape then
+      position = position + 1
+      return flat[position]
+    end
+    local branch = {}
+    for index = 1, shape[depth] do branch[index] = build(depth + 1) end
+    return branch
+  end
+  return build(1)
+end
+
+local function flat_index(shape, coords)
+  local index = 1
+  for dim = 1, #shape do
+    index = (index - 1) * shape[dim] + coords[dim]
+  end
+  return index
+end
+
+local function coords_from_flat(shape, index)
+  local coords = {}
+  local remainder = index - 1
+  for dim = #shape, 1, -1 do
+    coords[dim] = remainder % shape[dim] + 1
+    remainder = math.floor(remainder / shape[dim])
+  end
+  return coords
+end
+
+local function statistic(values, mode)
+  if mode == "maximum" or mode == "minimum" then
+    local result = values[1]
+    for index = 2, #values do
+      if mode == "maximum" and values[index] > result then
+        result = values[index]
+      elseif mode == "minimum" and values[index] < result then
+        result = values[index]
+      end
+    end
+    return result
+  end
+  if mode == "mean" then
+    local total = 0
+    for index = 1, #values do total = total + values[index] end
+    return total / #values
+  end
+  -- median: sort a copy, then average the middle pair when the count is even.
+  local sorted = {}
+  for index = 1, #values do sorted[index] = values[index] end
+  table.sort(sorted)
+  local middle = math.floor((#sorted + 1) / 2)
+  if #sorted % 2 == 1 then
+    return sorted[middle]
+  end
+  return (sorted[middle] + sorted[middle + 1]) / 2
+end
+
+-- Reference implementation for the linear_ramp and statistic pad modes.
+-- `option` is a per-axis table of {before, after} values: end values for
+-- linear_ramp, stat_length pairs for the statistic modes.  Integer rounding
+-- is intentionally left out; callers use float inputs for the walker and
+-- separate literal expectations for integer dtype behavior.
+local function reference_pad(values, pads, mode, option)
+  local flat, shape = flatten_nested(values)
+  for dim = 1, #pads do
+    local before, after = pads[dim][1], pads[dim][2]
+    if before + after > 0 then
+      local old_shape, old_flat, size = shape, flat, shape[dim]
+      local new_shape = {}
+      for index = 1, #old_shape do
+        new_shape[index] = old_shape[index] +
+          (index == dim and before + after or 0)
+      end
+      local lengths = option and option[dim] or nil
+      local left_length = lengths and math.min(size, lengths[1] or size) or size
+      local right_length = lengths and math.min(size, lengths[2] or size) or size
+
+      local function statistic_for(other_coords, side)
+        local count = side == "left" and left_length or right_length
+        local start = side == "left" and 1 or size - count + 1
+        local sample = {}
+        for offset = 0, count - 1 do
+          local coords = {}
+          for index = 1, #old_shape do coords[index] = other_coords[index] end
+          coords[dim] = start + offset
+          sample[#sample + 1] = old_flat[flat_index(old_shape, coords)]
+        end
+        return statistic(sample, mode)
+      end
+
+      local total = 1
+      for index = 1, #new_shape do total = total * new_shape[index] end
+      local new_flat = {}
+      for position = 1, total do
+        local coords = coords_from_flat(new_shape, position)
+        local axis_position = coords[dim]
+        local other = {}
+        for index = 1, #old_shape do other[index] = coords[index] end
+        if axis_position >= before + 1 and
+            axis_position <= before + size then
+          local source = {}
+          for index = 1, #old_shape do source[index] = coords[index] end
+          source[dim] = axis_position - before
+          new_flat[position] = old_flat[flat_index(old_shape, source)]
+        elseif mode == "linear_ramp" then
+          local side, offset, width, edge_position
+          if axis_position <= before then
+            side, offset, width, edge_position = "left", axis_position, before, 1
+          else
+            side = "right"
+            offset = axis_position - before - size
+            width = after
+            edge_position = size
+          end
+          local edge_coords = {}
+          for index = 1, #old_shape do edge_coords[index] = coords[index] end
+          edge_coords[dim] = edge_position
+          local edge = old_flat[flat_index(old_shape, edge_coords)]
+          local end_value = option[dim][side == "left" and 1 or 2]
+          local weight = side == "left" and (offset - 1) / width or
+            (width - offset) / width
+          new_flat[position] = end_value + (edge - end_value) * weight
+        else
+          local side
+          if axis_position <= before then
+            side = "left"
+          else
+            side = "right"
+          end
+          new_flat[position] = statistic_for(other, side)
+        end
+      end
+      flat, shape = new_flat, new_shape
+    end
+  end
+  return rebuild_nested(flat, shape)
+end
+
 test("pad wrap repeats each axis periodically", function()
   local vector = numlua.array({ 10, 20, 30 })
   for _, widths in ipairs({
@@ -193,4 +351,205 @@ test("pad validates modes, widths, and constant values", function()
   assert_error(function()
     numlua.pad(matrix, 1, "constant", { { 1, true }, { 2, 3 } })
   end, "constant values must be numeric")
+end)
+
+test("pad linear_ramp interpolates from per-axis end values", function()
+  local vector = numlua.array({ 1, 2, 3, 4, 5 })
+  -- NumPy's np.pad example: end_values=(5, -4) on a 1..5 vector.
+  assert_tensor(numlua.pad(vector, { 2, 3 }, "linear_ramp", { 5, -4 }),
+    { 5, 3, 1, 2, 3, 4, 5, 2, -1, -4 })
+
+  for _, ends in ipairs({ { 0, 0 }, { 5, -4 }, { -2.5, 7.25 } }) do
+    assert_tensor(numlua.pad(vector, { 2, 3 }, "linear_ramp", ends),
+      reference_pad(vector:totable(), { { 2, 3 } }, "linear_ramp",
+        { ends }))
+  end
+
+  -- The default end value is zero, matching end_values=0.
+  assert_tensor(numlua.pad(vector, { 2, 3 }, "linear_ramp"),
+    { 0, 0.5, 1, 2, 3, 4, 5, 10 / 3, 5 / 3, 0 })
+
+  local matrix = numlua.array({ { 1, 2, 3 }, { 4, 5, 6 } })
+  local pads = { { 1, 2 }, { 2, 1 } }
+  local ends = { { 10, 20 }, { 30, 40 } }
+  assert_tensor(numlua.pad(matrix, pads, "linear_ramp", ends),
+    reference_pad(matrix:totable(), pads, "linear_ramp", ends))
+
+  local cube = numlua.arange(24):reshape(2, 3, 4):to("float32")
+  local cube_pads = { { 2, 1 }, { 0, 3 }, { 1, 1 } }
+  local cube_ends = { { -5, 15 }, { 0, 0 }, { 2, -2 } }
+  assert_tensor(numlua.pad(cube, cube_pads, "linear_ramp", cube_ends),
+    reference_pad(cube:totable(), cube_pads, "linear_ramp", cube_ends))
+
+  -- Widths larger than the axis simply place the end value further out.
+  local wide_pads = { { 7, 5 } }
+  local wide_ends = { { 9, -9 } }
+  assert_tensor(numlua.pad(vector, wide_pads, "linear_ramp", wide_ends),
+    reference_pad(vector:totable(), wide_pads, "linear_ramp", wide_ends))
+
+  -- Integer ramps cast toward zero after the end values are rounded.
+  local ints = numlua.array({ 1, 2, 3 }, { dtype = "int32" })
+  assert_tensor(numlua.pad(ints, { 2, 2 }, "linear_ramp", { 4, -4 }),
+    { 4, 2, 1, 2, 3, 0, -4 })
+  assert_dtype(numlua.pad(ints, { 2, 2 }, "linear_ramp", { 4, -4 }), "int32")
+
+  local base = numlua.array({
+    { 1, 2, 3 },
+    { 4, 5, 6 },
+  }, { dtype = "float32" })
+  local view = numlua.transpose(base)
+  local padded = numlua.pad(view, { { 1, 2 }, { 0, 1 } }, "linear_ramp",
+    { { 4, 5 }, { 6, 7 } })
+  assert_dtype(padded, "float32")
+  assert_tensor(padded, reference_pad(view:totable(), { { 1, 2 }, { 0, 1 } },
+    "linear_ramp", { { 4, 5 }, { 6, 7 } }))
+  padded:set(1, 1, 99)
+  assert_eq(view:get(1, 1), 1)
+end)
+
+test("pad statistic modes fill each side from the axis", function()
+  local vector = numlua.array({ 1, 2, 3, 4 })
+  local modes = { "maximum", "minimum", "mean", "median" }
+  for _, mode in ipairs(modes) do
+    for _, widths in ipairs({ { 1, 1 }, { 2, 3 }, { 6, 5 } }) do
+      local pads = { widths }
+      assert_tensor(numlua.pad(vector, widths, mode),
+        reference_pad(vector:totable(), pads, mode))
+    end
+    for _, lengths in ipairs({ 1, { 2, 1 }, { 99, 99 } }) do
+      local option
+      if type(lengths) == "number" then
+        option = { { lengths, lengths } }
+      else
+        option = { lengths }
+      end
+      assert_tensor(numlua.pad(vector, { 3, 2 }, mode, lengths),
+        reference_pad(vector:totable(), { { 3, 2 } }, mode, option))
+    end
+  end
+
+  local matrix = numlua.array({ { 1, 2, 3 }, { 4, 5, 6 } })
+  local pads = { { 1, 2 }, { 2, 1 } }
+  for _, mode in ipairs(modes) do
+    assert_tensor(numlua.pad(matrix, pads, mode),
+      reference_pad(matrix:totable(), pads, mode))
+    local lengths = { { 1, 2 }, { 2, 1 } }
+    assert_tensor(numlua.pad(matrix, pads, mode, lengths),
+      reference_pad(matrix:totable(), pads, mode, lengths))
+  end
+
+  local cube = numlua.arange(24):reshape(2, 3, 4):to("float32")
+  local cube_pads = { { 2, 1 }, { 1, 2 }, { 0, 2 } }
+  for _, mode in ipairs(modes) do
+    assert_tensor(numlua.pad(cube, cube_pads, mode),
+      reference_pad(cube:totable(), cube_pads, mode))
+  end
+
+  -- Bool reductions go through a supported kernel and cast back.
+  local mask = numlua.array({ true, false, true })
+  assert_tensor(numlua.pad(mask, 1, "maximum"),
+    { true, true, false, true, true })
+  assert_tensor(numlua.pad(mask, 1, "minimum"),
+    { false, true, false, true, false })
+  assert_tensor(numlua.pad(mask, 1, "mean"),
+    { true, true, false, true, true })
+  assert_tensor(numlua.pad(mask, 1, "median"),
+    { true, true, false, true, true })
+  assert_dtype(numlua.pad(mask, 1, "mean"), "bool")
+
+  -- Integer statistics use NumPy's round-half-to-even cast.
+  local ints = numlua.array({ { 1, 2 }, { 3, 4 } }, { dtype = "int32" })
+  local int_pads = { { 1, 1 }, { 1, 1 } }
+  local rounded = {
+    { 2, 2, 3, 2 },
+    { 2, 1, 2, 2 },
+    { 4, 3, 4, 4 },
+    { 2, 2, 3, 2 },
+  }
+  for _, mode in ipairs({ "mean", "median" }) do
+    local padded = numlua.pad(ints, int_pads, mode)
+    assert_tensor(padded, rounded)
+    assert_dtype(padded, "int32")
+  end
+
+  local base = numlua.array({
+    { 1, 2, 3 },
+    { 4, 5, 6 },
+  }, { dtype = "int64" })
+  local view = numlua.transpose(base)
+  local padded = numlua.pad(view, { { 1, 1 }, { 1, 1 } }, "maximum")
+  assert_dtype(padded, "int64")
+  assert_tensor(padded, reference_pad(view:totable(),
+    { { 1, 1 }, { 1, 1 } }, "maximum"))
+  padded:set(1, 1, -1)
+  assert_eq(view:get(1, 1), 1)
+end)
+
+test("pad statistic corners include earlier-axis padding", function()
+  local matrix = numlua.array({ { 1, 2 }, { 3, 4 } })
+  local pads = { { 1, 1 }, { 1, 1 } }
+  assert_tensor(numlua.pad(matrix, pads, "maximum"), {
+    { 4, 3, 4, 4 },
+    { 2, 1, 2, 2 },
+    { 4, 3, 4, 4 },
+    { 4, 3, 4, 4 },
+  })
+  assert_tensor(numlua.pad(matrix, pads, "minimum"), {
+    { 1, 1, 2, 1 },
+    { 1, 1, 2, 1 },
+    { 3, 3, 4, 3 },
+    { 1, 1, 2, 1 },
+  })
+  assert_tensor(numlua.pad(matrix, pads, "mean"), {
+    { 2.5, 2, 3, 2.5 },
+    { 1.5, 1, 2, 1.5 },
+    { 3.5, 3, 4, 3.5 },
+    { 2.5, 2, 3, 2.5 },
+  })
+  assert_tensor(numlua.pad(matrix, pads, "linear_ramp",
+    { { 10, 20 }, { 30, 40 } }), {
+    { 30, 10, 10, 40 },
+    { 30, 1, 2, 40 },
+    { 30, 3, 4, 40 },
+    { 30, 20, 20, 40 },
+  })
+end)
+
+test("pad new modes validate end values and stat lengths", function()
+  local vector = numlua.array({ 1, 2, 3 })
+  local matrix = numlua.zeros(2, 2)
+
+  assert_error(function() numlua.pad(vector, 1, "edge", 5) end,
+    "does not accept a value")
+  assert_error(function() numlua.pad(vector, 1, "wrap", { 1, 2 }) end,
+    "does not accept a value")
+
+  assert_error(function()
+    numlua.pad(vector, 1, "linear_ramp", true)
+  end, "end value must")
+  assert_error(function()
+    numlua.pad(vector, 1, "linear_ramp", {})
+  end, "end value must")
+  assert_error(function()
+    numlua.pad(vector, 1, "linear_ramp", { 1, 2, 3 })
+  end, "end value must")
+  assert_error(function()
+    numlua.pad(vector, 1, "linear_ramp", { 1, true })
+  end, "end values must be numeric")
+  assert_error(function()
+    numlua.pad(matrix, 1, "linear_ramp", { { 1, 2 } })
+  end, "one entry per dimension")
+
+  for _, mode in ipairs({ "maximum", "minimum", "mean", "median" }) do
+    assert_error(function() numlua.pad(vector, 1, mode, 0) end,
+      "stat lengths must be positive integers")
+    assert_error(function() numlua.pad(vector, 1, mode, 1.5) end,
+      "stat lengths must be positive integers")
+    assert_error(function() numlua.pad(vector, 1, mode, { 2, -1 }) end,
+      "stat lengths must be positive integers")
+    assert_error(function() numlua.pad(vector, 1, mode, { 1, 2, 3 }) end,
+      "stat length must")
+    assert_error(function() numlua.pad(matrix, 1, mode, { { 1, 2 } }) end,
+      "one entry per dimension")
+  end
 end)
