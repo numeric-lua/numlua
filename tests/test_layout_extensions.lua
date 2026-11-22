@@ -150,7 +150,7 @@ test("pad handles zero-size axes and rejects invalid modes", function()
   assert_error(function() numlua.pad(empty, { 0, 1 }, "symmetric") end,
     "empty axis")
   assert_error(function()
-    numlua.pad(numlua.array({ 1, 2 }), 1, "linear_ramp")
+    numlua.pad(numlua.array({ 1, 2 }), 1, "mirror")
   end, "invalid mode")
   assert_error(function() numlua.pad(empty, { 0, 1 }, "wrap") end,
     "empty axis")

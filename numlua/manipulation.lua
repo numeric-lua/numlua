@@ -402,14 +402,16 @@ local function pad_pair(pad_width, ndim)
   return result
 end
 
--- Normalize one per-axis constant value entry: a number fills both sides, a
--- one- or two-entry table gives the before/after values separately.
-local function pad_constant_entry(value)
+-- Normalize one per-axis fill-value entry: a number fills both sides, a one-
+-- or two-entry table gives the before/after values separately.  The label
+-- keeps the diagnostic specific to the mode being configured.
+local function pad_value_entry(value, label)
   if type(value) == "number" then
     return { value, value }
   end
   if type(value) ~= "table" then
-    error("numlua.pad: constant value entries must be numbers or pairs", 2)
+    error(string.format(
+      "numlua.pad: %s entries must be numbers or pairs", label), 2)
   end
   local before, after
   if #value == 1 then
@@ -417,36 +419,39 @@ local function pad_constant_entry(value)
   elseif #value == 2 then
     before, after = value[1], value[2]
   else
-    error("numlua.pad: constant value pairs must have one or two entries", 2)
+    error(string.format(
+      "numlua.pad: %s pairs must have one or two entries", label), 2)
   end
   if type(before) ~= "number" or type(after) ~= "number" then
-    error("numlua.pad: constant values must be numeric", 2)
+    error(string.format("numlua.pad: %ss must be numeric", label), 2)
   end
   return { before, after }
 end
 
--- Normalize the optional constant value argument using the same broadcasting
--- rules as NumPy's constant_values: a number fills every side, a numeric pair
--- gives the before/after values for every axis, and a table with one entry
--- per dimension gives per-axis entries (each a number or a before/after
--- pair).  `nil` keeps the historical zero fill.
-local function pad_constant_values(value, ndim)
+-- Normalize an optional per-axis value argument using NumPy's common
+-- broadcasting forms: a number fills every side, a numeric pair gives the
+-- before/after values for every axis, and a table with one entry per
+-- dimension gives per-axis entries (each a number or a before/after pair).
+-- `nil` returns `default` on every side.  This backs constant_values and
+-- linear_ramp's end_values.
+local function pad_value_pairs(value, ndim, label, default)
   local function broadcast(before, after)
     if type(before) ~= "number" or type(after) ~= "number" then
-      error("numlua.pad: constant values must be numeric", 2)
+      error(string.format("numlua.pad: %ss must be numeric", label), 2)
     end
     local result = {}
     for index = 1, ndim do result[index] = { before, after } end
     return result
   end
   if value == nil then
-    return broadcast(0, 0)
+    return broadcast(default, default)
   end
   if type(value) == "number" then
     return broadcast(value, value)
   end
   if type(value) ~= "table" or #value == 0 then
-    error("numlua.pad: constant value must be a number or non-empty table", 2)
+    error(string.format(
+      "numlua.pad: %s must be a number or non-empty table", label), 2)
   end
   if type(value[1]) == "number" then
     if #value == 1 then
@@ -455,18 +460,162 @@ local function pad_constant_values(value, ndim)
     if #value == 2 then
       return broadcast(value[1], value[2])
     end
-    error("numlua.pad: constant value must be a number, a pair, or " ..
-      "per-axis entries", 2)
+    error(string.format(
+      "numlua.pad: %s must be a number, a pair, or per-axis entries",
+      label), 2)
   end
   if #value ~= ndim then
-    error("numlua.pad: per-axis constant values must have one entry per " ..
+    error(string.format(
+      "numlua.pad: per-axis %ss must have one entry per dimension",
+      label), 2)
+  end
+  local result = {}
+  for index = 1, ndim do
+    result[index] = pad_value_entry(value[index], label)
+  end
+  return result
+end
+
+-- Validate one stat_length entry.  NumPy accepts zero here but maximum and
+-- minimum cannot reduce an empty chunk; requiring a positive integer keeps
+-- every statistic mode well-defined.
+local function pad_stat_entry(value)
+  if type(value) == "number" then
+    return { value, value }
+  end
+  if type(value) ~= "table" then
+    error("numlua.pad: stat length entries must be positive integers", 2)
+  end
+  local before, after
+  if #value == 1 then
+    before, after = value[1], value[1]
+  elseif #value == 2 then
+    before, after = value[1], value[2]
+  else
+    error("numlua.pad: stat length pairs must have one or two entries", 2)
+  end
+  if type(before) ~= "number" or type(after) ~= "number" or
+      before % 1 ~= 0 or after % 1 ~= 0 or before < 1 or after < 1 then
+    error("numlua.pad: stat lengths must be positive integers", 2)
+  end
+  return { before, after }
+end
+
+-- Normalize stat_length using the same number/pair/per-axis forms as NumPy.
+-- A nil entry means the whole axis, and lengths larger than the axis are
+-- clamped by the caller.
+local function pad_stat_lengths(value, ndim)
+  local function broadcast(before, after)
+    if type(before) ~= "number" or type(after) ~= "number" or
+        before % 1 ~= 0 or after % 1 ~= 0 or before < 1 or after < 1 then
+      error("numlua.pad: stat lengths must be positive integers", 2)
+    end
+    local result = {}
+    for index = 1, ndim do result[index] = { before, after } end
+    return result
+  end
+  if value == nil then
+    local result = {}
+    for index = 1, ndim do result[index] = { nil, nil } end
+    return result
+  end
+  if type(value) == "number" then
+    return broadcast(value, value)
+  end
+  if type(value) ~= "table" or #value == 0 then
+    error("numlua.pad: stat length must be a positive integer or " ..
+      "non-empty table", 2)
+  end
+  if type(value[1]) == "number" then
+    if #value == 1 then
+      return broadcast(value[1], value[1])
+    end
+    if #value == 2 then
+      return broadcast(value[1], value[2])
+    end
+    error("numlua.pad: stat length must be a positive integer, a pair, " ..
+      "or per-axis entries", 2)
+  end
+  if #value ~= ndim then
+    error("numlua.pad: per-axis stat lengths must have one entry per " ..
       "dimension", 2)
   end
   local result = {}
   for index = 1, ndim do
-    result[index] = pad_constant_entry(value[index])
+    result[index] = pad_stat_entry(value[index])
   end
   return result
+end
+
+-- Round half to even, matching NumPy's np.round for integer linear_ramp
+-- end_values.  Lua's math.floor handles negative values correctly here.
+local function round_half_even(value)
+  local floor = math.floor(value)
+  local fraction = value - floor
+  if fraction > 0.5 then
+    return floor + 1
+  end
+  if fraction < 0.5 then
+    return floor
+  end
+  return floor % 2 == 0 and floor or floor + 1
+end
+
+-- Build linear_ramp weights for one side of one axis.  The ramp excludes the
+-- edge value: np.pad uses linspace(end_value, edge, width, endpoint=False),
+-- then reverses the right ramp.
+local function pad_ramp_weights(dim, width, ndim, reverse)
+  local values = {}
+  for index = 1, width do
+    if reverse then
+      values[index] = (width - index) / width
+    else
+      values[index] = (index - 1) / width
+    end
+  end
+  local shape = {}
+  for index = 1, ndim do shape[index] = 1 end
+  shape[dim] = width
+  return torch.tensor(values, { dtype = "float64" }):reshape(shape)
+end
+
+-- Build one ramp side from a size-1 edge slice.  Arithmetic is done in
+-- float64 and cast back, so integer ramps truncate toward zero like NumPy's
+-- linspace(..., dtype=int) and float16 does not lose the end value early.
+local function pad_ramp_side(edge, end_value, dim, width, ndim, dtype, reverse)
+  local weights = pad_ramp_weights(dim, width, ndim, reverse)
+  local ramp = edge:to("float64"):mul(weights)
+  ramp = ramp:add(weights:mul(-1):add(1):mul(end_value))
+  return ramp:to(dtype)
+end
+
+-- Reduce an edge chunk along one axis for the maximum, mean, median, and
+-- minimum pad modes.  Bool is not a valid reduction dtype in ATen, so those
+-- statistics are computed through uint8 (max/min) or float64 (mean/median)
+-- and cast back; NumPy likewise casts the statistic to the input dtype.
+local function pad_stat_value(chunk, dim, mode, dtype)
+  local value
+  if mode == "maximum" or mode == "minimum" then
+    local source = dtype == "bool" and chunk:to("uint8") or chunk
+    if mode == "maximum" then
+      value = source:max(dim, true)
+    else
+      value = source:min(dim, true)
+    end
+    return value:to(dtype)
+  end
+  local source = chunk:is_floating_point() and chunk or chunk:to("float64")
+  if mode == "mean" then
+    value = source:mean(dim, true)
+  else
+    value = source:median(dim)
+  end
+  -- NumPy rounds integer statistics (np.round, half to even) before casting;
+  -- bool is not an integer dtype there, so nonzero fractions stay true.
+  if dtype ~= "bool" and not dtype:match("float") then
+    value = value:round()
+  end
+  return value:to(dtype)
 end
 
 -- Build the source indices for one axis.  edge clamps to the first/last
@@ -511,22 +660,67 @@ local function pad_indices(size, before, after, mode)
   return long_tensor(indices)
 end
 
+local PAD_STAT_MODES = {
+  maximum = true,
+  mean = true,
+  median = true,
+  minimum = true,
+}
+
+local PAD_MODES = {
+  constant = true,
+  edge = true,
+  linear_ramp = true,
+  maximum = true,
+  mean = true,
+  median = true,
+  minimum = true,
+  reflect = true,
+  symmetric = true,
+  wrap = true,
+}
+
+local PAD_MODE_LIST = "'constant', 'edge', 'linear_ramp', 'maximum', " ..
+  "'mean', 'median', 'minimum', 'reflect', 'symmetric', or 'wrap'"
+
 function M.pad(t, pad_width, mode, value)
   tensor(t, "pad")
   mode = mode or "constant"
-  if mode ~= "constant" and mode ~= "edge" and mode ~= "reflect" and
-      mode ~= "symmetric" and mode ~= "wrap" then
-    error(string.format("numlua.pad: invalid mode '%s'; expected 'constant', " ..
-      "'edge', 'reflect', 'symmetric', or 'wrap'", tostring(mode)), 2)
+  if not PAD_MODES[mode] then
+    error(string.format("numlua.pad: invalid mode '%s'; expected %s",
+      tostring(mode), PAD_MODE_LIST), 2)
   end
-  local pairs = pad_pair(pad_width, t:dim())
+  local ndim = t:dim()
+  local dtype = t:dtype()
+  local pairs = pad_pair(pad_width, ndim)
+
+  -- `value` is mode-specific, following NumPy's keyword names: the default
+  -- fill for constant, end_values for linear_ramp, and stat_length for the
+  -- four statistic modes.  The other modes take no value.
+  local constants, end_values, stat_lengths
+  if mode == "constant" then
+    constants = pad_value_pairs(value, ndim, "constant value", 0)
+  elseif mode == "linear_ramp" then
+    end_values = pad_value_pairs(value, ndim, "end value", 0)
+    if dtype ~= "bool" and not dtype:match("float") then
+      for dim = 1, ndim do
+        end_values[dim][1] = round_half_even(end_values[dim][1])
+        end_values[dim][2] = round_half_even(end_values[dim][2])
+      end
+    end
+  elseif PAD_STAT_MODES[mode] then
+    stat_lengths = pad_stat_lengths(value, ndim)
+  elseif value ~= nil then
+    error(string.format(
+      "numlua.pad: mode '%s' does not accept a value", mode), 2)
+  end
+
   local result = t:clone()
 
   if mode == "constant" then
     -- The historical scalar form keeps working; tables extend it to NumPy's
     -- per-axis constant_values, including separate before/after values.
-    local constants = pad_constant_values(value, t:dim())
-    for dim = t:dim(), 1, -1 do
+    for dim = ndim, 1, -1 do
       local before, after = pairs[dim][1], pairs[dim][2]
       if before > 0 or after > 0 then
         local shape = result:sizes()
@@ -535,14 +729,14 @@ function M.pad(t, pad_width, mode, value)
           local fill_shape = { unpack(shape) }
           fill_shape[dim] = before
           parts[#parts + 1] = torch.full(fill_shape, constants[dim][1],
-            { dtype = result:dtype() })
+            { dtype = dtype })
         end
         parts[#parts + 1] = result
         if after > 0 then
           local fill_shape = { unpack(shape) }
           fill_shape[dim] = after
           parts[#parts + 1] = torch.full(fill_shape, constants[dim][2],
-            { dtype = result:dtype() })
+            { dtype = dtype })
         end
         result = torch.cat(parts, dim)
       end
@@ -551,18 +745,59 @@ function M.pad(t, pad_width, mode, value)
   end
 
   local shape = t:sizes()
-  for dim = 1, t:dim() do
+  for dim = 1, ndim do
     if shape[dim] == 0 and (pairs[dim][1] > 0 or pairs[dim][2] > 0) then
       error(string.format(
         "numlua.pad: can't extend empty axis %d using mode '%s'; use " ..
         "'constant'", dim, mode), 2)
     end
   end
-  for dim = 1, t:dim() do
+
+  -- Axes are padded in order, as in NumPy: later statistics and ramps see the
+  -- values added to earlier axes, which is what makes the corners consistent.
+  for dim = 1, ndim do
     local before, after = pairs[dim][1], pairs[dim][2]
     if before > 0 or after > 0 then
-      result = result:index_select(dim,
-        pad_indices(result:size(dim), before, after, mode))
+      if mode == "linear_ramp" then
+        local size = result:size(dim)
+        local parts = {}
+        if before > 0 then
+          parts[#parts + 1] = pad_ramp_side(result:narrow(dim, 1, 1),
+            end_values[dim][1], dim, before, ndim, dtype, false)
+        end
+        parts[#parts + 1] = result
+        if after > 0 then
+          parts[#parts + 1] = pad_ramp_side(result:narrow(dim, size, 1),
+            end_values[dim][2], dim, after, ndim, dtype, true)
+        end
+        result = torch.cat(parts, dim)
+      elseif PAD_STAT_MODES[mode] then
+        local size = result:size(dim)
+        local lengths = stat_lengths[dim]
+        local left_length = math.min(size, lengths[1] or size)
+        local right_length = math.min(size, lengths[2] or size)
+        local left_stat = pad_stat_value(
+          result:narrow(dim, 1, left_length), dim, mode, dtype)
+        local right_stat = pad_stat_value(
+          result:narrow(dim, size - right_length + 1, right_length), dim,
+          mode, dtype)
+        local parts = {}
+        if before > 0 then
+          local fill_shape = result:sizes()
+          fill_shape[dim] = before
+          parts[#parts + 1] = left_stat:expand(fill_shape)
+        end
+        parts[#parts + 1] = result
+        if after > 0 then
+          local fill_shape = result:sizes()
+          fill_shape[dim] = after
+          parts[#parts + 1] = right_stat:expand(fill_shape)
+        end
+        result = torch.cat(parts, dim)
+      else
+        result = result:index_select(dim,
+          pad_indices(result:size(dim), before, after, mode))
+      end
     end
   end
   return result
