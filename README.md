@@ -121,6 +121,24 @@ print(numlua.take_along_axis(matrix, numlua.argsort(matrix, 2), 2):format())
 --         [40, 50, 60]])
 ```
 
+`numlua.apply_along_axis` runs a Lua callback over 1-D slices along one axis,
+following `np.apply_along_axis`. A scalar callback removes the axis; a 1-D
+callback result appends its length after the remaining dimensions, and extra
+arguments are forwarded:
+
+```lua
+local rows = numlua.array({ { 1, 2, 3 }, { 4, 5, 6 } })
+print(numlua.apply_along_axis(function(row)
+  return numlua.flip(row, 1)
+end, 2, rows):format())
+-- tensor([[3., 2., 1.],
+--         [6., 5., 4.]])
+print(numlua.apply_along_axis(function(row)
+  return numlua.sum(row)
+end, 1, rows):format())
+-- tensor([5., 7., 9.])
+```
+
 ## Requirements
 
 - LuaJIT 2.1 (the primary and tested target).

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.17.0 — 2026-11-22
+
+### Added
+
+- `numlua.apply_along_axis(func, axis, t[, ...])`, matching
+  `np.apply_along_axis` for Lua callbacks. `func` receives a 1-D luatorch view
+  of each slice along the 1-based `axis` (negative axes accepted) and may
+  return a scalar or 1-D tensor, Lua number, boolean, or Lua table. Scalar
+  results remove the axis; 1-D results append their length after the remaining
+  dimensions. Extra positional arguments are forwarded, slices are visited in
+  C order, and the output dtype follows the first callback result. The result
+  owns independent storage. An empty selected axis is allowed; a zero-size
+  non-axis dimension is rejected because no first slice exists to infer the
+  result shape and dtype.
+
 ## 0.16.0 — 2026-11-22
 
 ### Added

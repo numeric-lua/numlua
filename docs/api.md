@@ -521,6 +521,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; scalar and N-D index tensors |
 | `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
+| `numlua.apply_along_axis(func, axis, t[, ...])` | call `func` on each 1-D slice along `axis` (materialized) |
 | `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
 | `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
 
@@ -556,6 +557,37 @@ independent storage.
 local a = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
 numlua.take_along_axis(a, numlua.argsort(a, 2), 2)
 -- {{10, 20, 30}, {40, 50, 60}}
+```
+
+`numlua.apply_along_axis(func, axis, t[, ...])` mirrors
+`np.apply_along_axis` for Lua callbacks. `axis` is required and 1-based; it may
+be negative. `func` receives a 1-D view of each slice along `axis`, followed by
+any extra arguments, and must return a scalar or a 1-D result as a luatorch
+tensor, Lua number, boolean, or Lua table. Returning a tensor with rank greater
+than one, mixing scalar and 1-D results, or changing the result length between
+calls raises a `numlua.apply_along_axis:` error. Callback errors propagate
+unchanged.
+
+The result follows NumPy's shape rule: the non-axis input dimensions come
+first, and a 1-D callback result appends its length after them. A scalar
+callback therefore removes the axis, a 1-D input with a scalar callback
+produces a 0-D tensor, and a 1-D callback on a 1-D input produces a 1-D result.
+Slices are visited in C order, with the last non-axis dimension varying
+fastest. The output dtype is taken from the first callback result; later
+results are cast to it. The output owns independent storage, so callbacks may
+return views of the input without aliasing the source.
+
+An empty selected axis is allowed and calls `func` on an empty 1-D slice. A
+zero-size non-axis dimension has no slices, so there is no first result from
+which to infer a result shape or dtype; that case raises a
+`numlua.apply_along_axis:` error instead of guessing.
+
+```lua
+local rows = numlua.array({ { 1, 2, 3 }, { 4, 5, 6 } })
+numlua.apply_along_axis(function(row) return numlua.flip(row, 1) end, 2, rows)
+-- {{3, 2, 1}, {6, 5, 4}}
+numlua.apply_along_axis(function(row) return numlua.sum(row) end, 1, rows)
+-- {5, 7, 9}
 ```
 
 `numlua.put(t, indices, values[, mode])` is the assignment counterpart to
@@ -647,8 +679,8 @@ other: `transpose`, `swapaxes`, `moveaxis`, `atleast_1d`, `atleast_2d`,
 contiguous `reshape`, and contiguous `ravel`.
 
 These allocate independent storage: `resize`, `pad`, `tile`, `repeat_`, `flip`,
-`roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `take`, and
-`take_along_axis`. `reshape` and `ravel` also copy when their input is not
+`roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `take`, `take_along_axis`, and
+`apply_along_axis`. `reshape` and `ravel` also copy when their input is not
 contiguous, because ATen must materialize a C-order layout first. Tests cover
 the view/copy boundary, including large arrays, so a regression cannot silently
 turn a view into a full-size copy or make an allocating helper alias its input.
@@ -934,6 +966,11 @@ dtype, or backend constraints are forwarded as-is.
   to the end of the axis.
 - `take_along_axis` uses 1-based indices and rejects negative index values;
   NumPy's version resolves them relative to the end of the axis.
+- `apply_along_axis` takes a Lua callback rather than a NumPy ufunc and has no
+  keyword arguments; extra positional arguments are forwarded. Its callback
+  must return a scalar or 1-D result, matching NumPy's restriction, and input
+  with a zero-size non-axis dimension is rejected because there is no first
+  slice to infer the output dtype and shape.
 - Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
   or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
   squeezed to 1-D. `bool` is not supported by either text function.
