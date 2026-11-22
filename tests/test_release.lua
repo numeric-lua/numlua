@@ -72,6 +72,12 @@ test("new public API and format support are documented", function()
     "docs/api.md does not document scalar take indices")
   assert_true(api:find("finite integers", 1, true) ~= nil,
     "docs/api.md does not document finite put indices")
+  assert_true(api:find('"wrap"', 1, true) ~= nil,
+    "docs/api.md does not document the pad wrap mode")
+  assert_true(api:find("constant_values", 1, true) ~= nil,
+    "docs/api.md does not document pad constant values")
+  assert_true(api:find("normalize to the same member name", 1, true) ~= nil,
+    "docs/api.md does not document npz member-name collisions")
   assert_true(api:find("options.version", 1, true) ~= nil,
     "docs/api.md does not document the npz member version option")
   assert_true(api:find('-- "' .. numlua.VERSION .. '"', 1, true) ~= nil,
@@ -88,6 +94,10 @@ test("new public API and format support are documented", function()
     "README.md does not demonstrate numlua.select")
   assert_true(readme:find("member NPY header version", 1, true) ~= nil,
     "README.md does not document npz member versions")
+  assert_true(readme:find("constant_values", 1, true) ~= nil,
+    "README.md does not document pad constant values")
+  assert_true(readme:find("silently overwriting a member", 1, true) ~= nil,
+    "README.md does not document npz member-name collisions")
 end)
 
 test("CI smoke job names the current rockspec and version", function()
