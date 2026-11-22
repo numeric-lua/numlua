@@ -20,6 +20,15 @@
   Empty/mismatched lists, invalid entries, and non-broadcastable operands raise
   a `numlua.select:` error.
 
+### Tests
+
+- 178 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`,
+  covering byte-level `.npz` member versions for stored, compressed, and
+  stored-fallback archives, scalar/empty/non-contiguous members, default
+  byte-identity, and option/version validation; `select` first-true-wins,
+  broadcasting, scalar and dtype behavior, non-contiguous operands, and error
+  paths.
+
 ## 0.13.0 — 2026-11-21
 
 ### Added

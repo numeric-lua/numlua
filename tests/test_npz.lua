@@ -45,6 +45,21 @@ local function patch(data, offset, replacement)
     data:sub(offset + #replacement)
 end
 
+-- Count .npy magic/version prefixes in stored archive bytes.  With stored
+-- members the member header appears verbatim in the ZIP payload, so this
+-- checks what a NumPy reader would see without extracting the archive.
+local function count_member_version(bytes, major)
+  local needle = "\147NUMPY" .. string.char(major, 0)
+  local count, position = 0, 1
+  while true do
+    local found = bytes:find(needle, position, true)
+    if found == nil then break end
+    count = count + 1
+    position = found + #needle
+  end
+  return count
+end
+
 -- Rewrite v1.0 .npy bytes with a v2.0/v3.0 version and 4-byte header length.
 -- The header is re-padded for the wider prefix and the payload is unchanged.
 local function npy_with_version(bytes, major)
@@ -144,6 +159,138 @@ test("loadz reads NPY v2.0 and v3.0 members", function()
   assert_tensor(loaded.three, { { 1.5, -2.25 }, { 0, 3.5 } })
   os.remove(file)
   os.remove(source)
+end)
+
+test("savez writes requested NPY member versions", function()
+  local arrays = {
+    floats = numlua.array({ 1.5, -2.5 }),
+    ints = numlua.arange(3, { dtype = "int64" }),
+  }
+
+  local file_two = path("members-v2")
+  assert_true(numlua.savez(file_two, arrays, { version = 2 }))
+  local bytes_two = read_bytes(file_two)
+  assert_eq(count_member_version(bytes_two, 2), 2)
+  assert_eq(count_member_version(bytes_two, 1), 0)
+  local loaded_two = numlua.loadz(file_two)
+  assert_tensor(loaded_two.floats, { 1.5, -2.5 })
+  assert_dtype(loaded_two.ints, "int64")
+  assert_tensor(loaded_two.ints, { 0, 1, 2 })
+
+  local file_three = path("members-v3")
+  assert_true(numlua.savez(file_three, arrays, { version = "3.0" }))
+  local bytes_three = read_bytes(file_three)
+  assert_eq(count_member_version(bytes_three, 3), 2)
+  assert_eq(count_member_version(bytes_three, 1), 0)
+  assert_tensor(numlua.loadz(file_three).floats, { 1.5, -2.5 })
+
+  -- The default and an explicit v1.0 request must produce identical bytes.
+  local implicit = path("members-default")
+  local explicit = path("members-v1")
+  assert_true(numlua.savez(implicit, arrays))
+  assert_true(numlua.savez(explicit, arrays, { version = 1 }))
+  assert_eq(read_bytes(implicit), read_bytes(explicit))
+  assert_eq(count_member_version(read_bytes(implicit), 1), 2)
+
+  os.remove(file_two)
+  os.remove(file_three)
+  os.remove(implicit)
+  os.remove(explicit)
+end)
+
+test("savez applies the member version to every member shape", function()
+  local view = numlua.transpose(numlua.reshape(
+    numlua.arange(6, { dtype = "int32" }), { 2, 3 }))
+  local arrays = {
+    scalar = numlua.array(1.25),
+    empty = numlua.zeros(0),
+    view = view,
+  }
+  local file = path("members-shapes")
+  assert_true(numlua.savez(file, arrays, { version = 2 }))
+  assert_eq(count_member_version(read_bytes(file), 2), 3)
+
+  local loaded = numlua.loadz(file)
+  assert_eq(loaded.scalar:dim(), 0)
+  assert_eq(loaded.scalar:item(), 1.25)
+  assert_shape(loaded.empty, { 0 })
+  assert_eq(loaded.empty:numel(), 0)
+  assert_dtype(loaded.view, "int32")
+  assert_shape(loaded.view, { 3, 2 })
+  assert_true(loaded.view:equal(view))
+  os.remove(file)
+end)
+
+test("savez_compressed combines member versions with the stored fallback",
+    function()
+  local file = path("compressed-version")
+  local ok, method = numlua.savez_compressed(file, {
+    x = numlua.array({ 1.5, -2.5, 0 }),
+  }, { version = 3, fallback = "stored" })
+  assert_true(ok)
+
+  local bytes = read_bytes(file)
+  local local_header = assert(bytes:find("PK\003\004", 1, true))
+  if npz.zlib_available() then
+    assert_eq(method, nil)
+    assert_eq(u16_at(bytes, local_header + 8), 8)
+  else
+    assert_eq(method, "stored")
+    assert_eq(u16_at(bytes, local_header + 8), 0)
+    -- The stored fallback keeps the member header visible in the archive.
+    assert_eq(count_member_version(bytes, 3), 1)
+    assert_eq(count_member_version(bytes, 1), 0)
+  end
+
+  local loaded = numlua.loadz(file)
+  assert_tensor(loaded.x, { 1.5, -2.5, 0 })
+
+  -- In the compressed path the member header is not visible in the archive,
+  -- so compare against v1.0 output to prove the option reached the member
+  -- writer rather than being silently ignored.
+  local file_one = path("compressed-version-v1")
+  assert_true(numlua.savez_compressed(file_one, {
+    x = numlua.array({ 1.5, -2.5, 0 }),
+  }, { version = 1, fallback = "stored" }))
+  assert_true(read_bytes(file) ~= read_bytes(file_one))
+  assert_tensor(numlua.loadz(file_one).x, { 1.5, -2.5, 0 })
+
+  os.remove(file)
+  os.remove(file_one)
+end)
+
+test("npz writers validate version options before writing", function()
+  local arrays = { x = numlua.array(1) }
+  local file = path("bad-version")
+  for _, writer in ipairs({ "savez", "savez_compressed" }) do
+    assert_error(function()
+      numlua[writer](file, arrays, { version = 4 })
+    end, "version must be 1, 2, or 3")
+    assert_false(file_exists(file))
+
+    assert_error(function()
+      numlua[writer](file, arrays, { version = "4.0" })
+    end, "got 4.0")
+    assert_error(function()
+      numlua[writer](file, arrays, { version = "latest" })
+    end, "version must be 1, 2, or 3")
+    assert_error(function()
+      numlua[writer](file, arrays, { dtype = "float64" })
+    end, "unknown option 'dtype'")
+    assert_false(file_exists(file))
+  end
+
+  assert_error(function()
+    numlua.savez(file, arrays, { fallback = "stored" })
+  end, "unknown option 'fallback'")
+  assert_error(function()
+    numlua.savez(file, arrays, "version")
+  end, "options table")
+  assert_error(function()
+    numlua.savez_compressed(file, arrays,
+      { version = 2, fallback = "zip" })
+  end, "fallback must be 'stored'")
+  assert_false(file_exists(file))
 end)
 
 test("savez/loadz preserve C order for non-contiguous tensors", function()

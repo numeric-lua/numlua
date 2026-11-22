@@ -54,7 +54,8 @@ end)
 
 test("new public API and format support are documented", function()
   local api = read_file(root .. "/docs/api.md")
-  for _, symbol in ipairs({ "numlua.put", "numlua.take_along_axis" }) do
+  for _, symbol in ipairs({ "numlua.put", "numlua.take_along_axis",
+      "numlua.select" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -71,6 +72,8 @@ test("new public API and format support are documented", function()
     "docs/api.md does not document scalar take indices")
   assert_true(api:find("finite integers", 1, true) ~= nil,
     "docs/api.md does not document finite put indices")
+  assert_true(api:find("options.version", 1, true) ~= nil,
+    "docs/api.md does not document the npz member version option")
   assert_true(api:find('-- "' .. numlua.VERSION .. '"', 1, true) ~= nil,
     "docs/api.md version example does not match numlua.VERSION")
 
@@ -81,6 +84,10 @@ test("new public API and format support are documented", function()
     1, true) ~= nil, "README.md does not name the current rockspec")
   assert_true(readme:find("version = 3", 1, true) ~= nil,
     "README.md has no NPY v3.0 writing example")
+  assert_true(readme:find("numlua.select", 1, true) ~= nil,
+    "README.md does not demonstrate numlua.select")
+  assert_true(readme:find("member NPY header version", 1, true) ~= nil,
+    "README.md does not document npz member versions")
 end)
 
 test("CI smoke job names the current rockspec and version", function()

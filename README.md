@@ -361,7 +361,7 @@ member versions, conditional `select`, empty and pre-suffixed `.npz` members,
 layout view/copy semantics,
 broadcast/take/take_along_axis/put edge shapes, deflate expansion guardrails,
 release metadata, and error paths.
-It currently contains 169 tests.
+It currently contains 178 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes

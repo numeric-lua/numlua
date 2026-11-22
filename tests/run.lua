@@ -160,6 +160,7 @@ local files = {
   "test_shape.lua",
   "test_reductions.lua",
   "test_predicates.lua",
+  "test_select.lua",
   "test_ufuncs.lua",
   "test_manipulation.lua",
   "test_selection.lua",
