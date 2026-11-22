@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.13.0"
+print(numlua.VERSION) -- "0.14.0"
 ```
 
 ## Conventions
