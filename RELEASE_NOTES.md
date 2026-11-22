@@ -1,25 +1,30 @@
-# numlua 0.16.0
+# numlua 0.17.0
 
 NumPy-shaped arrays for LuaJIT, backed by luatorch.
 
 ## Highlights
 
-- `numlua.pad` gains NumPy's `"linear_ramp"`, `"maximum"`, `"mean"`,
-  `"median"`, and `"minimum"` modes. `"linear_ramp"` takes `end_values`
-  through the existing `value` argument; the statistic modes take
-  `stat_length`. Both accept a number, a `{before, after}` pair, or one entry
-  per axis. Axes are padded in order, so corners follow NumPy's rule that
-  later axes see earlier padding;
-- integer end values and statistics round half to even before the input dtype
-  cast, bool input works with every statistic mode, and zero-size axes remain
-  supported only by `"constant"` (as before). Modes without a fill argument
-  now reject a non-nil `value` instead of silently ignoring it;
-- the test suite adds an independent C-order reference walker for linear ramps
-  and axis statistics, plus IO/selection edge coverage: disabled comment
-  markers, missing final newlines, numeric `loadtxt` dtype ids, `savetxt`
-  format functions and error paths, double-quoted NPY header keys for v1.0
-  and v3.0, and negative-axis/empty selection forms. Docs, CHANGELOG, and
-  README describe the new modes.
+- `numlua.apply_along_axis(func, axis, t[, ...])` brings
+  `np.apply_along_axis` to Lua callbacks. The callback receives a 1-D luatorch
+  view of each slice along the 1-based axis (negative axes accepted) and may
+  return a scalar or 1-D tensor, Lua number, boolean, or Lua table. Scalar
+  results remove the axis, 1-D results append their length after the remaining
+  dimensions, and extra positional arguments are forwarded. Slices are visited
+  in C order, the output dtype follows the first callback result, and the
+  result owns independent storage. A zero-size selected axis is supported;
+  because a zero-size non-axis dimension has no first slice, that case raises a
+  clear error instead of guessing a dtype or result length;
+- the test suite adds a dedicated `apply_along_axis` file covering 1-D/2-D/3-D
+  inputs, every axis, C-order visitation, scalar and 1-D callbacks, dtype
+  propagation, output ownership, empty axes, non-contiguous inputs, and the
+  validation/error paths;
+- selection and IO edge coverage expands: `compress` and `flatnonzero`
+  behavior, 0-D `argsort` (now a clear `numlua.argsort:` error), zero-size
+  gather dimensions, non-tensor `take` indices, all numeric `loadtxt` dtype
+  ids, literal delimiters, comment-marker validation, `savetxt` special floats
+  and one-row/one-column shapes, invalid format strings, and empty or
+  prefix-only NPY files;
+- docs, README, and CHANGELOG describe the new API and release.
 
 ## Requirements
 
@@ -29,8 +34,8 @@ dependency was added.
 
 ## Verification
 
-- 200 tests passed with system zlib
-- 200 tests passed with `NUMLUA_DISABLE_ZLIB=1`
+- 213 tests passed with system zlib
+- 213 tests passed with `NUMLUA_DISABLE_ZLIB=1`
 - `examples/basic.lua` runs
 
 No tag or release is created by this preparation.
