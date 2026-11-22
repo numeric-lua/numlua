@@ -397,3 +397,106 @@ test("loadtxt accepts every numeric dtype id and validates comments",
   assert_tensor(hashed, { { 1, 2 }, { 3, 4 } })
   os.remove(hash)
 end)
+
+test("loadtxt accepts CR-only and mixed line endings", function()
+  local cr = write_text(tmp_path("cr-only"), "1 2\r3 4\r")
+  local cr_loaded = numlua.loadtxt(cr)
+  assert_shape(cr_loaded, { 2, 2 })
+  assert_tensor(cr_loaded, { { 1, 2 }, { 3, 4 } })
+  os.remove(cr)
+
+  local mixed = write_text(tmp_path("mixed-endings"),
+    "1,2\r\n3,4\r5,6\n")
+  local mixed_loaded = numlua.loadtxt(mixed, { delimiter = "," })
+  assert_shape(mixed_loaded, { 3, 2 })
+  assert_tensor(mixed_loaded, { { 1, 2 }, { 3, 4 }, { 5, 6 } })
+  os.remove(mixed)
+
+  -- A single CR-terminated row still squeezes to 1-D like an LF row.
+  local one_row = write_text(tmp_path("cr-one-row"), "7 8 9\r")
+  assert_shape(numlua.loadtxt(one_row), { 3 })
+  assert_tensor(numlua.loadtxt(one_row), { 7, 8, 9 })
+  os.remove(one_row)
+end)
+
+test("text options reject unknown keys before touching the file",
+    function()
+  local path = write_text(tmp_path("known-options"), "1 2\n")
+  assert_error(function()
+    numlua.loadtxt(path, { delimeter = "," })
+  end, "unknown option 'delimeter'")
+  assert_error(function()
+    numlua.loadtxt(path, { comments = "#", formatter = tostring })
+  end, "unknown option 'formatter'")
+  assert_error(function()
+    numlua.savetxt(tmp_path("unknown-save"), numlua.zeros(2),
+      { delimeter = "," })
+  end, "unknown option 'delimeter'")
+  assert_error(function()
+    numlua.savetxt(tmp_path("unknown-save"), numlua.zeros(2),
+      { fmt = "%.2f", header = "# data" })
+  end, "unknown option 'header'")
+  os.remove(path)
+
+  -- Unknown-key validation happens before open/read errors and dtype checks.
+  assert_error(function()
+    numlua.loadtxt(TMPDIR .. "/definitely-missing-options.txt",
+      { formatter = tostring })
+  end, "unknown option 'formatter'")
+  assert_error(function()
+    numlua.loadtxt(path, { dtype = 99 })
+  end, "unsupported dtype 99")
+end)
+
+test("text formatting covers delimiters, integer bounds, and float16",
+    function()
+  -- Multi-character save delimiters match the loader's literal matching.
+  local delimited = tmp_path("multi-save-delimiter")
+  assert_true(numlua.savetxt(delimited,
+    numlua.arange(4):reshape(2, 2), { delimiter = "::" }))
+  assert_eq(read_text(delimited), "0::1\n2::3\n")
+  local loaded = numlua.loadtxt(delimited,
+    { delimiter = "::", dtype = "int64" })
+  assert_shape(loaded, { 2, 2 })
+  assert_tensor(loaded, { { 0, 1 }, { 2, 3 } })
+  os.remove(delimited)
+
+  -- Integer text uses base 10, including the signed/unsigned bounds.
+  local bounds = tmp_path("integer-bounds")
+  assert_true(numlua.savetxt(bounds,
+    numlua.array({ -128, 127 }, { dtype = "int8" })))
+  assert_eq(read_text(bounds), "-128 127\n")
+  local unsigned = tmp_path("unsigned-bounds")
+  assert_true(numlua.savetxt(unsigned,
+    numlua.array({ 0, 255 }, { dtype = "uint8" })))
+  assert_eq(read_text(unsigned), "0 255\n")
+  os.remove(bounds)
+  os.remove(unsigned)
+
+  -- Values inside the exact double range round-trip through int64 text.
+  local exact = tmp_path("int64-exact")
+  local safe = { -9007199254740991, 9007199254740991 }
+  assert_true(numlua.savetxt(exact,
+    numlua.array(safe, { dtype = "int64" })))
+  local exact_loaded = numlua.loadtxt(exact, { dtype = "int64" })
+  assert_dtype(exact_loaded, "int64")
+  assert_tensor(exact_loaded, safe)
+  os.remove(exact)
+
+  -- float16 keeps enough digits for a lossless round-trip.
+  local half = tmp_path("float16")
+  local values = { 0.5, -1.25, 65504 }
+  assert_true(numlua.savetxt(half,
+    numlua.array(values, { dtype = "float16" })))
+  local half_loaded = numlua.loadtxt(half, { dtype = "float16" })
+  assert_dtype(half_loaded, "float16")
+  assert_tensor(half_loaded, values)
+  os.remove(half)
+
+  -- A trailing delimiter is an empty field, not a silently ignored column.
+  local trailing = write_text(tmp_path("trailing-delimiter"), "1,2,\n3,4,\n")
+  assert_error(function()
+    numlua.loadtxt(trailing, { delimiter = "," })
+  end, "invalid number '' in column 3")
+  os.remove(trailing)
+end)

@@ -525,6 +525,25 @@ test("loadz reads generated deflate entries or fails clearly without zlib",
   end
 end)
 
+test("loadz reads stored members with data descriptors", function()
+  local files = corpus()
+  local bytes = read_bytes(files.npz_descriptor)
+  local local_header = assert(bytes:find("PK\003\004", 1, true))
+  assert_eq(u16_at(bytes, local_header + 6), 8,
+    "fixture local header is not using a data descriptor")
+  assert_eq(u32_at(bytes, local_header + 14), 0,
+    "fixture local header must zero the CRC before the descriptor")
+  local central = assert(bytes:find("PK\001\002", 1, true))
+  assert_eq(u16_at(bytes, central + 8), 8,
+    "fixture central header does not carry the descriptor flag")
+
+  local loaded = numlua.loadz(files.npz_descriptor)
+  assert_dtype(loaded["float32-2x2"], "float32")
+  assert_tensor(loaded["float32-2x2"], { { 1.5, -2.25 }, { 0, 3.5 } })
+  assert_dtype(loaded["int64-1d"], "int64")
+  assert_tensor(loaded["int64-1d"], { -3, 0, 7, 42 })
+end)
+
 test("loadz rejects non-ZIP input and unsupported compression methods",
     function()
   local file = path("plain")

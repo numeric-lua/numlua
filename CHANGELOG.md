@@ -17,15 +17,34 @@
   Lua tables, following `apply_along_axis`; an empty axis table returns the
   input unchanged.
 
+### Changed
+
+- `numlua.argsort` validates its optional `descending` argument: it must be a
+  boolean or `nil`, so a truthy number or string no longer silently selects
+  ascending order.
+- `numlua.loadtxt` and `numlua.savetxt` reject unknown option keys instead of
+  ignoring them, matching `save`/`savez`.
+- `numlua.loadtxt` accepts CR-only line endings in addition to LF and CRLF,
+  matching Python's `splitlines`. Numeric fields never contain a carriage
+  return, so normalizing before splitting cannot change values.
+
 ### Tests
 
-- 219 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 225 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_apply_over_axes.lua` covers nested keepdims reductions on 1-D/2-D/3-D
   input, every axis and order including negative and repeated axes, same-rank
   `cumsum` and keepdims callbacks, single-number axes, empty axes, callback
   argument forwarding, scalar/boolean/Lua-table results, zero-size reductions,
   non-contiguous input, dtype preservation, and the validation and rank-error
-  paths.
+  paths;
+- selection/IO edge tests cover descending `argsort` values and flag
+  validation, non-contiguous `argsort`/`take`/`take_along_axis`/`compress`/
+  `flatnonzero` inputs, empty broadcast selections, CR-only and mixed line
+  endings, unknown text option keys, multi-character save delimiters, int8/
+  uint8 bounds, exact-range int64 and float16 text round-trips, trailing empty
+  fields, and stored ZIP members that use data descriptors. `generate.lua`
+  writes the descriptor fixture and documents that it is not produced through
+  `numlua.savez`.
 
 ## 0.17.0 — 2026-11-22
 

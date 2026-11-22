@@ -44,11 +44,29 @@ local FLOAT_FORMATS = {
   float64 = "%.17g",
 }
 
-local function check_options(options, name)
+local LOAD_OPTIONS = {
+  delimiter = true,
+  comments = true,
+  dtype = true,
+}
+
+local SAVE_OPTIONS = {
+  delimiter = true,
+  fmt = true,
+}
+
+local function check_options(options, name, allowed)
   if options ~= nil and type(options) ~= "table" then
     error(string.format("numlua.%s: options must be a table or nil", name), 3)
   end
-  return options or {}
+  options = options or {}
+  for key in pairs(options) do
+    if not allowed[key] then
+      error(string.format("numlua.%s: unknown option '%s'",
+        name, tostring(key)), 3)
+    end
+  end
+  return options
 end
 
 local function check_delimiter(delimiter, name)
@@ -197,7 +215,7 @@ function text.loadtxt(path, options)
   if type(path) ~= "string" or path == "" then
     error("numlua.loadtxt expects a non-empty file path", 2)
   end
-  options = check_options(options, "loadtxt")
+  options = check_options(options, "loadtxt", LOAD_OPTIONS)
   local delimiter = check_delimiter(options.delimiter, "loadtxt")
   local markers = comment_markers(options.comments)
   local dtype = check_load_dtype(options.dtype)
@@ -207,13 +225,16 @@ function text.loadtxt(path, options)
   local columns = nil
 
   if data ~= "" then
+    -- Split on CRLF and lone CR as well as LF, matching Python's splitlines
+    -- and NumPy's text reader.  Numeric fields never contain a carriage
+    -- return, so normalizing before splitting cannot merge or split values.
+    data = data:gsub("\r\n", "\n"):gsub("\r", "\n")
     if data:sub(-1) ~= "\n" then
       data = data .. "\n"
     end
     local line_number = 0
     for raw in data:gmatch("([^\n]*)\n") do
       line_number = line_number + 1
-      raw = raw:gsub("\r$", "")
       local line = strip_comments(raw, markers)
       if trim(line) ~= "" then
         local fields = split_fields(line, delimiter)
@@ -314,7 +335,7 @@ function text.savetxt(path, tensor, options)
   if not torch.is_tensor(tensor) then
     error("numlua.savetxt expects a tensor, got " .. type(tensor), 2)
   end
-  options = check_options(options, "savetxt")
+  options = check_options(options, "savetxt", SAVE_OPTIONS)
   local delimiter = check_delimiter(options.delimiter, "savetxt")
     or DEFAULT_SAVE_DELIMITER
   local fmt = options.fmt

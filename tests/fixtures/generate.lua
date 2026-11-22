@@ -260,7 +260,9 @@ local function write_file(path, data)
 end
 
 -- Write a ZIP archive.  Members default to the stored method; set
--- member.method = 8 to write a deflate-compressed entry.
+-- member.method = 8 to write a deflate-compressed entry, and
+-- member.descriptor = true to use a data descriptor (general-purpose flag bit
+-- 3) with zero local CRC/sizes, as streaming ZIP writers do.
 local function write_npz(path, members)
   local local_parts, central_parts = {}, {}
   local offset = 0
@@ -275,16 +277,27 @@ local function write_npz(path, members)
       error("fixture generator: unsupported ZIP method " .. tostring(method), 2)
     end
     local crc = crc32(payload)
-    local local_header = "PK\003\004" .. u16(20) .. u16(0) .. u16(method) ..
-      u16(0) .. u16(0) .. u32(crc) .. u32(#stored) .. u32(#payload) ..
-      u16(#name) .. u16(0) .. name
+    local descriptor = member.descriptor == true
+    local flags = descriptor and 8 or 0
+    local local_crc = descriptor and 0 or crc
+    local local_compressed = descriptor and 0 or #stored
+    local local_uncompressed = descriptor and 0 or #payload
+    local local_header = "PK\003\004" .. u16(20) .. u16(flags) .. u16(method) ..
+      u16(0) .. u16(0) .. u32(local_crc) .. u32(local_compressed) ..
+      u32(local_uncompressed) .. u16(#name) .. u16(0) .. name
     local_parts[#local_parts + 1] = local_header
     local_parts[#local_parts + 1] = stored
+    local descriptor_bytes = ""
+    if descriptor then
+      descriptor_bytes = "PK\007\010" .. u32(crc) .. u32(#stored) ..
+        u32(#payload)
+      local_parts[#local_parts + 1] = descriptor_bytes
+    end
     central_parts[#central_parts + 1] = "PK\001\002" .. u16(20) ..
-      u16(20) .. u16(0) .. u16(method) .. u16(0) .. u16(0) .. u32(crc) ..
+      u16(20) .. u16(flags) .. u16(method) .. u16(0) .. u16(0) .. u32(crc) ..
       u32(#stored) .. u32(#payload) .. u16(#name) .. u16(0) ..
       u16(0) .. u16(0) .. u16(0) .. u32(0) .. u32(offset) .. name
-    offset = offset + #local_header + #stored
+    offset = offset + #local_header + #stored + #descriptor_bytes
   end
   local central = table.concat(central_parts)
   local body = table.concat(local_parts) .. central
@@ -299,7 +312,7 @@ M.raw_deflate_stored = raw_deflate_stored
 
 -- Generate the corpus into `dir`.  Returns a manifest table:
 --   { npy = { name -> path }, npz = path, npz_deflate = path,
---     big_endian = path }
+--     npz_descriptor = path, big_endian = path }
 function M.generate(dir)
   if type(dir) ~= "string" or dir == "" then
     error("fixture generator expects a non-empty output directory", 2)
@@ -367,10 +380,26 @@ function M.generate(dir)
   local npz_deflate = dir .. "/generated-deflate.npz"
   write_npz(npz_deflate, deflate_members)
 
+  -- A stored archive whose members use streaming-style data descriptors: the
+  -- local header has flag bit 3 and zero CRC/sizes, and the real values follow
+  -- the payload.  The central directory still carries the authoritative sizes.
+  local descriptor_members = {}
+  for index = 1, math.min(2, #stored_members) do
+    local member = stored_members[index]
+    descriptor_members[index] = {
+      name = member.name,
+      payload = member.payload,
+      descriptor = true,
+    }
+  end
+  local npz_descriptor = dir .. "/generated-descriptor.npz"
+  write_npz(npz_descriptor, descriptor_members)
+
   return {
     npy = npy,
     npz = npz,
     npz_deflate = npz_deflate,
+    npz_descriptor = npz_descriptor,
     big_endian = big_endian,
   }
 end

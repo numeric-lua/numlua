@@ -542,6 +542,11 @@ with non-empty indices from an empty tensor or empty axis raise a
 or flattened input, and its size. 0-D and non-contiguous inputs are flattened
 in C order before selection. All selections are 1-based.
 
+`numlua.argsort(t[, axis[, descending]])` returns 1-based indices along `axis`
+(the last axis by default). `descending` is a numlua extension; when provided it
+must be a boolean or `nil`, so a typo such as `1` or `"true"` raises an error
+instead of silently sorting ascending.
+
 `numlua.take_along_axis(t, indices[, axis])` is the per-slice companion to
 `take`, matching `np.take_along_axis`. `indices` must be an integer tensor with
 the same rank as `t` and the usual integer index dtypes (`int64`, `int32`,
@@ -909,10 +914,12 @@ luatorch tensor. Options:
 
 Blank lines and comments are ignored. Comment text starts at the first occurrence
 of any configured marker on a line, so both full-line and trailing comments work.
+LF, CRLF, and lone-CR line endings are accepted, matching Python's `splitlines`.
 Every data row must have the same number of fields. One-row and one-column files
 load as 1-D tensors, following NumPy's default squeeze behavior; a file with no
 data rows returns an empty 1-D tensor. Numeric fields accept decimal, scientific,
-`nan`, `inf`, and `-inf` spellings.
+`nan`, `inf`, and `-inf` spellings. Unknown option keys raise a
+`numlua.loadtxt: unknown option ...` error instead of being ignored.
 
 ```lua
 -- data.csv:
@@ -949,7 +956,8 @@ Writes a 1-D or 2-D tensor as numeric text and returns `true`. Options:
 
 The default floating formats use enough significant digits to round-trip the
 tensor's dtype (`float16`, `float32`, or `float64`); integral dtypes use base 10.
-`nan`, `inf`, and `-inf` are written explicitly. A custom `fmt` is applied to
+`nan`, `inf`, and `-inf` are written explicitly. Unknown option keys raise a
+`numlua.savetxt: unknown option ...` error. A custom `fmt` is applied to
 every value:
 
 ```lua
@@ -962,7 +970,10 @@ numlua.savetxt("values.csv", numlua.arange(6):reshape(2, 3), {
 Zero-dimensional and higher-than-2-D tensors are rejected. `bool` is not a
 supported text dtype. Text files do not record shape or dtype, so load with the
 matching `dtype` when exact integer or wider floating-point values matter; a
-1xN or Nx1 matrix cannot be distinguished from a vector after loading.
+1xN or Nx1 matrix cannot be distinguished from a vector after loading. Integral
+values are formatted through Lua numbers, so `int64` values outside the exactly
+representable double range (about ±9.0e15) may round; use `.npy` for exact
+large 64-bit integers.
 
 ## Errors
 
@@ -1013,7 +1024,12 @@ dtype, or backend constraints are forwarded as-is.
   are not accepted by `np.apply_over_axes`, which expects an ndarray.
 - Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
   or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
-  squeezed to 1-D. `bool` is not supported by either text function.
+  squeezed to 1-D. `bool` is not supported by either text function. Unknown
+  option keys are rejected, and `int64` text output can round values beyond the
+  exactly representable double range; use `.npy` when exact large integers
+  matter.
+- `argsort`'s `descending` flag is a numlua extension; NumPy has no positional
+  descending argument. The flag must be a boolean or `nil`.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.
 - `.npz` writing is stored by default and deflate through
   `savez_compressed`; reading supports stored and deflate entries. Deflate

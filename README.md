@@ -497,7 +497,9 @@ This is an MVP, not a complete NumPy replacement:
   32-bit fields; ZIP64 writing is not supported.
 - text I/O is intentionally simple: it does not store shape/dtype metadata,
   quote strings, or parse headers, and it rejects `bool` rather than guessing a
-  textual boolean spelling;
+  textual boolean spelling. LF, CRLF, and CR line endings load, unknown option
+  keys are rejected, and `int64` text output can round values beyond the exact
+  double range (use `.npy` for those);
 - LuaRocks packaging is provided by `numlua-0.17.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 

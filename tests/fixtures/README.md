@@ -10,10 +10,13 @@ This directory contains two kinds of fixture data:
 - **A generated corpus** produced by `generate.lua` at test time under
   `tests/.tmp/`. It covers 3-D and 2-D shapes, all supported dtypes (`float16`,
   `float32`, `float64`, `int8`, `int16`, `int32`, `int64`, `uint8`, and
-  `bool`), zero-size arrays, 0-D scalars, stored-ZIP and deflate-ZIP `.npz`
-  archives, and a big-endian file for the rejection path. Deflate members use
-  real zlib output when zlib is available and valid stored DEFLATE blocks
-  otherwise; the reader still requires zlib to inflate them.
+  `bool`), zero-size arrays, 0-D scalars, stored-ZIP, deflate-ZIP, and
+  data-descriptor `.npz` archives, and a big-endian file for the rejection
+  path. Deflate members use real zlib output when zlib is available and valid
+  stored DEFLATE blocks otherwise; the reader still requires zlib to inflate
+  them. Data-descriptor members carry flag bit 3, zero local CRC/sizes, and
+  the authoritative CRC and sizes after the payload, as streaming ZIP writers
+  produce.
 
 `generate.lua` writes the NPY v1.0 headers, little-endian payloads, and ZIP
 containers directly. It deliberately does not call `numlua.save`/`savez`, so

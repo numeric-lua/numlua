@@ -243,3 +243,70 @@ test("selection edges cover zero-size gather dimensions and bad indices",
       numlua.array({ 1 }, { dtype = "int64" }), 1)
   end, "out of range for 0-D input")
 end)
+
+test("argsort descending orders values and validates the flag", function()
+  local matrix = numlua.array({ { 3, 1, 2 }, { 6, 4, 5 } })
+  local descending = numlua.argsort(matrix, 2, true)
+  assert_dtype(descending, "int64")
+  assert_tensor(descending, { { 1, 3, 2 }, { 1, 3, 2 } })
+
+  -- The index result really is descending when used to reorder the values.
+  assert_tensor(numlua.take_along_axis(matrix, descending, 2),
+    { { 3, 2, 1 }, { 6, 5, 4 } })
+
+  -- The default axis is the last one, and false matches the default order.
+  assert_true(numlua.argsort(matrix, nil, true):equal(descending))
+  assert_true(numlua.argsort(matrix, 2, false):equal(
+    numlua.argsort(matrix, 2)))
+  assert_true(numlua.argsort(matrix, -1, true):equal(descending))
+  assert_tensor(numlua.argsort(numlua.array({ 3, 1, 2 }), 1, true),
+    { 1, 3, 2 })
+
+  -- Descending must be a boolean; truthy numbers and strings are rejected
+  -- instead of silently selecting ascending order.
+  assert_error(function()
+    numlua.argsort(matrix, 2, 1)
+  end, "descending must be a boolean")
+  assert_error(function()
+    numlua.argsort(matrix, 2, "true")
+  end, "descending must be a boolean")
+  assert_error(function()
+    numlua.argsort(matrix, 2, {})
+  end, "descending must be a boolean")
+end)
+
+test("selection edges cover non-contiguous inputs and empty broadcasts",
+    function()
+  -- A transposed 3x2 view indexes along either axis without a copy.
+  local transposed = numlua.transpose(numlua.arange(6):reshape(2, 3))
+  assert_false(transposed:is_contiguous())
+  assert_tensor(numlua.take(transposed,
+    numlua.array({ 3, 1 }, { dtype = "int64" }), 1),
+    { { 2, 5 }, { 0, 3 } })
+  assert_tensor(numlua.take(transposed,
+    numlua.array({ 2, 1 }, { dtype = "int64" }), 2),
+    { { 3, 0 }, { 4, 1 }, { 5, 2 } })
+  assert_tensor(numlua.take_along_axis(transposed,
+    numlua.array({ { 2, 1 }, { 1, 2 }, { 1, 1 } },
+      { dtype = "int64" }), 2),
+    { { 3, 0 }, { 1, 4 }, { 2, 2 } })
+
+  -- Empty index tensors still broadcast non-axis dimensions from the input.
+  local empty = numlua.take_along_axis(numlua.zeros(1, 0, 3),
+    numlua.zeros(2, 0, 3, { dtype = "int64" }), 1)
+  assert_shape(empty, { 2, 0, 3 })
+  assert_eq(empty:numel(), 0)
+  assert_shape(numlua.take(numlua.zeros(2, 3),
+    numlua.zeros(0, { dtype = "int64" }), 1), { 0, 3 })
+
+  -- compress and flatnonzero flatten non-contiguous operands in C order.
+  local mask = numlua.transpose(numlua.array({
+    { true, false, false },
+    { false, true, false },
+  }))
+  assert_false(mask:is_contiguous())
+  assert_tensor(numlua.compress(mask, numlua.arange(6)), { 0, 3 })
+  assert_tensor(numlua.flatnonzero(mask), { 1, 4 })
+  assert_tensor(numlua.flatnonzero(numlua.array({ false, true, false })),
+    { 2 })
+end)
