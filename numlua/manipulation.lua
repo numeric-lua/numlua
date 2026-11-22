@@ -5,6 +5,8 @@
 --
 local torch = require("torch")
 
+local unpack = table.unpack or unpack
+
 local M = {}
 
 local function tensor(value, name)
@@ -1001,6 +1003,151 @@ function M.take_along_axis(t, indices, axis_value)
   local input = t:expand(input_target)
   local index_tensor = indices:expand(index_target)
   return input:gather(dim, index_tensor)
+end
+
+-- Convert one callback result to a tensor and enforce NumPy's result-rank
+-- rule: apply_along_axis callbacks may return a scalar or a 1-D array, never
+-- a higher-rank array.  Lua numbers/tables are materialized through
+-- torch.tensor, so a callback can stay in plain Lua.
+local function apply_axis_result(value)
+  if torch.is_tensor(value) then
+    if value:dim() > 1 then
+      error(string.format(
+        "numlua.apply_along_axis: function must return a scalar or 1-D " ..
+        "array, got a %d-D tensor", value:dim()), 3)
+    end
+    return value
+  end
+  if type(value) == "number" or type(value) == "boolean" then
+    return torch.tensor(value)
+  end
+  if type(value) == "table" then
+    local ok, result = pcall(torch.tensor, value)
+    if not ok then
+      error("numlua.apply_along_axis: function returned an invalid " ..
+        "table: " .. tostring(result), 3)
+    end
+    if result:dim() > 1 then
+      error(string.format(
+        "numlua.apply_along_axis: function must return a scalar or 1-D " ..
+        "array, got a %d-D tensor", result:dim()), 3)
+    end
+    return result
+  end
+  error("numlua.apply_along_axis: function must return a scalar, 1-D " ..
+    "tensor, number, boolean, or table, got " .. type(value), 3)
+end
+
+-- apply_along_axis(func, axis, t[, ...]) mirrors np.apply_along_axis.  The
+-- callback receives a 1-D view of each slice along `axis` and must return a
+-- scalar or a 1-D tensor/table/number; any returned dimensions are appended
+-- after the non-axis input dimensions, exactly as in NumPy.  Extra arguments
+-- are forwarded to the callback.  Slices are visited in C order.
+function M.apply_along_axis(func, axis_value, t, ...)
+  tensor(t, "apply_along_axis")
+  if type(func) ~= "function" then
+    error("numlua.apply_along_axis expects a function as the first " ..
+      "argument", 2)
+  end
+  local ndim = t:dim()
+  if ndim == 0 then
+    error("numlua.apply_along_axis expects at least a 1-D tensor", 2)
+  end
+  local dim = axis(axis_value, ndim, "apply_along_axis")
+
+  -- Dimensions and sizes of the slice iteration space, i.e. everything except
+  -- `axis`.  `outer_dims` is ascending for view selection; `coords` is indexed
+  -- by position in that list.
+  local outer_dims, outer_shape = {}, {}
+  local count = 1
+  for index = 1, ndim do
+    if index ~= dim then
+      outer_dims[#outer_dims + 1] = index
+      outer_shape[#outer_dims] = t:size(index)
+      count = count * t:size(index)
+    end
+  end
+  if count == 0 then
+    error("numlua.apply_along_axis: input has no slices along axis " ..
+      dim .. " (a non-axis dimension is zero)", 2)
+  end
+
+  local args = { ... }
+  local arg_count = select("#", ...)
+  local coords = {}
+  local out, out_shape
+  local expected_dim, expected_length
+
+  local function current_slice()
+    local view = t
+    -- Descending selection keeps the remaining dimension numbers valid.
+    for index = #outer_dims, 1, -1 do
+      view = view:select(outer_dims[index], coords[index])
+    end
+    return view
+  end
+
+  local function store(result)
+    if #out_shape == 0 then
+      return
+    end
+    local target = out
+    for index = #coords, 1, -1 do
+      target = target:select(index, coords[index])
+    end
+    if result:dim() == 0 then
+      target:fill_(result:item())
+    else
+      target:copy_(result:detach())
+    end
+  end
+
+  local function accept(result)
+    if expected_dim == nil then
+      expected_dim = result:dim()
+      expected_length = expected_dim == 1 and result:size(1) or nil
+      out_shape = {}
+      for index = 1, #outer_shape do
+        out_shape[index] = outer_shape[index]
+      end
+      if expected_dim == 1 then
+        out_shape[#out_shape + 1] = expected_length
+      end
+      if #out_shape == 0 then
+        -- A 1-D input with a scalar callback has no iteration axes left; the
+        -- single result is the 0-D output.
+        out = result:detach():clone()
+      else
+        out = torch.zeros(out_shape, { dtype = result:dtype() })
+      end
+    else
+      if result:dim() ~= expected_dim then
+        error(string.format(
+          "numlua.apply_along_axis: function returned a %d-D result after " ..
+          "a %d-D result", result:dim(), expected_dim), 2)
+      end
+      if expected_dim == 1 and result:size(1) ~= expected_length then
+        error(string.format(
+          "numlua.apply_along_axis: function returned a result of length " ..
+          "%d after length %d", result:size(1), expected_length), 2)
+      end
+    end
+    store(result)
+  end
+
+  local function visit(depth)
+    if depth > #outer_shape then
+      accept(apply_axis_result(func(current_slice(),
+        unpack(args, 1, arg_count))))
+      return
+    end
+    for index = 1, outer_shape[depth] do
+      coords[depth] = index
+      visit(depth + 1)
+    end
+  end
+  visit(1)
+  return out
 end
 
 local PUT_MODES = {
