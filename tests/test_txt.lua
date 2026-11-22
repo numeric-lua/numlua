@@ -769,3 +769,60 @@ test("savetxt validates header, footer, comments, and newline", function()
   end
   assert_eq(io.open(path, "r"), nil)
 end)
+
+test("savetxt accepts one format per column", function()
+  local path = tmp_path("fmt-columns")
+  local a = numlua.array({
+    { 1.25, 2, 3000 },
+    { 4.5, 5, 6000 },
+  }, { dtype = "float64" })
+  assert_true(numlua.savetxt(path, a, {
+    delimiter = ",",
+    fmt = { "%.1f", "%d", "%.1e" },
+  }))
+  assert_eq(read_text(path), "1.2,2,3.0e+03\n4.5,5,6.0e+03\n")
+  os.remove(path)
+
+  -- Strings and functions may be mixed per column.
+  assert_true(numlua.savetxt(path, a, {
+    delimiter = "|",
+    fmt = {
+      "%.2f",
+      function(value) return "n" .. tostring(value) end,
+      "%d",
+    },
+  }))
+  assert_eq(read_text(path), "1.25|n2|3000\n4.50|n5|6000\n")
+  os.remove(path)
+
+  -- A 1-D vector has one format column.
+  assert_true(numlua.savetxt(path,
+    numlua.array({ 1.5, 2.5 }, { dtype = "float64" }),
+    { fmt = { "%.1f" } }))
+  assert_eq(read_text(path), "1.5 2.5\n")
+  os.remove(path)
+
+  -- A zero-column matrix accepts an empty format table.
+  assert_true(numlua.savetxt(path, numlua.zeros(2, 0), { fmt = {} }))
+  assert_eq(read_text(path), "\n\n")
+  os.remove(path)
+end)
+
+test("savetxt validates the fmt table shape and entries", function()
+  local path = tmp_path("fmt-table-errors")
+  local matrix = numlua.array({ { 1, 2, 3 }, { 4, 5, 6 } })
+  assert_error(function()
+    numlua.savetxt(path, matrix, { fmt = { "%d", "%d" } })
+  end, "fmt table has 2 entries, expected 3")
+  assert_error(function()
+    numlua.savetxt(path, numlua.array({ 1, 2 }),
+      { fmt = { "%d", "%d" } })
+  end, "fmt table has 2 entries, expected 1")
+  assert_error(function()
+    numlua.savetxt(path, matrix, { fmt = { "%d", 5, "%d" } })
+  end, "fmt table entry 2 must be a format string or function")
+  assert_error(function()
+    numlua.savetxt(path, matrix, { fmt = { "%d", "%d", "%d" }, newline = 5 })
+  end, "newline must be a string")
+  assert_eq(io.open(path, "r"), nil)
+end)

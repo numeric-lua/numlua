@@ -401,8 +401,9 @@ integers or wider floats exactly. Text files do not store shape or dtype, so a
 1xN or Nx1 matrix cannot be distinguished from a vector after loading.
 
 `savetxt` writes sufficient digits for `float16`/`float32`/`float64`
-round-trips, writes `nan`/`inf` explicitly, and supports a `fmt` format string
-or function. `header` and `footer` add comment-prefixed text before and after
+round-trips, writes `nan`/`inf` explicitly, and supports a `fmt` format string,
+function, or table with one format per column. `header` and `footer` add
+comment-prefixed text before and after
 the data (`comments` defaults to `"# "`), and `newline` changes the line ending.
 It rejects zero-dimensional and higher-than-2-D tensors and the `bool` dtype
 (use `0`/`1` values with an integral dtype instead). See

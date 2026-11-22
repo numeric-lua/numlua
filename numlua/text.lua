@@ -466,6 +466,36 @@ local function format_value(value, dtype, fmt)
   return string.format("%d", math.floor(value))
 end
 
+-- Validate the fmt option against the number of output columns.  A table
+-- supplies one format string or function per column; a string/function
+-- applies to every column.
+local function check_fmt(fmt, columns)
+  if fmt == nil then
+    return nil
+  end
+  if type(fmt) == "string" or type(fmt) == "function" then
+    return fmt
+  end
+  if type(fmt) ~= "table" then
+    error("numlua.savetxt: fmt must be a format string, function, table, " ..
+      "or nil", 2)
+  end
+  if #fmt ~= columns then
+    error(string.format(
+      "numlua.savetxt: fmt table has %d entries, expected %d",
+      #fmt, columns), 2)
+  end
+  for i = 1, #fmt do
+    local entry = fmt[i]
+    if type(entry) ~= "string" and type(entry) ~= "function" then
+      error(string.format(
+        "numlua.savetxt: fmt table entry %d must be a format string or " ..
+        "function, got %s", i, type(entry)), 2)
+    end
+  end
+  return fmt
+end
+
 local function write_row(handle, parts, delimiter, newline)
   local ok, write_error = handle:write(
     table.concat(parts, delimiter), newline)
@@ -503,10 +533,6 @@ function text.savetxt(path, tensor, options)
   options = check_options(options, "savetxt", SAVE_OPTIONS)
   local delimiter = check_delimiter(options.delimiter, "savetxt")
     or DEFAULT_SAVE_DELIMITER
-  local fmt = options.fmt
-  if fmt ~= nil and type(fmt) ~= "string" and type(fmt) ~= "function" then
-    error("numlua.savetxt: fmt must be a format string, function, or nil", 2)
-  end
   local header = check_string(options.header, "header", "savetxt") or ""
   local footer = check_string(options.footer, "footer", "savetxt") or ""
   local comments = check_string(
@@ -520,6 +546,9 @@ function text.savetxt(path, tensor, options)
       "numlua.savetxt supports 1-D and 2-D arrays, got %d-D", dim), 2)
   end
   local dtype = check_save_dtype(tensor)
+  local sizes = tensor:sizes()
+  local columns = dim == 1 and 1 or sizes[2]
+  local fmt = check_fmt(options.fmt, columns)
 
   local handle, open_error = io.open(path, "w")
   if handle == nil then
@@ -527,7 +556,6 @@ function text.savetxt(path, tensor, options)
       tostring(open_error), 2)
   end
 
-  local sizes = tensor:sizes()
   local write_ok, write_error = true, nil
   local format_ok, format_error = pcall(function()
     write_ok, write_error = write_annotation(
@@ -539,8 +567,9 @@ function text.savetxt(path, tensor, options)
       if sizes[1] > 0 then
         local values = tensor:totable()
         local parts = {}
+        local column_fmt = type(fmt) == "table" and fmt[1] or fmt
         for i = 1, sizes[1] do
-          parts[i] = format_value(values[i], dtype, fmt)
+          parts[i] = format_value(values[i], dtype, column_fmt)
         end
         write_ok, write_error = write_row(
           handle, parts, delimiter, newline)
@@ -551,7 +580,8 @@ function text.savetxt(path, tensor, options)
         local row = rows[i]
         local parts = {}
         for j = 1, sizes[2] do
-          parts[j] = format_value(row[j], dtype, fmt)
+          local column_fmt = type(fmt) == "table" and fmt[j] or fmt
+          parts[j] = format_value(row[j], dtype, column_fmt)
         end
         if sizes[2] == 0 then
           local ok, err = handle:write(newline)

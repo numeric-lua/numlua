@@ -992,7 +992,7 @@ Writes a 1-D or 2-D tensor as numeric text and returns `true`. Options:
 | option | default | meaning |
 | --- | --- | --- |
 | `delimiter` | `" "` | field separator |
-| `fmt` | dtype-aware | `printf` format string or function for each value |
+| `fmt` | dtype-aware | `printf` format string, function, or table of per-column formats |
 | `header` | `""` | text written before the data, one comment-prefixed line per input line |
 | `footer` | `""` | text written after the data, one comment-prefixed line per input line |
 | `comments` | `"# "` | prefix applied to each header/footer line |
@@ -1011,12 +1011,15 @@ applies to data rows and to the header/footer lines; it defaults to `"\n"`.
 Pass `comments = ""` to write bare header/footer text. Header and footer text
 are written even for empty vectors and zero-column matrices.
 
-A custom `fmt` is applied to every value:
+A custom `fmt` is applied to every value. A table supplies one format per
+column, in left-to-right order; each entry may be a `printf` string or a
+function, so strings and functions can be mixed. The table length must equal
+the number of output columns, and a 1-D vector has one column:
 
 ```lua
 numlua.savetxt("values.csv", numlua.arange(6):reshape(2, 3), {
   delimiter = ",",
-  fmt = "%.3f",
+  fmt = { "%.3f", "%d", "%.1e" },
 })
 ```
 
