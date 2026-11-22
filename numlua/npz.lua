@@ -6,7 +6,8 @@
 -- writes deflate entries when a system zlib library can be loaded through
 -- LuaJIT FFI.  Stored archives remain dependency-free; requesting deflate
 -- compression without zlib fails with a clear error unless the caller asks to
--- fall back to stored entries.
+-- fall back to stored entries.  Both writers accept `{ version = 1|2|3 }` to
+-- choose the NPY header version used for every member (the default is v1.0).
 --
 local bit = require("bit")
 local ffi = require("ffi")
@@ -312,19 +313,35 @@ local function check_archive(path, tensor, name)
   end
 end
 
-local function compressed_fallback(options)
-  if options == nil then return nil end
+-- Validate the optional archive-writer options.  `version` selects the NPY
+-- header version used for every member; `fallback` is only meaningful for
+-- savez_compressed.  Unknown keys are rejected so a typo cannot silently
+-- produce v1.0 members or an uncompressed fallback.
+local function parse_options(options, function_name, compressed)
+  if options == nil then return 1, nil end
   if type(options) ~= "table" then
-    error("numlua.savez_compressed expects an options table", 2)
+    error("numlua." .. function_name .. " expects an options table", 2)
+  end
+  for key in pairs(options) do
+    if key ~= "version" and not (compressed and key == "fallback") then
+      error("numlua." .. function_name .. ": unknown option '" ..
+        tostring(key) .. "'", 2)
+    end
+  end
+  local version = 1
+  if options.version ~= nil then
+    version = npy.parse_version(options.version,
+      "numlua." .. function_name)
   end
   local fallback = options.fallback
-  if fallback ~= nil and fallback ~= "stored" then
-    error("numlua.savez_compressed: fallback must be 'stored'", 2)
+  if compressed and fallback ~= nil and fallback ~= "stored" then
+    error("numlua." .. function_name .. ": fallback must be 'stored'", 2)
   end
-  return fallback
+  return version, fallback
 end
 
-local function write_archive(path, arrays, function_name, compressed, fallback)
+local function write_archive(path, arrays, function_name, compressed,
+    fallback, version)
   check_archive(path, arrays, function_name)
   local deflate_ready = compressed and load_zlib() ~= nil
   local fallback_used = false
@@ -363,7 +380,7 @@ local function write_archive(path, arrays, function_name, compressed, fallback)
         #file_name, max_u16), 2)
     end
     local temp = os.tmpname()
-    npy.save(temp, arrays[name])
+    npy.save(temp, arrays[name], { version = version })
     local handle = assert(io.open(temp, "rb"))
     local payload = assert(handle:read("*a"))
     handle:close()
@@ -436,13 +453,15 @@ local function write_archive(path, arrays, function_name, compressed, fallback)
   return true
 end
 
-function M.savez(path, arrays)
-  return write_archive(path, arrays, "savez", false)
+function M.savez(path, arrays, options)
+  local version = parse_options(options, "savez", false)
+  return write_archive(path, arrays, "savez", false, nil, version)
 end
 
 function M.savez_compressed(path, arrays, options)
-  local fallback = compressed_fallback(options)
-  return write_archive(path, arrays, "savez_compressed", true, fallback)
+  local version, fallback = parse_options(options, "savez_compressed", true)
+  return write_archive(path, arrays, "savez_compressed", true, fallback,
+    version)
 end
 
 -- ---------------------------------------------------------------------------

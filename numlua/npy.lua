@@ -96,6 +96,22 @@ local function write_u32(value)
     math.floor(value / 65536) % 256, math.floor(value / 16777216) % 256)
 end
 
+-- Normalize an optional NPY header version.  Both the .npy writer and the
+-- .npz member writer use this so the accepted spellings cannot drift apart.
+-- `what` names the public function in error messages.
+function npy.parse_version(requested, what)
+  local version = requested
+  if type(requested) == "string" then
+    version = VERSION_ALIASES[requested]
+  end
+  if version ~= 1 and version ~= 2 and version ~= 3 then
+    error(string.format(
+      "%s: version must be 1, 2, or 3 (or '1.0', '2.0', '3.0'), got %s",
+      what, tostring(requested)), 2)
+  end
+  return version
+end
+
 -- Validate the optional save() options table.  Only `version` is understood,
 -- and unknown keys are rejected so a typo cannot silently write v1.0.
 local function parse_save_options(options)
@@ -110,16 +126,7 @@ local function parse_save_options(options)
   end
   local requested = options.version
   if requested == nil then return DEFAULT_VERSION end
-  local version = requested
-  if type(requested) == "string" then
-    version = VERSION_ALIASES[requested]
-  end
-  if version ~= 1 and version ~= 2 and version ~= 3 then
-    error(string.format(
-      "numlua.save: version must be 1, 2, or 3 (or '1.0', '2.0', '3.0'), " ..
-      "got %s", tostring(requested)), 3)
-  end
-  return version
+  return npy.parse_version(requested, "numlua.save")
 end
 
 local function shape_to_string(shape)
