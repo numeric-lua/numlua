@@ -139,6 +139,29 @@ end, 1, rows):format())
 -- tensor([5., 7., 9.])
 ```
 
+`numlua.apply_over_axes` applies a reduction callback over a list of axes and
+restores each reduced axis as size 1, following `np.apply_over_axes` (with
+1-based axes). A callback that keeps the rank is used unchanged, so
+same-shape transforms such as `cumsum` also work:
+
+```lua
+local cube = numlua.arange(24):reshape(2, 3, 4)
+print(numlua.apply_over_axes(numlua.sum, cube, { 1, 2 }):format())
+-- tensor([[[60, 66, 72, 78]]])   (shape 1, 1, 4)
+print(numlua.apply_over_axes(numlua.sum, cube, { -1 }):format())
+-- tensor([[[6],
+--           [22],
+--           [38]],
+--         [[54],
+--           [70],
+--           [86]]])              (shape 2, 3, 1)
+-- numlua.apply_over_axes(numlua.cumsum, cube, { 3 }) keeps shape 2, 3, 4
+```
+
+Extra callback arguments are forwarded, and a callback result must either keep
+the input rank or drop exactly one axis. Scalar, boolean, and Lua-table results
+are materialized like `apply_along_axis` results.
+
 ## Requirements
 
 - LuaJIT 2.1 (the primary and tested target).
@@ -218,6 +241,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize` |
 | Combine | `concatenate`, `stack` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take`, `take_along_axis`, `put` |
+| Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
 | Reductions | `sum`, `mean`, `max`, `min`, `argmax`, `argmin` |
 | Predicates/selection | `where`, `select`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |

@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.18.0 — 2026-11-22
+
+### Added
+
+- `numlua.apply_over_axes(func, t, axes[, ...])`, matching
+  `np.apply_over_axes` for Lua callbacks. `axes` is a 1-based axis or a table
+  of axes (negative axes accepted, repeats allowed), applied in order to the
+  current value; `func` receives the current tensor, the normalized 1-based
+  axis, and any extra positional arguments. A callback result that keeps the
+  input rank is used unchanged (so keepdims-style reductions and same-shape
+  callbacks such as `cumsum` work), while a result that drops one dimension is
+  re-expanded with a size-1 axis at the same position. Any other rank change
+  raises a `numlua.apply_over_axes:` error, and 0-D input is rejected because
+  it has no axis. Callback results may be tensors, Lua numbers, booleans, or
+  Lua tables, following `apply_along_axis`; an empty axis table returns the
+  input unchanged.
+
+### Tests
+
+- 219 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_apply_over_axes.lua` covers nested keepdims reductions on 1-D/2-D/3-D
+  input, every axis and order including negative and repeated axes, same-rank
+  `cumsum` and keepdims callbacks, single-number axes, empty axes, callback
+  argument forwarding, scalar/boolean/Lua-table results, zero-size reductions,
+  non-contiguous input, dtype preservation, and the validation and rank-error
+  paths.
+
 ## 0.17.0 — 2026-11-22
 
 ### Added

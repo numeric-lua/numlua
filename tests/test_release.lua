@@ -55,7 +55,8 @@ end)
 test("new public API and format support are documented", function()
   local api = read_file(root .. "/docs/api.md")
   for _, symbol in ipairs({ "numlua.put", "numlua.take_along_axis",
-      "numlua.apply_along_axis", "numlua.select" }) do
+      "numlua.apply_along_axis", "numlua.apply_over_axes",
+      "numlua.select" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -106,6 +107,8 @@ test("new public API and format support are documented", function()
     "README.md does not document npz member-name collisions")
   assert_true(readme:find("numlua.apply_along_axis", 1, true) ~= nil,
     "README.md does not demonstrate numlua.apply_along_axis")
+  assert_true(readme:find("numlua.apply_over_axes", 1, true) ~= nil,
+    "README.md does not demonstrate numlua.apply_over_axes")
 end)
 
 test("CI smoke job names the current rockspec and version", function()

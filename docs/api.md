@@ -522,6 +522,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; scalar and N-D index tensors |
 | `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
 | `numlua.apply_along_axis(func, axis, t[, ...])` | call `func` on each 1-D slice along `axis` (materialized) |
+| `numlua.apply_over_axes(func, t, axes[, ...])` | apply `func` over axes, restoring each reduced axis |
 | `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
 | `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
 
@@ -588,6 +589,40 @@ numlua.apply_along_axis(function(row) return numlua.flip(row, 1) end, 2, rows)
 -- {{3, 2, 1}, {6, 5, 4}}
 numlua.apply_along_axis(function(row) return numlua.sum(row) end, 1, rows)
 -- {5, 7, 9}
+```
+
+`numlua.apply_over_axes(func, t, axes[, ...])` mirrors `np.apply_over_axes`
+for Lua callbacks. `axes` is a 1-based axis or a table of axes; entries may be
+negative and may repeat. The axes are applied in order to the current value,
+and `func` is called as `func(value, axis, ...)` with the normalized 1-based
+axis and any extra positional arguments (the extra arguments are a numlua
+extension; NumPy forwards none).
+
+The callback follows `apply_along_axis`'s return spellings: a luatorch tensor,
+Lua number, boolean, or Lua table. The rank rule matches NumPy. A result with
+the same rank as the current value is used unchanged, which supports
+keepdims-style reductions and same-shape callbacks such as `numlua.cumsum`. A
+result with one fewer dimension is re-expanded with a size-1 axis at the same
+1-based position, so ordinary reductions such as `numlua.sum` behave like a
+`keepdims` reduction. Any other rank difference raises a
+`numlua.apply_over_axes:` error; 0-D input is rejected because there is no axis
+to apply. An empty `axes` table returns the input unchanged.
+
+Because every reduced axis is restored, the result has the same rank as the
+input (before any same-rank callback changes sizes). Reductions over a zero-size
+axis therefore produce a size-1 axis, not an error. Callback errors propagate
+unchanged. The helper delegates each call to the callback, so result storage and
+dtype follow whatever the callback returns; a callback that returns a view can
+keep the result aliased to the input.
+
+```lua
+local cube = numlua.arange(24):reshape(2, 3, 4)
+numlua.apply_over_axes(numlua.sum, cube, { 1, 2 })
+-- shape {1, 1, 4}, a keepdims-style sum over the first two axes
+numlua.apply_over_axes(numlua.sum, cube, { -1 })
+-- shape {2, 3, 1}
+numlua.apply_over_axes(numlua.cumsum, cube, { 3 })
+-- shape {2, 3, 4}, equal to numlua.cumsum(cube, 3)
 ```
 
 `numlua.put(t, indices, values[, mode])` is the assignment counterpart to
@@ -971,6 +1006,11 @@ dtype, or backend constraints are forwarded as-is.
   must return a scalar or 1-D result, matching NumPy's restriction, and input
   with a zero-size non-axis dimension is rejected because there is no first
   slice to infer the output dtype and shape.
+- `apply_over_axes` uses 1-based axes and takes a Lua callback rather than a
+  NumPy ufunc; extra positional arguments are a numlua extension. A callback
+  result must keep the input rank or drop exactly one dimension (which is
+  restored at the same position); NumPy's scalar and table return spellings
+  are not accepted by `np.apply_over_axes`, which expects an ndarray.
 - Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
   or headers. `loadtxt` defaults to `float32`, and one-row/one-column files are
   squeezed to 1-D. `bool` is not supported by either text function.
