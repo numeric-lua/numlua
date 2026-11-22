@@ -11,7 +11,7 @@ a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.17.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.18.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`, and text I/O.  It is packaged on LuaRocks and tested against
 > luatorch 0.25.x.
@@ -500,7 +500,7 @@ This is an MVP, not a complete NumPy replacement:
   textual boolean spelling. LF, CRLF, and CR line endings load, unknown option
   keys are rejected, and `int64` text output can round values beyond the exact
   double range (use `.npy` for those);
-- LuaRocks packaging is provided by `numlua-0.17.0-1.rockspec`; the native
+- LuaRocks packaging is provided by `numlua-0.18.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License
