@@ -261,3 +261,41 @@ test("text I/O handles zero-width and empty tensors", function()
   assert_eq(read_text(zero_rows), "")
   os.remove(zero_rows)
 end)
+
+test("text I/O disables comments and accepts fmt functions", function()
+  local disabled = write_text(tmp_path("comments-off"), "1 2 # data\n")
+  assert_error(function()
+    numlua.loadtxt(disabled, { comments = false })
+  end, "invalid number '#'")
+  assert_error(function()
+    numlua.loadtxt(disabled, { comments = {} })
+  end, "invalid number '#'")
+  assert_tensor(numlua.loadtxt(disabled), { 1, 2 })
+  os.remove(disabled)
+
+  -- A missing final newline is accepted, and numeric dtype ids work.
+  local no_final_newline = write_text(tmp_path("no-final-newline"),
+    "1 2\n3 4")
+  local loaded = numlua.loadtxt(no_final_newline, { dtype = "int64" })
+  assert_dtype(loaded, "int64")
+  assert_tensor(loaded, { { 1, 2 }, { 3, 4 } })
+  assert_dtype(numlua.loadtxt(no_final_newline, { dtype = 1 }), "float64")
+  os.remove(no_final_newline)
+
+  local formatted = tmp_path("fmt-function")
+  assert_true(numlua.savetxt(formatted, numlua.array({ 1.5, 2.5 }), {
+    fmt = function(value) return string.format("<%.1f>", value) end,
+  }))
+  assert_eq(read_text(formatted), "<1.5> <2.5>\n")
+  assert_error(function()
+    numlua.savetxt(formatted, numlua.array({ 1 }), {
+      fmt = function() return 5 end,
+    })
+  end, "must produce a string")
+  assert_error(function()
+    numlua.savetxt(formatted, numlua.array({ 1 }), {
+      fmt = function() error("boom") end,
+    })
+  end, "fmt function failed")
+  os.remove(formatted)
+end)

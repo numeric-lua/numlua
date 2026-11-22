@@ -555,3 +555,37 @@ test("save and load report file and dtype errors", function()
   assert_error(function() numlua.load(nil) end,
     "expects a non-empty file path")
 end)
+
+test("load accepts double-quoted header keys", function()
+  for _, version in ipairs({ 1, 3 }) do
+    local source = tmp_path("quoted-source-" .. version)
+    local target = tmp_path("quoted-" .. version)
+    assert_true(numlua.save(source, numlua.array({
+      { 1.5, 2.5 },
+      { 3.5, 4.5 },
+    }, { dtype = "float64" }), { version = version }))
+
+    local data = read_bytes(source)
+    local prefix_size = version == 1 and 10 or 12
+    local header_size
+    if version == 1 then
+      header_size = data:byte(9) + data:byte(10) * 256
+    else
+      header_size = u32_at(data, 9)
+    end
+    local header = data:sub(prefix_size + 1, prefix_size + header_size)
+    header = header:gsub("'descr'", '"descr"'):gsub("'<f8'", '"<f8"')
+      :gsub("'fortran_order'", '"fortran_order"'):gsub("'shape'", '"shape"')
+    write_bytes(target, data:sub(1, prefix_size) .. header ..
+      data:sub(prefix_size + header_size + 1))
+
+    local loaded = numlua.load(target)
+    assert_dtype(loaded, "float64")
+    assert_tensor(loaded, {
+      { 1.5, 2.5 },
+      { 3.5, 4.5 },
+    }, 0)
+    os.remove(source)
+    os.remove(target)
+  end
+end)

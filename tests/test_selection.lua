@@ -151,3 +151,24 @@ test("take_along_axis rejects rank, axis, and dtype mismatches", function()
     numlua.take_along_axis(t, numlua.array({ { { 1.5 } } }), 3)
   end, "integer Tensor")
 end)
+
+test("take_along_axis normalizes negative axes and empty selections",
+    function()
+  local matrix = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
+  local order = numlua.argsort(matrix, -1)
+  local sorted_last = matrix:sort(-1)
+  local sorted_second = matrix:sort(2)
+  assert_tensor(numlua.take_along_axis(matrix, order, -1),
+    sorted_last:totable())
+  assert_tensor(numlua.take_along_axis(matrix, order, 2),
+    sorted_second:totable())
+
+  assert_tensor(numlua.take(matrix,
+    numlua.array({ 1, 3 }, { dtype = "int64" }), -1),
+    { { 10, 20 }, { 60, 50 } })
+
+  local empty = numlua.take_along_axis(matrix,
+    numlua.zeros(2, 0, { dtype = "int64" }), -1)
+  assert_shape(empty, { 2, 0 })
+  assert_eq(empty:numel(), 0)
+end)
