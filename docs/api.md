@@ -291,6 +291,29 @@ numlua.where(condition, numlua.array({ { 1, 2, 3 } }), -1)
 Scalar numeric branches are materialized as `float32` 0-D tensors; tensor
 branches keep luatorch/ATen's dtype promotion.
 
+### `numlua.select(condlist, choicelist[, default])`
+
+NumPy's `np.select`: `condlist` and `choicelist` are non-empty Lua tables of the
+same length. Each condition follows `where`'s truth testing (a `bool` tensor is
+used directly, a numeric tensor or number is tested as `~= 0`, and a boolean
+scalar is accepted), while each choice may be a tensor or a Lua
+`number`/`boolean`. Conditions are tested in order, the first true condition
+wins, and elements where every condition is false take `default`, which
+defaults to `0`. All operands broadcast through ATen; tensor choices keep their
+own dtype under ATen's promotion, while scalar choices and a scalar default are
+materialized as 0-D `float32` (or `bool`) tensors, exactly like `where` scalar
+branches. Wrap a scalar in a typed array when a specific dtype is required.
+Empty or length-mismatched lists, non-tensor/non-scalar entries, and choices
+that do not broadcast raise a `numlua.select:` error.
+
+```lua
+local values = numlua.array({ -2, -1, 0, 1, 2 })
+local negative = values:lt(0)
+local positive = values:gt(0)
+numlua.select({ negative, positive }, { -1, 1 }, 0)
+-- {-1, -1, 0, 1, 1}
+```
+
 ### `numlua.clip(t, minimum, maximum)`
 
 Clamps every element of `t` to the inclusive `[minimum, maximum]` range.
@@ -676,13 +699,20 @@ file into memory, then copies the payload into a C-order tensor. Arrays with
 shape `()` (0-D scalars), zero-sized dimensions, and non-contiguous source
 tensors are supported; non-contiguous tensors are written in C order.
 
-### `numlua.savez(path, arrays)`
+### `numlua.savez(path, arrays[, options])`
 
 Writes a ZIP archive of `.npy` members using the stored (uncompressed) method
 and returns `true`. `arrays` is a table mapping non-empty array names to
 luatorch tensors. This matches `np.savez` and has no compression dependency.
 An empty `arrays` table writes a valid empty archive. Keys already ending in
 `.npy` are stored unchanged; other keys get a `.npy` suffix, as in NumPy.
+
+`options.version` selects the NPY header version used for every member. It
+accepts the same values as `numlua.save`: `1`, `2`, `3`, `"1.0"`, `"2.0"`, or
+`"3.0"`. The default is v1.0, so archives without the option remain
+byte-identical. `savez` rejects `fallback` (compression is not requested) and
+any other unknown option, and validates the version before writing member
+payloads or opening the output file.
 
 Writing is ZIP32-only and validates all field widths before opening the output
 file:
@@ -709,8 +739,11 @@ By default the call fails with a
 error when zlib cannot be loaded, before any file is created. Pass
 `{ fallback = "stored" }` to write stored entries instead; the call then returns
 `true, "stored"` so the fallback is observable. Other `fallback` values and
-non-table options are rejected. `NUMLUA_DISABLE_ZLIB=1` forces the no-zlib path
-for testing.
+non-table options are rejected. `options.version` is also accepted, with the
+same values and default as `savez`, and may be combined with `fallback`; it
+chooses the NPY member header version written by either path. An invalid
+version fails before any file is created. `NUMLUA_DISABLE_ZLIB=1` forces the
+no-zlib path for testing.
 
 ### `numlua.loadz(path)`
 

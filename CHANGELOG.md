@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.14.0 — 2026-11-22
+
+### Added
+
+- `.npz` member-version writing: `numlua.savez` and
+  `numlua.savez_compressed` accept `{ version = 1|2|3 }` (or the dotted
+  `"1.0"`/`"2.0"`/`"3.0"` strings) and write every member with that NPY header
+  version. The default remains v1.0, so existing archives stay byte-identical.
+  `savez_compressed` may combine `version` with `{ fallback = "stored" }`.
+  Version spellings are validated by the same helper as `numlua.save`, unknown
+  options are rejected, and errors are raised before member payloads or the
+  output file are written;
+- `numlua.select(condlist, choicelist[, default])`, matching `np.select`.
+  Conditions are tested in order and the first true condition wins; missing
+  matches take `default` (0 when omitted). Conditions and choices accept
+  tensors or Lua scalars with the same truth testing and 0-D scalar behavior as
+  `numlua.where`, and ATen performs broadcasting and dtype promotion.
+  Empty/mismatched lists, invalid entries, and non-broadcastable operands raise
+  a `numlua.select:` error.
+
 ## 0.13.0 — 2026-11-21
 
 ### Added

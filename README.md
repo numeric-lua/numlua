@@ -67,6 +67,7 @@ Predicates, clipping, and conditional selection are available too:
 local values = numlua.array({ -2, -0.5, 0, 0.5, 2 })
 print(numlua.clip(values, -1, 1):format())
 print(numlua.where(values:gt(0), values, 0):format())
+print(numlua.select({ values:lt(0), values:gt(0) }, { -1, 1 }, 0):format())
 print(numlua.count_nonzero(values):item(), numlua.any(values:gt(0)):item())
 ```
 
@@ -184,7 +185,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `take`, `take_along_axis`, `put` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
 | Reductions | `sum`, `mean`, `max`, `min`, `argmax`, `argmin` |
-| Predicates/selection | `where`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
+| Predicates/selection | `where`, `select`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `savez`, `savez_compressed`, `loadz` |
@@ -210,6 +211,13 @@ library. `numlua.savez_compressed` writes deflate-compressed members through
 the optional system zlib, matching `np.savez_compressed`; without zlib it
 raises a clear error unless `{ fallback = "stored" }` is passed, in which case
 it writes stored entries and returns `true, "stored"`.
+
+Both writers accept an options table with `version = 1`, `2`, or `3` (or
+`"1.0"`, `"2.0"`, `"3.0"`), selecting the NPY header version for every member.
+The default is v1.0, so output without the option stays byte-identical;
+`savez_compressed` may combine `version` with `fallback`. Unknown options and
+invalid versions are rejected before any file is created. `numlua.loadz`
+already reads members written in all three versions.
 
 `numlua.loadz` accepts these ZIP compression methods:
 
@@ -348,8 +356,9 @@ algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
 1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
 round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
 corruption paths, ZIP32 writer limits, native-endian `.npy` headers, NPY v2.0
-and v3.0 readers and writers, byte-level writer conformance, `.npz` members,
-empty and pre-suffixed `.npz` members, layout view/copy semantics,
+and v3.0 readers and writers, byte-level writer conformance, `.npz` members and
+member versions, conditional `select`, empty and pre-suffixed `.npz` members,
+layout view/copy semantics,
 broadcast/take/take_along_axis/put edge shapes, deflate expansion guardrails,
 release metadata, and error paths.
 It currently contains 169 tests.
@@ -389,8 +398,9 @@ This is an MVP, not a complete NumPy replacement:
 - reductions, including `any`, `all`, and `count_nonzero`, accept one axis at a
   time (no tuple axes);
 - there is no general dtype-promotion system; only `mean` promotes integer/bool
-  input, and it always promotes to `float64`; scalar `where` branches are
-  materialized as 0-D `float32` (or `bool`) tensors before ATen broadcasting;
+  input, and it always promotes to `float64`; scalar `where`/`select` branches
+  are materialized as 0-D `float32` (or `bool`) tensors before ATen
+  broadcasting;
 - `dot` is the 1-D inner product only; use `matmul` for matrix and batched
   products;
 - elementwise ufuncs delegate dtype promotion to ATen, not NumPy's promotion
@@ -411,7 +421,9 @@ This is an MVP, not a complete NumPy replacement:
   reading supports stored and deflate entries. Deflate needs a system zlib
   library loaded through FFI, while stored archives remain dependency-free.
   Deflate writing without zlib raises a clear error unless the stored fallback
-  is requested. Writer output is ZIP32-only and rejects entry counts above
+  is requested. Both writers choose the member NPY header version with
+  `{ version = 2 }`/`{ version = 3 }`; the default remains v1.0. Writer output
+  is ZIP32-only and rejects entry counts above
   65535, names above 65535 bytes, or member/archive sizes that do not fit
   32-bit fields; ZIP64 writing is not supported.
 - text I/O is intentionally simple: it does not store shape/dtype metadata,
