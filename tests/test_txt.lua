@@ -219,3 +219,45 @@ test("text I/O rejects unsupported dtypes and invalid arguments", function()
     numlua.loadtxt(TMPDIR .. "/definitely-missing.txt", { comments = 5 })
   end, "comments must be a string")
 end)
+
+test("loadtxt squeezes one-row files and supports multi-character delimiters",
+    function()
+  local row_path = write_text(tmp_path("one-row"), "1,2,3\n")
+  local row = numlua.loadtxt(row_path, { delimiter = "," })
+  assert_shape(row, { 3 })
+  assert_tensor(row, { 1, 2, 3 })
+
+  local delimited_path = write_text(tmp_path("multi-delimiter"),
+    "1::2::3\n4::5::6\n")
+  local delimited = numlua.loadtxt(delimited_path,
+    { delimiter = "::", dtype = "int64" })
+  assert_shape(delimited, { 2, 3 })
+  assert_dtype(delimited, "int64")
+  assert_tensor(delimited, { { 1, 2, 3 }, { 4, 5, 6 } })
+  os.remove(row_path)
+  os.remove(delimited_path)
+end)
+
+test("text I/O handles zero-width and empty tensors", function()
+  local empty_vector = tmp_path("empty-vector")
+  assert_true(numlua.savetxt(empty_vector, numlua.zeros(0)))
+  assert_eq(read_text(empty_vector), "")
+  local loaded_empty = numlua.loadtxt(empty_vector)
+  assert_shape(loaded_empty, { 0 })
+  os.remove(empty_vector)
+
+  -- A 2x0 array writes one newline per row; the text format cannot represent
+  -- the zero-width column count, so it loads back as an empty vector.
+  local zero_columns = tmp_path("zero-columns")
+  assert_true(numlua.savetxt(zero_columns, numlua.zeros(2, 0)))
+  assert_eq(read_text(zero_columns), "\n\n")
+  local loaded_zero_columns = numlua.loadtxt(zero_columns)
+  assert_shape(loaded_zero_columns, { 0 })
+  os.remove(zero_columns)
+
+  -- Zero rows and columns write nothing at all.
+  local zero_rows = tmp_path("zero-rows")
+  assert_true(numlua.savetxt(zero_rows, numlua.zeros(0, 3)))
+  assert_eq(read_text(zero_rows), "")
+  os.remove(zero_rows)
+end)

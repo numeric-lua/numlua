@@ -106,3 +106,60 @@ test("select validates lists, operands, defaults, and broadcasting",
     numlua.select({ condition }, { numlua.array({ 1, 2, 3 }) })
   end, "do not broadcast")
 end)
+
+test("select handles empty tensors and 0-D branches", function()
+  local empty_condition = numlua.array({}, { dtype = "bool" })
+  local empty_choice = numlua.array({}, { dtype = "int64" })
+  local empty = numlua.select({ empty_condition }, { empty_choice }, 7)
+  assert_shape(empty, { 0 })
+  assert_eq(empty:numel(), 0)
+
+  -- A 0-D true condition selects a whole 1-D choice, and a scalar default
+  -- broadcasts against a tensor default choice.
+  assert_tensor(numlua.select({ numlua.array(true) },
+    { numlua.array({ 1, 2, 3 }) }, 9), { 1, 2, 3 })
+  assert_tensor(numlua.select({ false }, { numlua.array(5) },
+    numlua.array({ 7, 8 })), { 7, 8 })
+
+  -- A size-1 choice still broadcasts against an empty condition, but a
+  -- non-broadcastable choice is rejected.
+  assert_shape(numlua.select({ empty_condition },
+    { numlua.array({ 1 }) }, 0), { 0 })
+  assert_error(function()
+    numlua.select({ empty_condition }, { numlua.array({ 1, 2 }) })
+  end, "do not broadcast")
+end)
+
+test("select truth-tests numeric conditions and keeps integer dtypes",
+    function()
+  local condition = numlua.array({ 0, 1, -2, 0 }, { dtype = "int32" })
+  local choices = numlua.array({ 10, 20, 30, 40 }, { dtype = "int64" })
+  local default = numlua.array(-1, { dtype = "int64" })
+  local result = numlua.select({ condition }, { choices }, default)
+  assert_dtype(result, "int64")
+  assert_tensor(result, { -1, 20, 30, -1 })
+
+  -- Float NaN is truthy because it is non-zero.
+  local nan = 0 / 0
+  assert_tensor(numlua.select({ numlua.array({ nan, 0 }) },
+    { numlua.array({ 1, 2 }, { dtype = "int64" }) }, 0), { 1, 0 })
+end)
+
+test("select broadcasts non-contiguous defaults and 0-D choices", function()
+  local view = numlua.transpose(numlua.arange(6):reshape(2, 3))
+  assert_false(view:is_contiguous())
+  local defaulted = numlua.select({ view:gt(100) }, { numlua.array(1) }, view)
+  assert_shape(defaulted, { 3, 2 })
+  assert_true(defaulted:equal(view))
+
+  local result = numlua.select({
+    numlua.array({ { true }, { false } }),
+  }, {
+    numlua.array({ { 5, 6, 7 } }),
+  }, numlua.array({ 9, 8, 7 }))
+  assert_shape(result, { 2, 3 })
+  assert_tensor(result, {
+    { 5, 6, 7 },
+    { 9, 8, 7 },
+  })
+end)

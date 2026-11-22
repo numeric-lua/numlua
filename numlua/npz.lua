@@ -369,8 +369,12 @@ local function write_archive(path, arrays, function_name, compressed,
       #names), 2)
   end
 
-  local local_parts, central_parts = {}, {}
-  local offset = 0
+  -- Keys that already end in .npy are written verbatim; every other key gains
+  -- the suffix.  Validate the normalized member names in a pre-pass so a
+  -- collision (for example "x" and "x.npy") cannot silently overwrite a
+  -- member on read, and so no temporary or output file is created first.
+  local members = {}
+  local member_owner = {}
   for _, name in ipairs(names) do
     local file_name = name:match("%.npy$") and name or name .. ".npy"
     if #file_name > max_u16 then
@@ -379,6 +383,25 @@ local function write_archive(path, arrays, function_name, compressed,
         "%d bytes (ZIP64 writing is not supported)", function_name,
         #file_name, max_u16), 2)
     end
+    local owner = member_owner[file_name]
+    if owner ~= nil then
+      error(string.format(
+        "numlua.%s: keys '%s' and '%s' both map to archive member '%s'",
+        function_name, owner, name, file_name), 2)
+    end
+    member_owner[file_name] = name
+    if file_name == ".npy" then
+      error(string.format(
+        "numlua.%s: member '%s' has no array name after removing '.npy'",
+        function_name, name), 2)
+    end
+    members[#members + 1] = { key = name, file_name = file_name }
+  end
+
+  local local_parts, central_parts = {}, {}
+  local offset = 0
+  for _, member in ipairs(members) do
+    local name, file_name = member.key, member.file_name
     local temp = os.tmpname()
     npy.save(temp, arrays[name], { version = version })
     local handle = assert(io.open(temp, "rb"))

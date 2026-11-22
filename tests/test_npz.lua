@@ -784,3 +784,80 @@ test("savez preserves keys that already end in .npy", function()
   assert_tensor(loaded.weights, { 1.5, -2.5 })
   os.remove(file)
 end)
+
+test("savez rejects keys that normalize to the same member", function()
+  local file = path("member-collision")
+  local arrays = {
+    x = numlua.array({ 1 }),
+    ["x.npy"] = numlua.array({ 2 }),
+  }
+  assert_error(function() numlua.savez(file, arrays) end,
+    "keys 'x' and 'x.npy' both map to archive member 'x.npy'")
+  assert_false(file_exists(file))
+
+  -- The compressed writer must apply the same check, including in its
+  -- stored-fallback path used on hosts without zlib.
+  assert_error(function()
+    numlua.savez_compressed(file, arrays, { fallback = "stored" })
+  end, "both map to archive member")
+  assert_false(file_exists(file))
+
+  assert_error(function()
+    numlua.savez(file, { [".npy"] = numlua.array({ 1 }) })
+  end, "no array name")
+  assert_false(file_exists(file))
+
+  -- Distinct keys that merely share a suffix remain valid.
+  local ok_file = path("member-collision-ok")
+  assert_true(numlua.savez(ok_file, {
+    y = numlua.array({ 2 }),
+    ["x.npy"] = numlua.array({ 3 }),
+  }))
+  local loaded = numlua.loadz(ok_file)
+  assert_eq(loaded.x:item(), 3)
+  assert_eq(loaded.y:item(), 2)
+  os.remove(ok_file)
+end)
+
+test("savez/loadz preserve Unicode and spaced array names", function()
+  local file = path("unicode-names")
+  assert_true(numlua.savez(file, {
+    ["dados ç"] = numlua.array({ 1.5, -2.5 }),
+    ["日本"] = numlua.array(7, { dtype = "int64" }),
+    ["with space.npy"] = numlua.array({ true, false }),
+  }))
+  local bytes = read_bytes(file)
+  assert_true(bytes:find("dados ç.npy", 1, true) ~= nil)
+  assert_true(bytes:find("日本.npy", 1, true) ~= nil)
+
+  local loaded = numlua.loadz(file)
+  assert_tensor(loaded["dados ç"], { 1.5, -2.5 })
+  assert_dtype(loaded["日本"], "int64")
+  assert_eq(loaded["日本"]:item(), 7)
+  assert_tensor(loaded["with space"], { true, false })
+  os.remove(file)
+end)
+
+test("loadz accepts an EOCD archive comment", function()
+  local file, bytes = valid_archive("eocd-comment")
+  local eocd = assert(bytes:find("PK\005\006", 1, true))
+  local comment = "numlua test comment"
+  local commented = bytes:sub(1, eocd + 19) .. u16(#comment) .. comment
+
+  local commented_file = path("eocd-comment-file")
+  write_bytes(commented_file, commented)
+  local loaded = numlua.loadz(commented_file)
+  assert_tensor(loaded.x, { 1, 2, 3 })
+  os.remove(file)
+  os.remove(commented_file)
+end)
+
+test("loadz rejects members that are not valid .npy files", function()
+  local file = path("bad-member")
+  generator.write_npz(file, {
+    { name = "broken.npy", payload = "not an npy payload" },
+  })
+  assert_error(function() numlua.loadz(file) end,
+    "invalid .npy member 'broken.npy'")
+  os.remove(file)
+end)
