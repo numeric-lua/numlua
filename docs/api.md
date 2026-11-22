@@ -518,7 +518,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"linear_ramp"`, `"maximum"`, `"mean"`, `"median"`, `"minimum"`, `"reflect"`, `"symmetric"`, and `"wrap"`; `value` is mode-specific (materialized) |
 | `numlua.diff(t[, n[, axis]])` | default axis is the last |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
-| `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
+| `numlua.argsort(t[, axis[, descending]])` | 1-based indices; at least 1-D input |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; scalar and N-D index tensors |
 | `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
 | `numlua.apply_along_axis(func, axis, t[, ...])` | call `func` on each 1-D slice along `axis` (materialized) |

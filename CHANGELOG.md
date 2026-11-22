@@ -15,6 +15,25 @@
   non-axis dimension is rejected because no first slice exists to infer the
   result shape and dtype.
 
+### Changed
+
+- `numlua.argsort` rejects 0-D input with a `numlua.argsort:` error instead of
+  forwarding luatorch's generic dimension message.
+
+### Tests
+
+- 213 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_apply_along_axis.lua` covers scalar and 1-D callbacks on 1-D/2-D/3-D
+  input, every axis including negative axes, C-order slice visitation, extra
+  arguments, dtype propagation for tensors, numbers, booleans, and Lua tables,
+  output ownership, empty axes, non-contiguous inputs, and the validation and
+  error paths;
+- selection/IO edge tests add `compress`/`flatnonzero` coverage, 0-D `argsort`,
+  zero-size gather dimensions, non-tensor `take` indices, every numeric
+  `loadtxt` dtype id, literal delimiter characters, comment-marker validation,
+  `savetxt` special floats and one-row/one-column shapes, invalid format
+  strings, and short or empty NPY prefixes.
+
 ## 0.16.0 — 2026-11-22
 
 ### Added

@@ -589,3 +589,34 @@ test("load accepts double-quoted header keys", function()
     os.remove(target)
   end
 end)
+
+test("load rejects empty and prefix-only NPY files", function()
+  local empty = tmp_path("empty-file")
+  write_bytes(empty, "")
+  assert_error(function() numlua.load(empty) end,
+    "truncated .npy file")
+  os.remove(empty)
+
+  -- Magic alone, and magic plus a version, are still shorter than the
+  -- smallest possible v1.0 prefix (magic + version + uint16 length).
+  local magic = tmp_path("magic-only")
+  write_bytes(magic, "\147NUMPY")
+  assert_error(function() numlua.load(magic) end,
+    "truncated .npy file")
+  os.remove(magic)
+
+  local version = tmp_path("version-only")
+  write_bytes(version, "\147NUMPY" .. string.char(1, 0))
+  assert_error(function() numlua.load(version) end,
+    "truncated .npy file")
+  os.remove(version)
+
+  -- A v1.0 prefix that claims an empty header is malformed, not a zero-size
+  -- array: the array shape lives inside the header.
+  local zero_header = tmp_path("zero-header")
+  write_bytes(zero_header, "\147NUMPY" .. string.char(1, 0) ..
+    string.char(0, 0))
+  assert_error(function() numlua.load(zero_header) end,
+    "zero length")
+  os.remove(zero_header)
+end)

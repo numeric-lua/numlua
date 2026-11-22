@@ -839,6 +839,9 @@ end
 
 function M.argsort(t, axis_value, descending)
   tensor(t, "argsort")
+  if t:dim() == 0 then
+    error("numlua.argsort expects at least a 1-D tensor", 2)
+  end
   local dim = axis_value == nil and t:dim() or axis(axis_value, t:dim(), "argsort")
   local _, indices = t:sort(dim, descending == true)
   return indices

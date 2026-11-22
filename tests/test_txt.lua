@@ -299,3 +299,101 @@ test("text I/O disables comments and accepts fmt functions", function()
   end, "fmt function failed")
   os.remove(formatted)
 end)
+
+test("savetxt writes special values, vector shapes, and bad formats",
+    function()
+  local special = tmp_path("special-values")
+  assert_true(numlua.savetxt(special,
+    numlua.array({ 0 / 0, math.huge, -math.huge }, { dtype = "float64" })))
+  assert_eq(read_text(special), "nan inf -inf\n")
+  local loaded_special = numlua.loadtxt(special, { dtype = "float64" })
+  assert_shape(loaded_special, { 3 })
+  local special_values = loaded_special:totable()
+  assert_true(special_values[1] ~= special_values[1], "expected NaN")
+  assert_eq(special_values[2], math.huge)
+  assert_eq(special_values[3], -math.huge)
+  os.remove(special)
+
+  -- One-row and one-column matrices write normal text but load back as 1-D,
+  -- because the text format does not record the squeezed dimension.
+  local row = tmp_path("one-row-save")
+  assert_true(numlua.savetxt(row,
+    numlua.array({ { 1.5, 2.5, -3.5 } }, { dtype = "float64" })))
+  assert_eq(read_text(row), "1.5 2.5 -3.5\n")
+  local loaded_row = numlua.loadtxt(row, { dtype = "float64" })
+  assert_shape(loaded_row, { 3 })
+  assert_tensor(loaded_row, { 1.5, 2.5, -3.5 }, 0)
+  os.remove(row)
+
+  local column = tmp_path("one-column-save")
+  assert_true(numlua.savetxt(column,
+    numlua.array({ { 1 }, { 2 }, { 3 } }, { dtype = "int64" })))
+  assert_eq(read_text(column), "1\n2\n3\n")
+  local loaded_column = numlua.loadtxt(column, { dtype = "int64" })
+  assert_shape(loaded_column, { 3 })
+  assert_tensor(loaded_column, { 1, 2, 3 })
+  os.remove(column)
+
+  -- Invalid printf strings and argument counts must fail with the facade's
+  -- message instead of leaking a raw Lua string.format error.
+  local invalid = tmp_path("invalid-format")
+  assert_error(function()
+    numlua.savetxt(invalid, numlua.array({ 1 }), { fmt = "%" })
+  end, "invalid fmt")
+  assert_error(function()
+    numlua.savetxt(invalid, numlua.array({ 1 }), { fmt = "%d %d" })
+  end, "invalid fmt")
+  os.remove(invalid)
+end)
+
+test("loadtxt accepts every numeric dtype id and validates comments",
+    function()
+  local path = write_text(tmp_path("dtype-ids"), "1.5 2.5\n")
+  local dtypes = {
+    { 0, "float32" },
+    { 1, "float64" },
+    { 2, "int64" },
+    { 3, "int32" },
+    { 4, "int16" },
+    { 5, "int8" },
+    { 6, "uint8" },
+    { 8, "float16" },
+  }
+  for _, case in ipairs(dtypes) do
+    local loaded = numlua.loadtxt(path, { dtype = case[1] })
+    assert_dtype(loaded, case[2])
+    assert_shape(loaded, { 2 })
+  end
+  assert_error(function()
+    numlua.loadtxt(path, { dtype = 7 })
+  end, "unsupported dtype 'bool'")
+  os.remove(path)
+
+  -- Comment marker tables reject empty entries and non-strings, and scalar
+  -- `true` is not a valid spelling for "enabled comments".
+  local markers = write_text(tmp_path("bad-markers"), "1 2\n")
+  assert_error(function()
+    numlua.loadtxt(markers, { comments = { "#", "" } })
+  end, "non-empty strings")
+  assert_error(function()
+    numlua.loadtxt(markers, { comments = { 5 } })
+  end, "non-empty strings")
+  assert_error(function()
+    numlua.loadtxt(markers, { comments = true })
+  end, "comments must be")
+  os.remove(markers)
+
+  -- Delimiters are matched literally, not as Lua patterns, and can be the
+  -- same character as a comment marker when comment stripping is disabled.
+  local pipe = write_text(tmp_path("pipe-delimiter"), "1|2\n3|4\n")
+  local piped = numlua.loadtxt(pipe, { delimiter = "|" })
+  assert_shape(piped, { 2, 2 })
+  assert_tensor(piped, { { 1, 2 }, { 3, 4 } })
+  os.remove(pipe)
+
+  local hash = write_text(tmp_path("hash-delimiter"), "1#2\n3#4\n")
+  local hashed = numlua.loadtxt(hash, { delimiter = "#", comments = false })
+  assert_shape(hashed, { 2, 2 })
+  assert_tensor(hashed, { { 1, 2 }, { 3, 4 } })
+  os.remove(hash)
+end)

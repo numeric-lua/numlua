@@ -172,3 +172,74 @@ test("take_along_axis normalizes negative axes and empty selections",
   assert_shape(empty, { 2, 0 })
   assert_eq(empty:numel(), 0)
 end)
+
+test("selection edges cover compress, flatnonzero, and 0-D argsort",
+    function()
+  -- compress selects in C order, preserves the input dtype, and accepts an
+  -- empty/zero-size selection.
+  local values = numlua.array({ { 10, 20 }, { 30, 40 } })
+  local mask = numlua.array({ true, false, true, false }, { dtype = "bool" })
+  assert_tensor(numlua.compress(mask, values), { 10, 30 })
+  assert_dtype(numlua.compress(mask, values), "float32")
+  local empty_mask = numlua.array({}, { dtype = "bool" })
+  local empty = numlua.compress(empty_mask, numlua.zeros(0))
+  assert_shape(empty, { 0 })
+  assert_eq(empty:numel(), 0)
+
+  assert_error(function()
+    numlua.compress(numlua.array({ 1, 0, 1 }), values)
+  end, "boolean condition")
+  assert_error(function()
+    numlua.compress(numlua.array({ true }), values)
+  end, "match the input size")
+  assert_error(function()
+    numlua.compress(mask, values, 1)
+  end, "axis")
+
+  -- flatnonzero accepts 0-D input: a nonzero scalar has flat index 1, and a
+  -- zero scalar has no indices at all.
+  assert_tensor(numlua.flatnonzero(numlua.array(3)), { 1 })
+  assert_shape(numlua.flatnonzero(numlua.array(0)), { 0 })
+  assert_shape(numlua.flatnonzero(numlua.zeros(0)), { 0 })
+  -- NaN is non-zero for this predicate, as in NumPy's boolean truth test.
+  assert_tensor(numlua.flatnonzero(numlua.array({ 0, 0 / 0, 3 })),
+    { 2, 3 })
+
+  -- argsort's default axis is the last axis, and a 0-D input has no axis to
+  -- sort; the facade reports that as a numlua error instead of leaking the
+  -- luatorch dimension message.
+  local matrix = numlua.array({ { 3, 1, 2 }, { 6, 4, 5 } })
+  assert_tensor(numlua.argsort(matrix), numlua.argsort(matrix, 2):totable())
+  assert_error(function() numlua.argsort(numlua.array(7)) end,
+    "at least a 1-D tensor")
+  assert_error(function() numlua.argsort(numlua.array(7), 1) end,
+    "at least a 1-D tensor")
+end)
+
+test("selection edges cover zero-size gather dimensions and bad indices",
+    function()
+  -- Zero-size non-axis dimensions do not require a first slice, so the
+  -- broadcast shape is still well-defined.
+  assert_shape(numlua.take_along_axis(numlua.zeros(0, 3),
+    numlua.zeros(0, 1, { dtype = "int64" }), 1), { 0, 3 })
+  assert_shape(numlua.take_along_axis(numlua.zeros(0, 3),
+    numlua.zeros(0, 3, { dtype = "int64" }), 2), { 0, 3 })
+  assert_shape(numlua.take_along_axis(numlua.zeros(2, 0, 3),
+    numlua.zeros(2, 0, 3, { dtype = "int64" }), 2), { 2, 0, 3 })
+
+  assert_error(function()
+    numlua.take_along_axis(numlua.array(7),
+      numlua.array({ 1 }, { dtype = "int64" }), 1)
+  end, "out of range for 0-D input")
+
+  -- take and take_along_axis reject non-tensor and nil indices before ATen
+  -- can see them, including for 0-D inputs.
+  assert_error(function() numlua.take(numlua.arange(3), { 1 }) end,
+    "indices must be an integer Tensor")
+  assert_error(function() numlua.take(numlua.arange(3), nil) end,
+    "indices must be an integer Tensor")
+  assert_error(function()
+    numlua.take(numlua.array(7),
+      numlua.array({ 1 }, { dtype = "int64" }), 1)
+  end, "out of range for 0-D input")
+end)
