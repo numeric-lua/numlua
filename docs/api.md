@@ -303,8 +303,10 @@ defaults to `0`. All operands broadcast through ATen; tensor choices keep their
 own dtype under ATen's promotion, while scalar choices and a scalar default are
 materialized as 0-D `float32` (or `bool`) tensors, exactly like `where` scalar
 branches. Wrap a scalar in a typed array when a specific dtype is required.
-Empty or length-mismatched lists, non-tensor/non-scalar entries, and choices
-that do not broadcast raise a `numlua.select:` error.
+Empty condition/choice tensors are valid when they broadcast, and 0-D
+conditions, choices, or defaults behave like `where` scalars. Empty or
+length-mismatched lists, non-tensor/non-scalar entries, and choices that do not
+broadcast raise a `numlua.select:` error.
 
 ```lua
 local values = numlua.array({ -2, -1, 0, 1, 2 })
@@ -513,7 +515,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.repeat_(t, repeats[, axis])` | repeat elements (materialized); `numlua["repeat"]` is the same function |
 | `numlua.flip(t, axis)` | reverse one axis or a table of axes (materialized) |
 | `numlua.roll(t, shift[, axis])` | cyclic shift; flattens when `axis` is omitted |
-| `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"reflect"`, and `"symmetric"` (materialized) |
+| `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"reflect"`, `"symmetric"`, and `"wrap"`; `value` is a number or per-axis table for `"constant"` (materialized) |
 | `numlua.diff(t[, n[, axis]])` | default axis is the last |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
@@ -591,8 +593,28 @@ numlua.put(t, { 99 }, 0, "clip")               -- writes index 6
 `pad_width` follows NumPy's common forms: a number pads every axis equally, a
 `{before, after}` pair pads every axis with that pair, and a table of per-axis
 pairs pads each axis separately. `"edge"` repeats the first and last values,
-`"reflect"` mirrors without repeating the edge, and `"symmetric"` mirrors with
-the edge included. Zero-size axes can be extended only with `"constant"`.
+`"reflect"` mirrors without repeating the edge, `"symmetric"` mirrors with the
+edge included, and `"wrap"` repeats each axis cyclically, accepting widths
+larger than the axis. Zero-size axes can be extended only with `"constant"`;
+`"wrap"` may leave an empty axis at zero width but cannot extend it.
+
+For `"constant"` (the default mode), `value` defaults to `0`. It accepts a
+number for every side, a `{before, after}` pair broadcast over every axis, or a
+table with one entry per axis. Each per-axis entry may itself be a number or a
+`{before, after}` pair, matching NumPy's `constant_values` forms with 1-based
+axes:
+
+```lua
+local v = numlua.array({ 1, 2, 3 })
+numlua.pad(v, { 1, 2 }, "constant", { 9, 8 })
+-- {9, 1, 2, 3, 8, 8}
+numlua.pad(v, 2, "wrap")
+-- {2, 3, 1, 2, 3, 1, 2}
+
+local m = numlua.array({ { 1, 2 }, { 3, 4 } })
+numlua.pad(m, { { 1, 0 }, { 0, 1 } }, "constant", { { 10, 11 }, { 20, 21 } })
+-- {{10, 10, 10}, {1, 2, 21}, {3, 4, 21}}
+```
 
 ### View and copy boundaries
 
@@ -706,6 +728,11 @@ and returns `true`. `arrays` is a table mapping non-empty array names to
 luatorch tensors. This matches `np.savez` and has no compression dependency.
 An empty `arrays` table writes a valid empty archive. Keys already ending in
 `.npy` are stored unchanged; other keys get a `.npy` suffix, as in NumPy.
+Because both `x` and `x.npy` therefore name the member `x.npy`, the writers
+reject keys that normalize to the same member name (and the bare key `.npy`,
+which would leave an empty array name) before writing any payload or creating
+the output file. Unicode and spaced array names are preserved verbatim in the
+ZIP directory.
 
 `options.version` selects the NPY header version used for every member. It
 accepts the same values as `numlua.save`: `1`, `2`, `3`, `"1.0"`, `"2.0"`, or
@@ -749,8 +776,8 @@ no-zlib path for testing.
 
 Reads an `.npz` archive and returns a table whose keys are member names with
 the `.npy` suffix removed. Members are ordinary `.npy` files, so v1.0, v2.0,
-and v3.0 member headers are all accepted. Supported ZIP compression methods
-are:
+and v3.0 member headers are all accepted; a ZIP end-of-central-directory
+comment is ignored. Supported ZIP compression methods are:
 
 | method | written by | availability |
 | --- | --- | --- |

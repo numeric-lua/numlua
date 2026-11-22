@@ -94,6 +94,17 @@ print(numlua.take(grid,
 -- (2, 2, 2) tensor selected along the last axis
 ```
 
+Padding follows `np.pad` for constant, edge, reflect, symmetric, and periodic
+wrap modes; constant values can differ before/after and per axis:
+
+```lua
+local v = numlua.array({ 1, 2, 3 })
+print(numlua.pad(v, { 1, 2 }, "constant", { 9, 8 }):format())
+-- tensor([9., 1., 2., 3., 8., 8.])
+print(numlua.pad(v, 2, "wrap"):format())
+-- tensor([2., 3., 1., 2., 3., 1., 2.])
+```
+
 Per-slice selection follows `np.take_along_axis`; combining it with `argsort`
 sorts along one axis without a separate sort function:
 
@@ -197,7 +208,10 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 `take`, and `take_along_axis` allocate independent storage; see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
 `put` is the exception: it writes into its input tensor in place and returns
-it. `pad` supports `constant`, `edge`, `reflect`, and `symmetric` modes.
+it. `pad` supports `constant`, `edge`, `reflect`, `symmetric`, and `wrap`
+modes. For `constant`, the fill value may be a number, a `{before, after}`
+pair broadcast over every axis, or a table with one entry per axis (each a
+number or pair), matching NumPy's `constant_values`.
 
 `numlua` arrays are ordinary luatorch tensors, so luaplotlib can plot them
 directly through its tensor adapter. See `examples/plot.lua`.
@@ -248,8 +262,11 @@ Archives that would overflow any of these limits raise a `numlua.savez:` or
 silently truncating ZIP fields. ZIP64 writing is not supported; split very
 large arrays across multiple archives. An empty `arrays` table produces a valid
 empty archive, and keys already ending in `.npy` are stored without a second
-suffix (as in NumPy). Members may use any NPY header version the reader
-supports (v1.0, v2.0, or v3.0), including archives produced by NumPy.
+suffix (as in NumPy). Keys that normalize to the same member name (`x` and
+`x.npy`, for example) are rejected before any file is created instead of
+silently overwriting a member. Unicode and spaced names are preserved. Members
+may use any NPY header version the reader supports (v1.0, v2.0, or v3.0),
+including archives produced by NumPy.
 
 ## `.npy` I/O
 
@@ -360,8 +377,11 @@ and v3.0 readers and writers, byte-level writer conformance, `.npz` members and
 member versions, conditional `select`, empty and pre-suffixed `.npz` members,
 layout view/copy semantics,
 broadcast/take/take_along_axis/put edge shapes, deflate expansion guardrails,
-release metadata, and error paths.
-It currently contains 178 tests.
+release metadata, and error paths. The pad tests compare wrap results with
+an independent index walk and cover every constant-value form; the selection
+and I/O tests cover empty/0-D branches, Unicode and colliding `.npz` names,
+EOCD comments, invalid members, and zero-width text tensors.
+It currently contains 193 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes

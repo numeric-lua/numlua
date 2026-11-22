@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.15.0 — 2026-11-22
+
+### Added
+
+- `numlua.pad` mode `"wrap"`: each padded axis repeats cyclically, matching
+  `np.pad(..., mode="wrap")`. Widths may exceed the axis length, per-axis
+  before/after widths are independent, and zero-size axes can keep a
+  zero-width wrap but cannot be extended by it;
+- `numlua.pad` constant values follow NumPy's `constant_values` forms in
+  addition to the historical scalar: a `{before, after}` pair broadcasts over
+  every axis, and a table with one entry per axis gives per-axis values (each
+  a number or pair). Scalar calls and the default zero fill are unchanged, and
+  fills keep the input dtype.
+
+### Changed
+
+- `numlua.savez` and `numlua.savez_compressed` reject keys that normalize to
+  the same ZIP member name (`x` and `x.npy`, for example) and the bare key
+  `.npy`, before writing payloads or creating the archive. Previously the
+  duplicate names silently overwrote each other on read;
+- `numlua.pad` now validates numeric and one-pair `pad_width` forms as
+  non-negative integers. Negative or fractional widths no longer pass through
+  silently.
+
+### Tests
+
+- 193 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  Dedicated pad parity tests build wrapped expectations with an independent
+  index walk and cover widths larger than the axis, 1-D/2-D/3-D and
+  non-contiguous inputs, dtype/storage behavior, every constant-value form,
+  and validation errors; selection/IO edge tests add empty and 0-D `select`
+  operands, numeric truth testing, non-contiguous defaults, Unicode/spaced and
+  colliding `.npz` member names, EOCD archive comments, invalid `.npy`
+  members, multi-character text delimiters, and zero-width text tensors.
+
 ## 0.14.0 — 2026-11-22
 
 ### Added
