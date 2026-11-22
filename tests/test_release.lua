@@ -76,6 +76,10 @@ test("new public API and format support are documented", function()
     "docs/api.md does not document the pad wrap mode")
   assert_true(api:find("constant_values", 1, true) ~= nil,
     "docs/api.md does not document pad constant values")
+  assert_true(api:find("linear_ramp", 1, true) ~= nil,
+    "docs/api.md does not document the pad linear_ramp mode")
+  assert_true(api:find("stat_length", 1, true) ~= nil,
+    "docs/api.md does not document pad stat_length")
   assert_true(api:find("normalize to the same member name", 1, true) ~= nil,
     "docs/api.md does not document npz member-name collisions")
   assert_true(api:find("options.version", 1, true) ~= nil,
@@ -96,6 +100,8 @@ test("new public API and format support are documented", function()
     "README.md does not document npz member versions")
   assert_true(readme:find("constant_values", 1, true) ~= nil,
     "README.md does not document pad constant values")
+  assert_true(readme:find("linear_ramp", 1, true) ~= nil,
+    "README.md does not document the pad linear_ramp mode")
   assert_true(readme:find("silently overwriting a member", 1, true) ~= nil,
     "README.md does not document npz member-name collisions")
 end)

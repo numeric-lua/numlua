@@ -515,7 +515,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.repeat_(t, repeats[, axis])` | repeat elements (materialized); `numlua["repeat"]` is the same function |
 | `numlua.flip(t, axis)` | reverse one axis or a table of axes (materialized) |
 | `numlua.roll(t, shift[, axis])` | cyclic shift; flattens when `axis` is omitted |
-| `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"reflect"`, `"symmetric"`, and `"wrap"`; `value` is a number or per-axis table for `"constant"` (materialized) |
+| `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"linear_ramp"`, `"maximum"`, `"mean"`, `"median"`, `"minimum"`, `"reflect"`, `"symmetric"`, and `"wrap"`; `value` is mode-specific (materialized) |
 | `numlua.diff(t[, n[, axis]])` | default axis is the last |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices |
@@ -595,14 +595,33 @@ numlua.put(t, { 99 }, 0, "clip")               -- writes index 6
 pairs pads each axis separately. `"edge"` repeats the first and last values,
 `"reflect"` mirrors without repeating the edge, `"symmetric"` mirrors with the
 edge included, and `"wrap"` repeats each axis cyclically, accepting widths
-larger than the axis. Zero-size axes can be extended only with `"constant"`;
-`"wrap"` may leave an empty axis at zero width but cannot extend it.
+larger than the axis. `"linear_ramp"` fills each side with a linear ramp from
+`value` to the adjacent edge value, excluding the edge itself, so it matches
+`np.pad(..., mode="linear_ramp")`. `"maximum"`, `"mean"`, `"median"`, and
+`"minimum"` fill each side with that statistic of the axis. Statistic modes
+apply axes in order, so a later axis sees the padding added to earlier axes
+(the NumPy corner rule). Zero-size axes can be extended only with
+`"constant"`; `"wrap"` may leave an empty axis at zero width but cannot extend
+it.
 
-For `"constant"` (the default mode), `value` defaults to `0`. It accepts a
-number for every side, a `{before, after}` pair broadcast over every axis, or a
-table with one entry per axis. Each per-axis entry may itself be a number or a
-`{before, after}` pair, matching NumPy's `constant_values` forms with 1-based
-axes:
+The optional `value` argument is mode-specific and follows NumPy's keyword
+forms with 1-based axes:
+
+| mode | `value` |
+| --- | --- |
+| `"constant"` (default) | `constant_values`; defaults to `0` |
+| `"linear_ramp"` | `end_values`; defaults to `0` |
+| `"maximum"`, `"mean"`, `"median"`, `"minimum"` | `stat_length`; defaults to the whole axis |
+| `"edge"`, `"reflect"`, `"symmetric"`, `"wrap"` | not accepted |
+
+For `constant_values` and `end_values`, a number fills every side, a
+`{before, after}` pair broadcasts over every axis, and a table with one entry
+per axis gives each axis its own number or pair. `stat_length` uses the same
+forms with positive integers; a length larger than the axis is clamped to the
+axis, and the statistic is computed from the first or last `stat_length`
+values on that side. Integer end values and statistics round half to even
+before the result is cast back to the input dtype, matching NumPy; bool input
+supports every statistic mode.
 
 ```lua
 local v = numlua.array({ 1, 2, 3 })
@@ -610,6 +629,10 @@ numlua.pad(v, { 1, 2 }, "constant", { 9, 8 })
 -- {9, 1, 2, 3, 8, 8}
 numlua.pad(v, 2, "wrap")
 -- {2, 3, 1, 2, 3, 1, 2}
+numlua.pad(v, 2, "maximum")
+-- {3, 3, 1, 2, 3, 3, 3}
+numlua.pad(numlua.array({ 1, 2, 3, 4, 5 }), { 2, 3 }, "linear_ramp", { 5, -4 })
+-- {5, 3, 1, 2, 3, 4, 5, 2, -1, -4}
 
 local m = numlua.array({ { 1, 2 }, { 3, 4 } })
 numlua.pad(m, { { 1, 0 }, { 0, 1 } }, "constant", { { 10, 11 }, { 20, 21 } })

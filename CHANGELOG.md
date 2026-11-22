@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `numlua.pad` gains the NumPy modes `"linear_ramp"`, `"maximum"`, `"mean"`,
+  `"median"`, and `"minimum"`. `"linear_ramp"` accepts `end_values` through
+  the existing `value` argument; the statistic modes accept `stat_length` and
+  fill each side from the first or last values along the axis. All three
+  options take a number, a `{before, after}` pair, or one entry per axis.
+  Axes are processed in order, so later axes see earlier padding exactly as in
+  `np.pad`'s corner rule. Integer end values and statistics round half to
+  even before the input dtype cast, and bool input works with every statistic
+  mode. The four non-constant modes without a fill argument (`"edge"`,
+  `"reflect"`, `"symmetric"`, `"wrap"`) now reject a non-nil `value` instead
+  of silently ignoring it.
+
+### Tests
+
+- Pad parity tests build linear ramps and axis statistics with an independent
+  C-order reference walker and cover 1-D/2-D/3-D input, widths larger than the
+  axis, per-axis end values, every `stat_length` form, bool and integer
+  rounding, dtype/storage behavior, non-contiguous input, NumPy's corner
+  order, and validation errors.
+
 ## 0.15.0 — 2026-11-22
 
 ### Added

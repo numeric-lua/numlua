@@ -94,8 +94,11 @@ print(numlua.take(grid,
 -- (2, 2, 2) tensor selected along the last axis
 ```
 
-Padding follows `np.pad` for constant, edge, reflect, symmetric, and periodic
-wrap modes; constant values can differ before/after and per axis:
+Padding follows `np.pad` for constant, edge, linear ramp, maximum, mean,
+median, minimum, reflect, symmetric, and periodic wrap modes. The optional fill
+argument is mode-specific: `constant_values` for constant, `end_values` for
+linear ramp, and `stat_length` for the statistic modes. Each accepts a number,
+a before/after pair, or one entry per axis:
 
 ```lua
 local v = numlua.array({ 1, 2, 3 })
@@ -103,6 +106,9 @@ print(numlua.pad(v, { 1, 2 }, "constant", { 9, 8 }):format())
 -- tensor([9., 1., 2., 3., 8., 8.])
 print(numlua.pad(v, 2, "wrap"):format())
 -- tensor([2., 3., 1., 2., 3., 1., 2.])
+print(numlua.pad(numlua.array({ 1, 2, 3, 4, 5 }), { 2, 3 },
+  "linear_ramp", { 5, -4 }):format())
+-- tensor([5., 3., 1., 2., 3., 4., 5., 2., -1., -4.])
 ```
 
 Per-slice selection follows `np.take_along_axis`; combining it with `argsort`
@@ -208,10 +214,11 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 `take`, and `take_along_axis` allocate independent storage; see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
 `put` is the exception: it writes into its input tensor in place and returns
-it. `pad` supports `constant`, `edge`, `reflect`, `symmetric`, and `wrap`
-modes. For `constant`, the fill value may be a number, a `{before, after}`
-pair broadcast over every axis, or a table with one entry per axis (each a
-number or pair), matching NumPy's `constant_values`.
+it. `pad` supports `constant`, `edge`, `linear_ramp`, `maximum`, `mean`,
+`median`, `minimum`, `reflect`, `symmetric`, and `wrap` modes. Its fill value
+may be a number, a `{before, after}` pair broadcast over every axis, or a table
+with one entry per axis (each a number or pair), matching NumPy's
+`constant_values`, `end_values`, and `stat_length` forms.
 
 `numlua` arrays are ordinary luatorch tensors, so luaplotlib can plot them
 directly through its tensor adapter. See `examples/plot.lua`.
