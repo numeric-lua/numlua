@@ -165,6 +165,7 @@ local files = {
   "test_manipulation.lua",
   "test_pad.lua",
   "test_apply_along_axis.lua",
+  "test_apply_over_axes.lua",
   "test_selection.lua",
   "test_layout_extensions.lua",
   "test_npz.lua",
