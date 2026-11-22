@@ -542,6 +542,15 @@ test("loadtxt skiprows counts physical lines and max_rows data rows",
   assert_error(function()
     numlua.loadtxt(malformed, { skiprows = 1, max_rows = 1, delimiter = "," })
   end, "line 2: invalid number '1 2' in column 1")
+
+  -- Rows after max_rows are not parsed, so their errors are not reported.
+  local late_error = write_text(tmp_path("max-rows-stop"),
+    "1 2\nnope 2\n")
+  assert_tensor(numlua.loadtxt(late_error, { max_rows = 1 }), { 1, 2 })
+  assert_error(function()
+    numlua.loadtxt(late_error, { max_rows = 2 })
+  end, "invalid number")
+  os.remove(late_error)
   os.remove(malformed)
 end)
 
@@ -682,6 +691,8 @@ test("loadtxt ndmin handles empty input and validates the rank", function()
   local empty_matrix = numlua.loadtxt(empty, { ndmin = 2 })
   assert_shape(empty_matrix, { 0, 1 })
   assert_eq(empty_matrix:numel(), 0)
+  assert_shape(numlua.loadtxt(empty,
+    { ndmin = 2, unpack = true }), { 1, 0 })
   os.remove(empty)
 
   local path = write_text(tmp_path("ndmin-errors"), "1 2\n")

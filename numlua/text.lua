@@ -402,6 +402,9 @@ function text.loadtxt(path, options)
   if #rows == 0 then
     local empty = ndmin == 2 and torch.empty({ 0, 1 }, { dtype = dtype })
       or torch.empty({ 0 }, { dtype = dtype })
+    if unpack and empty:dim() == 2 then
+      empty = empty:transpose(1, 2)
+    end
     return empty
   end
   local output_columns = selected ~= nil and #selected or columns
