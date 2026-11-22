@@ -366,6 +366,10 @@ end
 
 local function pad_pair(pad_width, ndim)
   local function broadcast(before, after)
+    if type(before) ~= "number" or type(after) ~= "number" or
+        before % 1 ~= 0 or after % 1 ~= 0 or before < 0 or after < 0 then
+      error("numlua.pad: pad_width must be non-negative integers", 2)
+    end
     local result = {}
     for index = 1, ndim do result[index] = { before, after } end
     return result
@@ -398,9 +402,76 @@ local function pad_pair(pad_width, ndim)
   return result
 end
 
+-- Normalize one per-axis constant value entry: a number fills both sides, a
+-- one- or two-entry table gives the before/after values separately.
+local function pad_constant_entry(value)
+  if type(value) == "number" then
+    return { value, value }
+  end
+  if type(value) ~= "table" then
+    error("numlua.pad: constant value entries must be numbers or pairs", 2)
+  end
+  local before, after
+  if #value == 1 then
+    before, after = value[1], value[1]
+  elseif #value == 2 then
+    before, after = value[1], value[2]
+  else
+    error("numlua.pad: constant value pairs must have one or two entries", 2)
+  end
+  if type(before) ~= "number" or type(after) ~= "number" then
+    error("numlua.pad: constant values must be numeric", 2)
+  end
+  return { before, after }
+end
+
+-- Normalize the optional constant value argument using the same broadcasting
+-- rules as NumPy's constant_values: a number fills every side, a numeric pair
+-- gives the before/after values for every axis, and a table with one entry
+-- per dimension gives per-axis entries (each a number or a before/after
+-- pair).  `nil` keeps the historical zero fill.
+local function pad_constant_values(value, ndim)
+  local function broadcast(before, after)
+    if type(before) ~= "number" or type(after) ~= "number" then
+      error("numlua.pad: constant values must be numeric", 2)
+    end
+    local result = {}
+    for index = 1, ndim do result[index] = { before, after } end
+    return result
+  end
+  if value == nil then
+    return broadcast(0, 0)
+  end
+  if type(value) == "number" then
+    return broadcast(value, value)
+  end
+  if type(value) ~= "table" or #value == 0 then
+    error("numlua.pad: constant value must be a number or non-empty table", 2)
+  end
+  if type(value[1]) == "number" then
+    if #value == 1 then
+      return broadcast(value[1], value[1])
+    end
+    if #value == 2 then
+      return broadcast(value[1], value[2])
+    end
+    error("numlua.pad: constant value must be a number, a pair, or " ..
+      "per-axis entries", 2)
+  end
+  if #value ~= ndim then
+    error("numlua.pad: per-axis constant values must have one entry per " ..
+      "dimension", 2)
+  end
+  local result = {}
+  for index = 1, ndim do
+    result[index] = pad_constant_entry(value[index])
+  end
+  return result
+end
+
 -- Build the source indices for one axis.  edge clamps to the first/last
--- element, reflect mirrors without repeating the edge, and symmetric mirrors
--- with the edge included.
+-- element, reflect mirrors without repeating the edge, symmetric mirrors with
+-- the edge included, and wrap repeats the axis cyclically.
 local function pad_indices(size, before, after, mode)
   local total = before + size + after
   local indices = {}
@@ -432,6 +503,10 @@ local function pad_indices(size, before, after, mode)
         indices[index] = period - position
       end
     end
+  elseif mode == "wrap" then
+    for index = 1, total do
+      indices[index] = ((index - before - 1) % size) + 1
+    end
   end
   return long_tensor(indices)
 end
@@ -440,18 +515,17 @@ function M.pad(t, pad_width, mode, value)
   tensor(t, "pad")
   mode = mode or "constant"
   if mode ~= "constant" and mode ~= "edge" and mode ~= "reflect" and
-      mode ~= "symmetric" then
+      mode ~= "symmetric" and mode ~= "wrap" then
     error(string.format("numlua.pad: invalid mode '%s'; expected 'constant', " ..
-      "'edge', 'reflect', or 'symmetric'", tostring(mode)), 2)
+      "'edge', 'reflect', 'symmetric', or 'wrap'", tostring(mode)), 2)
   end
   local pairs = pad_pair(pad_width, t:dim())
   local result = t:clone()
 
   if mode == "constant" then
-    value = value or 0
-    if type(value) ~= "number" then
-      error("numlua.pad: constant value must be numeric", 2)
-    end
+    -- The historical scalar form keeps working; tables extend it to NumPy's
+    -- per-axis constant_values, including separate before/after values.
+    local constants = pad_constant_values(value, t:dim())
     for dim = t:dim(), 1, -1 do
       local before, after = pairs[dim][1], pairs[dim][2]
       if before > 0 or after > 0 then
@@ -460,14 +534,14 @@ function M.pad(t, pad_width, mode, value)
         if before > 0 then
           local fill_shape = { unpack(shape) }
           fill_shape[dim] = before
-          parts[#parts + 1] = torch.full(fill_shape, value,
+          parts[#parts + 1] = torch.full(fill_shape, constants[dim][1],
             { dtype = result:dtype() })
         end
         parts[#parts + 1] = result
         if after > 0 then
           local fill_shape = { unpack(shape) }
           fill_shape[dim] = after
-          parts[#parts + 1] = torch.full(fill_shape, value,
+          parts[#parts + 1] = torch.full(fill_shape, constants[dim][2],
             { dtype = result:dtype() })
         end
         result = torch.cat(parts, dim)

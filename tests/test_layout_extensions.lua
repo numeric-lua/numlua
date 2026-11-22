@@ -107,6 +107,35 @@ test("pad supports edge, reflect, and symmetric modes", function()
   assert_eq(vector:get(1), 1)
 end)
 
+test("pad supports wrap and per-axis constant values", function()
+  local vector = numlua.array({ 1, 2, 3 })
+  assert_tensor(numlua.pad(vector, 2, "wrap"), { 2, 3, 1, 2, 3, 1, 2 })
+  assert_tensor(numlua.pad(vector, { 2, 3 }, "wrap"),
+    { 2, 3, 1, 2, 3, 1, 2, 3 })
+
+  local matrix = numlua.array({ { 1, 2 }, { 3, 4 } })
+  assert_tensor(numlua.pad(matrix, 1, "wrap"), {
+    { 4, 3, 4, 3 },
+    { 2, 1, 2, 1 },
+    { 4, 3, 4, 3 },
+    { 2, 1, 2, 1 },
+  })
+
+  -- A numeric pair fills before/after on every axis; a table of per-axis
+  -- entries can give each axis its own pair.
+  assert_tensor(numlua.pad(vector, { 1, 2 }, "constant", { 10, 20 }),
+    { 10, 1, 2, 3, 20, 20 })
+  assert_tensor(numlua.pad(matrix, { { 1, 0 }, { 0, 1 } }, "constant",
+    { { 10, 11 }, { 20, 21 } }), {
+    { 10, 10, 10 },
+    { 1, 2, 21 },
+    { 3, 4, 21 },
+  })
+  assert_tensor(numlua.pad(matrix, 1, "constant", { 7 }),
+    { { 7, 7, 7, 7 }, { 7, 1, 2, 7 }, { 7, 3, 4, 7 },
+      { 7, 7, 7, 7 } })
+end)
+
 test("pad handles zero-size axes and rejects invalid modes", function()
   local empty = numlua.zeros(0, 3)
   local padded = numlua.pad(empty, { 1, 1 }, "constant", 5)
@@ -121,8 +150,10 @@ test("pad handles zero-size axes and rejects invalid modes", function()
   assert_error(function() numlua.pad(empty, { 0, 1 }, "symmetric") end,
     "empty axis")
   assert_error(function()
-    numlua.pad(numlua.array({ 1, 2 }), 1, "wrap")
+    numlua.pad(numlua.array({ 1, 2 }), 1, "linear_ramp")
   end, "invalid mode")
+  assert_error(function() numlua.pad(empty, { 0, 1 }, "wrap") end,
+    "empty axis")
 end)
 
 test("layout extensions reject invalid axes, shapes, and modes", function()
