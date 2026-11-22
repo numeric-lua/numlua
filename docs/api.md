@@ -993,12 +993,25 @@ Writes a 1-D or 2-D tensor as numeric text and returns `true`. Options:
 | --- | --- | --- |
 | `delimiter` | `" "` | field separator |
 | `fmt` | dtype-aware | `printf` format string or function for each value |
+| `header` | `""` | text written before the data, one comment-prefixed line per input line |
+| `footer` | `""` | text written after the data, one comment-prefixed line per input line |
+| `comments` | `"# "` | prefix applied to each header/footer line |
+| `newline` | `"\n"` | line terminator for data, header, and footer |
 
 The default floating formats use enough significant digits to round-trip the
 tensor's dtype (`float16`, `float32`, or `float64`); integral dtypes use base 10.
 `nan`, `inf`, and `-inf` are written explicitly. Unknown option keys raise a
-`numlua.savetxt: unknown option ...` error. A custom `fmt` is applied to
-every value:
+`numlua.savetxt: unknown option ...` error.
+
+`header` and `footer` are written before and after the data, with `comments`
+prepended to each line (including every line of a multi-line string). The
+default `comments = "# "` produces lines that `loadtxt` ignores, so header and
+footer text can document a file without affecting a round trip. `newline`
+applies to data rows and to the header/footer lines; it defaults to `"\n"`.
+Pass `comments = ""` to write bare header/footer text. Header and footer text
+are written even for empty vectors and zero-column matrices.
+
+A custom `fmt` is applied to every value:
 
 ```lua
 numlua.savetxt("values.csv", numlua.arange(6):reshape(2, 3), {

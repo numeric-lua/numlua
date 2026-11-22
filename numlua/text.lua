@@ -26,6 +26,8 @@ local text = {}
 local DEFAULT_LOAD_DTYPE = "float32"
 local DEFAULT_COMMENT = "#"
 local DEFAULT_SAVE_DELIMITER = " "
+local DEFAULT_SAVE_NEWLINE = "\n"
+local DEFAULT_SAVE_COMMENTS = "# "
 
 local SUPPORTED_DTYPES = {
   float16 = true,
@@ -58,6 +60,10 @@ local LOAD_OPTIONS = {
 local SAVE_OPTIONS = {
   delimiter = true,
   fmt = true,
+  header = true,
+  footer = true,
+  comments = true,
+  newline = true,
 }
 
 local function check_options(options, name, allowed)
@@ -135,6 +141,15 @@ local function check_unpack(value)
       tostring(value), 3)
   end
   return value == true
+end
+
+local function check_string(value, option, name)
+  if value ~= nil and type(value) ~= "string" then
+    error(string.format(
+      "numlua.%s: %s must be a string or nil, got %s",
+      name, option, type(value)), 3)
+  end
+  return value
 end
 
 local function check_ndmin(value)
@@ -451,8 +466,25 @@ local function format_value(value, dtype, fmt)
   return string.format("%d", math.floor(value))
 end
 
-local function write_row(handle, parts, delimiter)
-  local ok, write_error = handle:write(table.concat(parts, delimiter), "\n")
+local function write_row(handle, parts, delimiter, newline)
+  local ok, write_error = handle:write(
+    table.concat(parts, delimiter), newline)
+  if ok == nil then
+    return nil, write_error
+  end
+  return true
+end
+
+-- Write a header or footer, prefixing every line with the comment marker and
+-- terminating it with the configured newline, following np.savetxt.
+local function write_annotation(handle, text, comments, newline)
+  if text == nil or text == "" then
+    return true
+  end
+  local marked = comments .. text:gsub("\n", function()
+    return "\n" .. comments
+  end)
+  local ok, write_error = handle:write(marked, newline)
   if ok == nil then
     return nil, write_error
   end
@@ -475,6 +507,12 @@ function text.savetxt(path, tensor, options)
   if fmt ~= nil and type(fmt) ~= "string" and type(fmt) ~= "function" then
     error("numlua.savetxt: fmt must be a format string, function, or nil", 2)
   end
+  local header = check_string(options.header, "header", "savetxt") or ""
+  local footer = check_string(options.footer, "footer", "savetxt") or ""
+  local comments = check_string(
+    options.comments, "comments", "savetxt") or DEFAULT_SAVE_COMMENTS
+  local newline = check_string(
+    options.newline, "newline", "savetxt") or DEFAULT_SAVE_NEWLINE
 
   local dim = tensor:dim()
   if dim ~= 1 and dim ~= 2 then
@@ -492,6 +530,11 @@ function text.savetxt(path, tensor, options)
   local sizes = tensor:sizes()
   local write_ok, write_error = true, nil
   local format_ok, format_error = pcall(function()
+    write_ok, write_error = write_annotation(
+      handle, header, comments, newline)
+    if write_ok == nil then
+      return
+    end
     if dim == 1 then
       if sizes[1] > 0 then
         local values = tensor:totable()
@@ -499,7 +542,8 @@ function text.savetxt(path, tensor, options)
         for i = 1, sizes[1] do
           parts[i] = format_value(values[i], dtype, fmt)
         end
-        write_ok, write_error = write_row(handle, parts, delimiter)
+        write_ok, write_error = write_row(
+          handle, parts, delimiter, newline)
       end
     else
       local rows = tensor:totable()
@@ -510,15 +554,20 @@ function text.savetxt(path, tensor, options)
           parts[j] = format_value(row[j], dtype, fmt)
         end
         if sizes[2] == 0 then
-          local ok, err = handle:write("\n")
+          local ok, err = handle:write(newline)
           write_ok, write_error = ok, err
         else
-          write_ok, write_error = write_row(handle, parts, delimiter)
+          write_ok, write_error = write_row(
+            handle, parts, delimiter, newline)
         end
         if write_ok == nil then
           break
         end
       end
+    end
+    if write_ok ~= nil then
+      write_ok, write_error = write_annotation(
+        handle, footer, comments, newline)
     end
   end)
   local close_ok, close_error = handle:close()

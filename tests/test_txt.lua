@@ -434,8 +434,8 @@ test("text options reject unknown keys before touching the file",
   end, "unknown option 'delimeter'")
   assert_error(function()
     numlua.savetxt(tmp_path("unknown-save"), numlua.zeros(2),
-      { fmt = "%.2f", header = "# data" })
-  end, "unknown option 'header'")
+      { fmt = "%.2f", title = "data" })
+  end, "unknown option 'title'")
   os.remove(path)
 
   -- Unknown-key validation happens before open/read errors and dtype checks.
@@ -691,4 +691,81 @@ test("loadtxt ndmin handles empty input and validates the rank", function()
     end, "ndmin must be 0, 1, or 2")
   end
   os.remove(path)
+end)
+
+test("savetxt writes header/footer comments and custom newlines", function()
+  local path = tmp_path("header-footer")
+  local a = numlua.array({ { 1.5, 2.5 }, { 3.5, 4.5 } })
+  assert_true(numlua.savetxt(path, a, {
+    header = "generated",
+    footer = "end",
+  }))
+  assert_eq(read_text(path), "# generated\n1.5 2.5\n3.5 4.5\n# end\n")
+  -- The default comment marker lets loadtxt read the data back unchanged.
+  assert_true(numlua.loadtxt(path):equal(a))
+  os.remove(path)
+
+  assert_true(numlua.savetxt(path, a, {
+    header = "first\nsecond",
+    footer = "last",
+    comments = "//",
+    delimiter = ",",
+  }))
+  assert_eq(read_text(path),
+    "//first\n//second\n1.5,2.5\n3.5,4.5\n//last\n")
+  os.remove(path)
+
+  -- An empty comment marker writes bare header/footer text, and empty
+  -- header/footer strings add nothing.
+  assert_true(numlua.savetxt(path, a, {
+    header = "plain",
+    footer = "done",
+    comments = "",
+  }))
+  assert_eq(read_text(path), "plain\n1.5 2.5\n3.5 4.5\ndone\n")
+  os.remove(path)
+
+  assert_true(numlua.savetxt(path, a))
+  assert_eq(read_text(path), "1.5 2.5\n3.5 4.5\n")
+  os.remove(path)
+end)
+
+test("savetxt newline applies to data and header/footer lines", function()
+  local path = tmp_path("newline")
+  local a = numlua.array({ { 1, 2 }, { 3, 4 } }, { dtype = "int64" })
+  assert_true(numlua.savetxt(path, a, {
+    header = "h",
+    footer = "f",
+    newline = "\r\n",
+  }))
+  assert_eq(read_text(path), "# h\r\n1 2\r\n3 4\r\n# f\r\n")
+  local loaded = numlua.loadtxt(path, { dtype = "int64" })
+  assert_tensor(loaded, { { 1, 2 }, { 3, 4 } })
+  os.remove(path)
+
+  -- Empty vectors and zero-column matrices still get header/footer framing.
+  assert_true(numlua.savetxt(path, numlua.zeros(0), {
+    header = "empty",
+    footer = "end",
+  }))
+  assert_eq(read_text(path), "# empty\n# end\n")
+  os.remove(path)
+
+  assert_true(numlua.savetxt(path, numlua.zeros(2, 0), {
+    header = "zero",
+    newline = "\r\n",
+  }))
+  assert_eq(read_text(path), "# zero\r\n\r\n\r\n")
+  os.remove(path)
+end)
+
+test("savetxt validates header, footer, comments, and newline", function()
+  local path = tmp_path("framing-errors")
+  local a = numlua.array({ 1, 2 })
+  for _, option in ipairs({ "header", "footer", "comments", "newline" }) do
+    assert_error(function()
+      numlua.savetxt(path, a, { [option] = 5 })
+    end, option .. " must be a string")
+  end
+  assert_eq(io.open(path, "r"), nil)
 end)
