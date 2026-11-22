@@ -1,29 +1,25 @@
-# numlua 0.15.0
+# numlua 0.16.0
 
 NumPy-shaped arrays for LuaJIT, backed by luatorch.
 
 ## Highlights
 
-- `numlua.pad` gains the `"wrap"` mode: padded axes repeat cyclically with
-  NumPy semantics, widths may exceed the axis length, per-axis before/after
-  widths are independent, and zero-size axes can keep a zero-width wrap but
-  cannot be extended by it;
-- `numlua.pad` constant values now accept NumPy's `constant_values` forms. In
-  addition to the historical scalar, a `{before, after}` pair broadcasts over
-  every axis and a table with one entry per axis gives per-axis values (each a
-  number or pair). Scalar calls and the default zero fill are unchanged, and
-  fills keep the input dtype;
-- `numlua.pad` now rejects negative and fractional numeric `pad_width` forms
-  instead of silently ignoring them;
-- `numlua.savez` and `numlua.savez_compressed` reject keys that normalize to
-  the same ZIP member name (`x` and `x.npy`, for example) and the bare key
-  `.npy` before writing payloads or creating a file. Previously duplicate
-  members silently overwrote each other on read;
-- the test suite adds dedicated pad parity tests plus selection and I/O edge
-  coverage: empty/0-D `select` operands, numeric truth testing, non-contiguous
-  defaults, Unicode/spaced and colliding `.npz` names, EOCD archive comments,
-  invalid `.npy` members, multi-character text delimiters, and zero-width text
-  tensors. Docs and CHANGELOG document all of it.
+- `numlua.pad` gains NumPy's `"linear_ramp"`, `"maximum"`, `"mean"`,
+  `"median"`, and `"minimum"` modes. `"linear_ramp"` takes `end_values`
+  through the existing `value` argument; the statistic modes take
+  `stat_length`. Both accept a number, a `{before, after}` pair, or one entry
+  per axis. Axes are padded in order, so corners follow NumPy's rule that
+  later axes see earlier padding;
+- integer end values and statistics round half to even before the input dtype
+  cast, bool input works with every statistic mode, and zero-size axes remain
+  supported only by `"constant"` (as before). Modes without a fill argument
+  now reject a non-nil `value` instead of silently ignoring it;
+- the test suite adds an independent C-order reference walker for linear ramps
+  and axis statistics, plus IO/selection edge coverage: disabled comment
+  markers, missing final newlines, numeric `loadtxt` dtype ids, `savetxt`
+  format functions and error paths, double-quoted NPY header keys for v1.0
+  and v3.0, and negative-axis/empty selection forms. Docs, CHANGELOG, and
+  README describe the new modes.
 
 ## Requirements
 
@@ -33,8 +29,8 @@ dependency was added.
 
 ## Verification
 
-- 193 tests passed with system zlib
-- 193 tests passed with `NUMLUA_DISABLE_ZLIB=1`
+- 200 tests passed with system zlib
+- 200 tests passed with `NUMLUA_DISABLE_ZLIB=1`
 - `examples/basic.lua` runs
 
 No tag or release is created by this preparation.

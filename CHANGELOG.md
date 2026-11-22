@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.16.0 — 2026-11-22
 
 ### Added
 
@@ -18,11 +18,16 @@
 
 ### Tests
 
-- Pad parity tests build linear ramps and axis statistics with an independent
+- 200 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  Pad parity tests build linear ramps and axis statistics with an independent
   C-order reference walker and cover 1-D/2-D/3-D input, widths larger than the
   axis, per-axis end values, every `stat_length` form, bool and integer
   rounding, dtype/storage behavior, non-contiguous input, NumPy's corner
-  order, and validation errors.
+  order, and validation errors;
+- IO/selection edge tests add disabled comment markers, files without a final
+  newline, numeric `loadtxt` dtype ids, `savetxt` format functions and their
+  error paths, double-quoted NPY header keys for v1.0 and v3.0, and
+  negative-axis plus empty `take_along_axis`/`take` selections.
 
 ## 0.15.0 — 2026-11-22
 
