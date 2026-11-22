@@ -50,6 +50,8 @@ local LOAD_OPTIONS = {
   dtype = true,
   skiprows = true,
   max_rows = true,
+  usecols = true,
+  unpack = true,
 }
 
 local SAVE_OPTIONS = {
@@ -89,6 +91,49 @@ local function check_nonnegative_integer(value, option, name)
       name, option, tostring(value)), 3)
   end
   return value
+end
+
+-- Normalize usecols to a list of 1-based column numbers.  The upper bound is
+-- checked once the first data row establishes the total column count.
+local function parse_usecols(value)
+  if value == nil then
+    return nil
+  end
+  local columns
+  if type(value) == "number" then
+    columns = { value }
+  elseif type(value) == "table" then
+    if #value == 0 then
+      error("numlua.loadtxt: usecols must be a column number or a " ..
+        "non-empty table of column numbers", 3)
+    end
+    columns = value
+  else
+    error("numlua.loadtxt: usecols must be a column number or a table of " ..
+      "column numbers, got " .. type(value), 3)
+  end
+  local normalized = {}
+  for i = 1, #columns do
+    local column = columns[i]
+    if type(column) ~= "number" or column % 1 ~= 0 then
+      error("numlua.loadtxt: usecols entries must be integers, got " ..
+        tostring(column), 3)
+    end
+    if column == 0 then
+      error("numlua.loadtxt: usecols columns are 1-based; column 0 is " ..
+        "invalid (use 1 for the first column)", 3)
+    end
+    normalized[i] = column
+  end
+  return normalized
+end
+
+local function check_unpack(value)
+  if value ~= nil and type(value) ~= "boolean" then
+    error("numlua.loadtxt: unpack must be a boolean or nil, got " ..
+      tostring(value), 3)
+  end
+  return value == true
 end
 
 local function comment_markers(comments)
@@ -237,10 +282,33 @@ function text.loadtxt(path, options)
     options.skiprows, "skiprows", "loadtxt")
   local max_rows = check_nonnegative_integer(
     options.max_rows, "max_rows", "loadtxt")
+  local usecols = parse_usecols(options.usecols)
+  local unpack = check_unpack(options.unpack)
 
   local data = read_file(path)
   local rows = {}
   local columns = nil
+  local selected = nil
+
+  -- Resolve usecols against the first row's total width.  Negative entries
+  -- count from the end, and duplicates are preserved in the requested order.
+  local function resolve_usecols()
+    if usecols == nil then
+      return
+    end
+    selected = {}
+    for i = 1, #usecols do
+      local requested = usecols[i]
+      -- 1-based negative columns count from the end: -1 is the last column.
+      local column = requested < 0 and requested + columns + 1 or requested
+      if column < 1 or column > columns then
+        error(string.format(
+          "numlua.loadtxt: usecols index %d is out of range for %d " ..
+          "column(s)", requested, columns), 3)
+      end
+      selected[i] = column
+    end
+  end
 
   -- max_rows=0 reads no data rows at all, but still validates/open-reads the
   -- path and options first, like NumPy.
@@ -263,20 +331,35 @@ function text.loadtxt(path, options)
           local fields = split_fields(line, delimiter)
           if columns == nil then
             columns = #fields
+            resolve_usecols()
           elseif #fields ~= columns then
             error(string.format(
               "numlua.loadtxt: line %d has %d column(s), expected %d",
               line_number, #fields, columns), 2)
           end
           local row = {}
-          for column = 1, #fields do
-            local value = parse_number(fields[column])
-            if value == nil then
-              error(string.format(
-                "numlua.loadtxt: line %d: invalid number '%s' in column %d",
-                line_number, fields[column], column), 2)
+          if selected ~= nil then
+            for output_column = 1, #selected do
+              local source_column = selected[output_column]
+              local value = parse_number(fields[source_column])
+              if value == nil then
+                error(string.format(
+                  "numlua.loadtxt: line %d: invalid number '%s' in " ..
+                  "column %d", line_number, fields[source_column],
+                  source_column), 2)
+              end
+              row[output_column] = value
             end
-            row[column] = value
+          else
+            for column = 1, #fields do
+              local value = parse_number(fields[column])
+              if value == nil then
+                error(string.format(
+                  "numlua.loadtxt: line %d: invalid number '%s' in " ..
+                  "column %d", line_number, fields[column], column), 2)
+              end
+              row[column] = value
+            end
           end
           rows[#rows + 1] = row
           if max_rows ~= nil and #rows >= max_rows then
@@ -290,19 +373,26 @@ function text.loadtxt(path, options)
   if #rows == 0 then
     return torch.empty({ 0 }, { dtype = dtype })
   end
+  local output_columns = selected ~= nil and #selected or columns
   -- Like NumPy's default squeeze behavior, a one-row or one-column result is
   -- returned as a 1-D tensor.  Plain text has no way to distinguish a vector
   -- from a 1xN or Nx1 matrix.
-  if columns == 1 or #rows == 1 then
+  local result
+  if output_columns == 1 or #rows == 1 then
     local values = {}
     for i = 1, #rows do
-      for j = 1, columns do
+      for j = 1, output_columns do
         values[#values + 1] = rows[i][j]
       end
     end
-    return torch.tensor(values, { dtype = dtype })
+    result = torch.tensor(values, { dtype = dtype })
+  else
+    result = torch.tensor(rows, { dtype = dtype })
   end
-  return torch.tensor(rows, { dtype = dtype })
+  if unpack and result:dim() == 2 then
+    result = result:transpose(1, 2)
+  end
+  return result
 end
 
 local function format_value(value, dtype, fmt)

@@ -556,3 +556,89 @@ test("loadtxt validates skiprows and max_rows", function()
   end
   os.remove(path)
 end)
+
+test("loadtxt usecols selects 1-based columns in requested order", function()
+  local path = write_text(tmp_path("usecols"),
+    "1 2 3\n4 5 6\n")
+  assert_tensor(numlua.loadtxt(path, { usecols = { 1, 3 } }),
+    { { 1, 3 }, { 4, 6 } })
+  assert_tensor(numlua.loadtxt(path, { usecols = 2 }), { 2, 5 })
+  assert_tensor(numlua.loadtxt(path, { usecols = { 3, 1 } }),
+    { { 3, 1 }, { 6, 4 } })
+  -- Negative columns count from the end, while duplicates are preserved.
+  assert_tensor(numlua.loadtxt(path, { usecols = { -1, 1 } }),
+    { { 3, 1 }, { 6, 4 } })
+  assert_tensor(numlua.loadtxt(path, { usecols = { 1, 1 } }),
+    { { 1, 1 }, { 4, 4 } })
+
+  -- Only selected fields are parsed, so an unused malformed field is ignored.
+  local mixed = write_text(tmp_path("usecols-unused"),
+    "1 nope 3\n4 bad 6\n")
+  assert_tensor(numlua.loadtxt(mixed, { usecols = { 1, 3 } }),
+    { { 1, 3 }, { 4, 6 } })
+  os.remove(path)
+  os.remove(mixed)
+end)
+
+test("loadtxt usecols validates columns and rejects 0-based indices",
+    function()
+  local path = write_text(tmp_path("usecols-errors"), "1 2 3\n4 5 6\n")
+  assert_error(function()
+    numlua.loadtxt(path, { usecols = 0 })
+  end, "usecols columns are 1-based; column 0 is invalid")
+  assert_error(function()
+    numlua.loadtxt(path, { usecols = { 1, 0 } })
+  end, "column 0 is invalid")
+  assert_error(function()
+    numlua.loadtxt(path, { usecols = 4 })
+  end, "usecols index 4 is out of range for 3 column(s)")
+  assert_error(function()
+    numlua.loadtxt(path, { usecols = { -4 } })
+  end, "usecols index -4 is out of range for 3 column(s)")
+  assert_error(function()
+    numlua.loadtxt(path, { usecols = 1.5 })
+  end, "usecols entries must be integers")
+  assert_error(function()
+    numlua.loadtxt(path, { usecols = "1,2" })
+  end, "usecols must be a column number or a table")
+  assert_error(function()
+    numlua.loadtxt(path, { usecols = {} })
+  end, "non-empty table")
+  os.remove(path)
+
+  -- An empty file has no width to validate against, so it loads empty.
+  local empty = write_text(tmp_path("usecols-empty"), "# only comments\n")
+  assert_shape(numlua.loadtxt(empty, { usecols = { 2, 1 } }), { 0 })
+  os.remove(empty)
+end)
+
+test("loadtxt unpack transposes the result after squeezing", function()
+  local path = write_text(tmp_path("unpack"),
+    "1 2 3\n4 5 6\n")
+  local unpacked = numlua.loadtxt(path, { unpack = true })
+  assert_shape(unpacked, { 3, 2 })
+  assert_tensor(unpacked, { { 1, 4 }, { 2, 5 }, { 3, 6 } })
+
+  local selected = numlua.loadtxt(path,
+    { usecols = { 1, 3 }, unpack = true })
+  assert_shape(selected, { 2, 2 })
+  assert_tensor(selected, { { 1, 4 }, { 3, 6 } })
+
+  -- A one-column or one-row file is already 1-D after squeezing; unpacking
+  -- a 1-D result leaves its shape unchanged, as in NumPy.
+  local column = write_text(tmp_path("unpack-column"), "1\n2\n3\n")
+  local column_unpacked = numlua.loadtxt(column, { unpack = true })
+  assert_shape(column_unpacked, { 3 })
+  assert_tensor(column_unpacked, { 1, 2, 3 })
+  local row = write_text(tmp_path("unpack-row"), "1 2 3\n")
+  local row_unpacked = numlua.loadtxt(row, { unpack = true })
+  assert_shape(row_unpacked, { 3 })
+  assert_tensor(row_unpacked, { 1, 2, 3 })
+
+  assert_error(function()
+    numlua.loadtxt(path, { unpack = 1 })
+  end, "unpack must be a boolean")
+  os.remove(path)
+  os.remove(column)
+  os.remove(row)
+end)

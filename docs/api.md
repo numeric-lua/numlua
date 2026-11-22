@@ -913,6 +913,8 @@ luatorch tensor. Options:
 | `dtype` | `"float32"` | result dtype (a luatorch dtype name or id) |
 | `skiprows` | `0` | number of physical lines to skip before parsing |
 | `max_rows` | all | maximum number of data rows to read after skipping |
+| `usecols` | all | 1-based column number or table of column numbers to read |
+| `unpack` | `false` | transpose a 2-D result so columns become rows |
 
 Blank lines and comments are ignored. Comment text starts at the first occurrence
 of any configured marker on a line, so both full-line and trailing comments work.
@@ -929,6 +931,27 @@ blank and comment lines do not consume the limit, and `max_rows = 0` returns an
 empty 1-D tensor without parsing data rows. Both options must be non-negative
 integers. Rows beyond `max_rows` are not parsed, so an error there is not
 reported.
+
+`usecols` selects columns with **1-based** indices. A positive index counts
+from the left, `-1` is the last column, and a table preserves the requested
+order and duplicates. Only selected fields are converted, so a malformed field
+in an unselected column is ignored. The total row width must still be
+rectangular and agree with the first data row. `usecols = 0` raises a clear
+1-based error, and out-of-range indices raise a `numlua.loadtxt:` error once the
+first data row establishes the width. An empty file has no width to check and
+loads as an empty 1-D tensor.
+
+`unpack = true` transposes a 2-D result after the normal squeeze/`ndmin`
+handling, matching NumPy: a 2x3 file becomes 3x2, while an already 1-D
+one-row/one-column result keeps its shape. Use it to unpack columns with:
+
+```lua
+local x, y = numlua.loadtxt("data.csv", {
+  delimiter = ",",
+  usecols = { 1, 2 },
+  unpack = true,
+})
+```
 
 ```lua
 -- data.csv:
