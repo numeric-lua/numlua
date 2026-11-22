@@ -915,6 +915,7 @@ luatorch tensor. Options:
 | `max_rows` | all | maximum number of data rows to read after skipping |
 | `usecols` | all | 1-based column number or table of column numbers to read |
 | `unpack` | `false` | transpose a 2-D result so columns become rows |
+| `ndmin` | `0` | minimum result rank: `0`, `1`, or `2` |
 
 Blank lines and comments are ignored. Comment text starts at the first occurrence
 of any configured marker on a line, so both full-line and trailing comments work.
@@ -941,6 +942,12 @@ rectangular and agree with the first data row. `usecols = 0` raises a clear
 first data row establishes the width. An empty file has no width to check and
 loads as an empty 1-D tensor.
 
+`ndmin` controls the result rank before unpacking. With the default `0` (and
+with `1`), one-row and one-column input is squeezed to 1-D. With `2`, the
+physical row/column shape is kept: a one-row file is `(1, N)` and a one-column
+file is `(N, 1)`. Empty input becomes shape `(0,)` for `ndmin` 0/1 and `(0, 1)`
+for `ndmin` 2. Only `0`, `1`, and `2` are legal, following NumPy.
+
 `unpack = true` transposes a 2-D result after the normal squeeze/`ndmin`
 handling, matching NumPy: a 2x3 file becomes 3x2, while an already 1-D
 one-row/one-column result keeps its shape. Use it to unpack columns with:
@@ -951,6 +958,7 @@ local x, y = numlua.loadtxt("data.csv", {
   usecols = { 1, 2 },
   unpack = true,
 })
+-- With ndmin = 2, x and y are (1, N) rows instead of 1-D vectors.
 ```
 
 ```lua

@@ -52,6 +52,7 @@ local LOAD_OPTIONS = {
   max_rows = true,
   usecols = true,
   unpack = true,
+  ndmin = true,
 }
 
 local SAVE_OPTIONS = {
@@ -134,6 +135,18 @@ local function check_unpack(value)
       tostring(value), 3)
   end
   return value == true
+end
+
+local function check_ndmin(value)
+  if value == nil then
+    return 0
+  end
+  if type(value) ~= "number" or value % 1 ~= 0 or
+      (value ~= 0 and value ~= 1 and value ~= 2) then
+    error("numlua.loadtxt: ndmin must be 0, 1, or 2, got " ..
+      tostring(value), 3)
+  end
+  return value
 end
 
 local function comment_markers(comments)
@@ -284,6 +297,7 @@ function text.loadtxt(path, options)
     options.max_rows, "max_rows", "loadtxt")
   local usecols = parse_usecols(options.usecols)
   local unpack = check_unpack(options.unpack)
+  local ndmin = check_ndmin(options.ndmin)
 
   local data = read_file(path)
   local rows = {}
@@ -371,14 +385,16 @@ function text.loadtxt(path, options)
   end
 
   if #rows == 0 then
-    return torch.empty({ 0 }, { dtype = dtype })
+    local empty = ndmin == 2 and torch.empty({ 0, 1 }, { dtype = dtype })
+      or torch.empty({ 0 }, { dtype = dtype })
+    return empty
   end
   local output_columns = selected ~= nil and #selected or columns
-  -- Like NumPy's default squeeze behavior, a one-row or one-column result is
-  -- returned as a 1-D tensor.  Plain text has no way to distinguish a vector
-  -- from a 1xN or Nx1 matrix.
+  -- ndmin=2 keeps the physical row/column shape, so a one-row file stays
+  -- (1, N) and a one-column file stays (N, 1).  The default (ndmin=0) and
+  -- ndmin=1 keep NumPy's squeeze behavior for a single row or column.
   local result
-  if output_columns == 1 or #rows == 1 then
+  if ndmin < 2 and (output_columns == 1 or #rows == 1) then
     local values = {}
     for i = 1, #rows do
       for j = 1, output_columns do

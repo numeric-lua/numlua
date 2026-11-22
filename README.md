@@ -391,8 +391,10 @@ same number of fields, and reports malformed rows or invalid numbers with the
 line number. `skiprows` skips physical lines (including comments and blanks),
 while `max_rows` limits the number of data rows read after that skip; `max_rows`
 does not count blank or comment lines. `usecols` selects 1-based columns (with
-`-1` for the last column and a table preserving order), and `unpack = true`
-transposes a 2-D result. One-row and one-column files become 1-D
+`-1` for the last column and a table preserving order), `unpack = true`
+transposes a 2-D result, and `ndmin = 2` keeps one-row/one-column input as a
+2-D `(1, N)`/`(N, 1)` tensor instead of squeezing it. One-row and one-column
+files become 1-D
 tensors (NumPy's default squeeze behavior), and an all-comment/empty file loads
 as an empty 1-D tensor. The default load dtype is `float32`; pass `dtype` to load
 integers or wider floats exactly. Text files do not store shape or dtype, so a

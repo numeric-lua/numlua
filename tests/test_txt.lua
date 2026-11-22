@@ -642,3 +642,53 @@ test("loadtxt unpack transposes the result after squeezing", function()
   os.remove(column)
   os.remove(row)
 end)
+
+test("loadtxt ndmin preserves physical rows and columns", function()
+  local column = write_text(tmp_path("ndmin-column"), "1\n2\n3\n")
+  assert_shape(numlua.loadtxt(column), { 3 })
+  assert_shape(numlua.loadtxt(column, { ndmin = 1 }), { 3 })
+  local column_matrix = numlua.loadtxt(column, { ndmin = 2 })
+  assert_shape(column_matrix, { 3, 1 })
+  assert_tensor(column_matrix, { { 1 }, { 2 }, { 3 } })
+  os.remove(column)
+
+  local row = write_text(tmp_path("ndmin-row"), "1 2 3\n")
+  assert_shape(numlua.loadtxt(row), { 3 })
+  assert_shape(numlua.loadtxt(row, { ndmin = 1 }), { 3 })
+  local row_matrix = numlua.loadtxt(row, { ndmin = 2 })
+  assert_shape(row_matrix, { 1, 3 })
+  assert_tensor(row_matrix, { { 1, 2, 3 } })
+  os.remove(row)
+
+  local matrix = write_text(tmp_path("ndmin-matrix"), "1 2 3\n4 5 6\n")
+  for _, ndmin in ipairs({ 0, 1, 2 }) do
+    local loaded = numlua.loadtxt(matrix, { ndmin = ndmin })
+    assert_shape(loaded, { 2, 3 })
+    assert_tensor(loaded, { { 1, 2, 3 }, { 4, 5, 6 } })
+  end
+
+  -- ndmin is applied before unpack, matching NumPy's ordering.
+  local unpacked_column = numlua.loadtxt(matrix,
+    { usecols = 2, ndmin = 2, unpack = true })
+  assert_shape(unpacked_column, { 1, 2 })
+  assert_tensor(unpacked_column, { { 2, 5 } })
+  os.remove(matrix)
+end)
+
+test("loadtxt ndmin handles empty input and validates the rank", function()
+  local empty = write_text(tmp_path("ndmin-empty"), "# no data\n")
+  assert_shape(numlua.loadtxt(empty), { 0 })
+  assert_shape(numlua.loadtxt(empty, { ndmin = 1 }), { 0 })
+  local empty_matrix = numlua.loadtxt(empty, { ndmin = 2 })
+  assert_shape(empty_matrix, { 0, 1 })
+  assert_eq(empty_matrix:numel(), 0)
+  os.remove(empty)
+
+  local path = write_text(tmp_path("ndmin-errors"), "1 2\n")
+  for _, value in ipairs({ -1, 3, 1.5, "2", true }) do
+    assert_error(function()
+      numlua.loadtxt(path, { ndmin = value })
+    end, "ndmin must be 0, 1, or 2")
+  end
+  os.remove(path)
+end)
