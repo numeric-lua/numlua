@@ -250,7 +250,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Group | Functions |
 | --- | --- |
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace` |
-| Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize` |
+| Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
@@ -263,8 +263,9 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Text/CSV I/O | `loadtxt`, `savetxt` |
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
-`unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `pad`,
-`tile`, `repeat_`, `flip`, `roll`, `diff`, `cumsum`, `cumprod`, `argsort`,
+`unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
+`diagflat`, `tril`, `triu`, `pad`, `tile`, `repeat_`, `flip`, `roll`, `diff`,
+`cumsum`, `cumprod`, `argsort`,
 `sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
 allocate independent storage; see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.

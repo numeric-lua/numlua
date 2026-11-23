@@ -339,6 +339,108 @@ function M.dsplit(t, sections)
   return split_impl(t, sections, 3, "dsplit", false)
 end
 
+-- Validate a diagonal offset.  Positive values select diagonals above the
+-- main one and negative values below it, matching NumPy.
+local function diagonal_offset(value, name)
+  if value == nil then return 0 end
+  if type(value) ~= "number" or value ~= value or value % 1 ~= 0 or
+      value == math.huge or value == -math.huge then
+    error(string.format("numlua.%s: offset must be a finite integer", name), 3)
+  end
+  return math.floor(value)
+end
+
+local function bool_diag_vector(t, offset)
+  local n = t:size(1)
+  local size = n + math.abs(offset)
+  local rows = {}
+  for i = 1, size do
+    rows[i] = {}
+    for j = 1, size do rows[i][j] = false end
+  end
+  for i = 1, n do
+    local row = offset >= 0 and i or i - offset
+    local column = offset >= 0 and i + offset or i
+    rows[row][column] = t:get(i)
+  end
+  return torch.tensor(rows, { dtype = "bool" })
+end
+
+-- diag(v[, k]) constructs a matrix from a 1-D tensor or extracts a diagonal
+-- from a 2-D tensor.  The vector path uses scatter so the work stays in ATen;
+-- bool has a small Lua fallback because scatter does not support it.
+function M.diag(t, k)
+  tensor(t, "diag")
+  local offset = diagonal_offset(k, "diag")
+  local ndim = t:dim()
+  if ndim == 1 then
+    local n = t:size(1)
+    local size = n + math.abs(offset)
+    local dtype = t:dtype()
+    if dtype == "bool" then
+      return bool_diag_vector(t, offset)
+    end
+    local result = torch.zeros({ size, size }, { dtype = dtype })
+    if n == 0 then return result end
+    local indices = {}
+    for i = 1, n do
+      indices[i] = { offset >= 0 and i + offset or i }
+    end
+    local index = torch.tensor(indices, { dtype = "int64" })
+    return result:scatter(2, index, t:reshape({ n, 1 }))
+  end
+  if ndim ~= 2 then
+    error("numlua.diag expects a 1-D or 2-D tensor", 2)
+  end
+  if t:dtype() ~= "bool" then
+    return t:diagonal(offset)
+  end
+
+  local rows, columns = t:size(1), t:size(2)
+  local start_row, start_column, length
+  if offset >= 0 then
+    length = math.max(0, math.min(rows, columns - offset))
+    start_row, start_column = 1, offset + 1
+  else
+    length = math.max(0, math.min(rows + offset, columns))
+    start_row, start_column = -offset + 1, 1
+  end
+  if length == 0 then return torch.empty({ 0 }, { dtype = "bool" }) end
+  local values = {}
+  for i = 1, length do
+    values[i] = t:get(start_row + i - 1, start_column + i - 1)
+  end
+  return torch.tensor(values, { dtype = "bool" })
+end
+
+-- diagflat flattens any-rank input in C order before constructing the matrix,
+-- following np.diagflat.
+function M.diagflat(t, k)
+  tensor(t, "diagflat")
+  return M.diag(t:reshape({ t:numel() }), k)
+end
+
+local function triangular(t, k, upper, name)
+  tensor(t, name)
+  if t:dim() < 2 then
+    error(string.format("numlua.%s expects at least a 2-D tensor", name), 2)
+  end
+  local offset = diagonal_offset(k, name)
+  local sizes = t:sizes()
+  local rows, columns = sizes[#sizes - 1], sizes[#sizes]
+  local row_index = torch.arange(rows, { dtype = "int64" }):unsqueeze(2)
+  local column_index = torch.arange(columns, { dtype = "int64" }):unsqueeze(1)
+  local difference = row_index:sub(column_index)
+  local keep = upper and difference:le(-offset) or difference:ge(-offset)
+  return t:masked_fill(keep:logical_not(), 0)
+end
+
+-- tril and triu apply to the last two dimensions of an N-D tensor and zero the
+-- other triangle.  The offset selects a diagonal above (+) or below (-) the
+-- main one.
+function M.tril(t, k) return triangular(t, k, false, "tril") end
+function M.triu(t, k) return triangular(t, k, true, "triu") end
+
 -- resize returns a new tensor with the requested shape.  It follows NumPy's
 -- ndarray.resize data rule: keep the C-order elements that fit, zero-fill any
 -- new space, and drop surplus elements.  Unlike np.resize, it never tiles the

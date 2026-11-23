@@ -187,6 +187,49 @@ numlua.resize(numlua.array({ 1, 2, 3 }), { 2, 3 })
 numlua.resize(t, 4) -- a 1-D result with four elements
 ```
 
+### `numlua.diag(v[, k])`
+
+With a 1-D input, constructs a square matrix with `v` on the `k`-th diagonal
+and zeros elsewhere. `k = 0` is the main diagonal, positive values are above
+it, and negative values are below it. The result keeps the input dtype and has
+shape `{ n + abs(k), n + abs(k) }`.
+
+With a 2-D input, extracts the `k`-th diagonal as a 1-D tensor; other ranks are
+rejected. `bool` input is supported on both paths. The result owns independent
+storage.
+
+```lua
+numlua.diag(numlua.array({ 1, 2, 3 }))
+-- {{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}
+numlua.diag(numlua.array({ { 1, 2 }, { 3, 4 } }), -1)
+-- {3}
+```
+
+### `numlua.diagflat(t[, k])`
+
+Flattens any-rank input in C order and then constructs the diagonal matrix,
+matching `np.diagflat`. A scalar produces a `1 x 1` matrix.
+
+```lua
+numlua.diagflat(numlua.array({ { 1, 2 }, { 3, 4 } }))
+-- a 4 x 4 matrix with 1, 2, 3, 4 on the main diagonal
+```
+
+### `numlua.tril(t[, k])`, `numlua.triu(t[, k])`
+
+Return a copy with the elements above (`tril`) or below (`triu`) the `k`-th
+diagonal zeroed. For N-D input the operation applies to the last two
+dimensions, and the result has the input shape and dtype. `k = 0` includes the
+main diagonal, positive values select a diagonal above it, and negative values
+select one below it.
+
+```lua
+local m = numlua.array({ { 1, 2 }, { 3, 4 } })
+numlua.tril(m)      -- {{1, 0}, {3, 4}}
+numlua.triu(m)      -- {{1, 2}, {0, 4}}
+numlua.tril(m, 1)   -- {{1, 2}, {3, 4}} (nothing below the superdiagonal is zeroed)
+```
+
 ## Combining
 
 ### `numlua.concatenate(tensors[, axis])`
@@ -547,6 +590,9 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.moveaxis(t, source, destination)` | move one or more axes (view); accepts axis tables |
 | `numlua.atleast_1d(...)` / `atleast_2d` / `atleast_3d` | add size-1 dimensions (view); one result per input |
 | `numlua.resize(t, shape)` | zero-fill/truncate to a new shape (materialized) |
+| `numlua.diag(v[, k])` | construct from a vector or extract a diagonal (materialized) |
+| `numlua.diagflat(t[, k])` | flatten and construct a diagonal matrix (materialized) |
+| `numlua.tril(t[, k])` / `numlua.triu(t[, k])` | zero one triangle of the last two axes (materialized) |
 | `numlua.split(t, sections[, axis])` | split along an axis; 1-based boundary tables (views) |
 | `numlua.array_split(t, sections[, axis])` | split into unequal sections (views) |
 | `numlua.hsplit` / `vsplit` / `dsplit` | NumPy column/row/depth splitters (views) |
@@ -820,8 +866,8 @@ other: `transpose`, `swapaxes`, `moveaxis`, `atleast_1d`, `atleast_2d`,
 contiguous `reshape`, and contiguous `ravel`.
 
 `split`, `array_split`, `hsplit`, `vsplit`, and `dsplit` return views created
-with `narrow`. These allocate independent storage: `resize`, `pad`, `tile`,
-`repeat_`, `flip`,
+with `narrow`. These allocate independent storage: `resize`, `diag`,
+`diagflat`, `tril`, `triu`, `pad`, `tile`, `repeat_`, `flip`,
 `roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`,
 `argwhere`, `take`, `take_along_axis`, and `apply_along_axis`. `reshape` and
 `ravel` also copy when their input is not contiguous, because ATen must
