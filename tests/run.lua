@@ -176,6 +176,7 @@ local files = {
   "test_layout_extensions.lua",
   "test_rotate.lua",
   "test_npz.lua",
+  "test_npz_handles.lua",
   "test_dtype_promotion.lua",
   "test_linalg.lua",
   "test_linalg_facade.lua",

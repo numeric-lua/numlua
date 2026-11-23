@@ -296,10 +296,22 @@ end
 -- archive writing (stored by default; deflate through optional zlib)
 -- ---------------------------------------------------------------------------
 
-local function check_archive(path, tensor, name)
-  if type(path) ~= "string" or path == "" then
-    error("numlua." .. name .. " expects a non-empty path", 2)
+-- Accept either a non-empty path or a caller-owned Lua file handle, matching
+-- the .npy and raw I/O entry points.  Returns true for a handle.
+local function archive_target(value, name)
+  local kind = io.type(value)
+  if kind == "closed file" then
+    error("numlua." .. name .. ": cannot use a closed file handle", 2)
   end
+  if kind ~= "file" and (type(value) ~= "string" or value == "") then
+    error("numlua." .. name ..
+      " expects a non-empty path or open file handle", 2)
+  end
+  return kind == "file"
+end
+
+local function check_archive(path, tensor, name)
+  archive_target(path, name)
   if type(tensor) ~= "table" then
     error("numlua." .. name .. " expects a table of tensors", 2)
   end
@@ -457,20 +469,30 @@ local function write_archive(path, arrays, function_name, compressed,
   local body = table.concat(local_parts) .. central
   local eocd = "PK\005\006" .. u16(0) .. u16(0) .. u16(#names) ..
     u16(#names) .. u32(#central) .. u32(#body - #central) .. u16(0)
-  local handle, open_error = io.open(path, "wb")
-  if handle == nil then
-    error("numlua." .. function_name .. ": cannot open '" .. path .. "': " ..
-      tostring(open_error), 2)
+  local is_handle = archive_target(path, function_name)
+  local handle, open_error = path, nil
+  local owns_handle = not is_handle
+  if owns_handle then
+    handle, open_error = io.open(path, "wb")
+    if handle == nil then
+      error("numlua." .. function_name .. ": cannot open '" .. path .. "': " ..
+        tostring(open_error), 2)
+    end
   end
+  local label = owns_handle and ("'" .. path .. "'") or "file handle"
+
   local ok, write_error = handle:write(body, eocd)
-  local close_ok, close_error = handle:close()
+  local close_ok, close_error = true, nil
+  if owns_handle then
+    close_ok, close_error = handle:close()
+  end
   if ok == nil then
-    error("numlua." .. function_name .. ": write failed: " ..
-      tostring(write_error), 2)
+    error("numlua." .. function_name .. ": write failed for " .. label ..
+      ": " .. tostring(write_error), 2)
   end
   if not close_ok then
-    error("numlua." .. function_name .. ": close failed: " ..
-      tostring(close_error), 2)
+    error("numlua." .. function_name .. ": close failed for " .. label ..
+      ": " .. tostring(close_error), 2)
   end
   if fallback_used then return true, "stored" end
   return true
@@ -569,22 +591,31 @@ local function member_bytes(data, name, central_start, method, flags,
 end
 
 function M.loadz(path)
-  if type(path) ~= "string" or path == "" then
-    error("numlua.loadz expects a non-empty path", 2)
-  end
-  local handle, open_error = io.open(path, "rb")
-  if handle == nil then
-    error("numlua.loadz: cannot open '" .. path .. "': " ..
-      tostring(open_error), 2)
-  end
-  local data = handle:read("*a")
-  local close_ok, close_error = handle:close()
-  if data == nil then
-    error("numlua.loadz: failed reading '" .. path .. "'", 2)
-  end
-  if not close_ok then
-    error("numlua.loadz: cannot close '" .. path .. "': " ..
-      tostring(close_error), 2)
+  local is_handle = archive_target(path, "loadz")
+  local data, read_error
+  if is_handle then
+    -- Caller-owned handles are read from their current position and left
+    -- open, matching save/load and the raw/text I/O entry points.
+    data, read_error = path:read("*a")
+    if data == nil then
+      error("numlua.loadz: failed reading file handle: " ..
+        tostring(read_error), 2)
+    end
+  else
+    local handle, open_error = io.open(path, "rb")
+    if handle == nil then
+      error("numlua.loadz: cannot open '" .. path .. "': " ..
+        tostring(open_error), 2)
+    end
+    data = handle:read("*a")
+    local close_ok, close_error = handle:close()
+    if data == nil then
+      error("numlua.loadz: failed reading '" .. path .. "'", 2)
+    end
+    if not close_ok then
+      error("numlua.loadz: cannot close '" .. path .. "': " ..
+        tostring(close_error), 2)
+    end
   end
 
   local eocd = find_eocd(data)

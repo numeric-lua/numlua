@@ -1138,10 +1138,12 @@ local values = numlua.fromfile(handle, { dtype = "float32" })
 handle:close()
 ```
 
-### `numlua.savez(path, arrays[, options])`
+### `numlua.savez(path_or_file, arrays[, options])`
 
 Writes a ZIP archive of `.npy` members using the stored (uncompressed) method
-and returns `true`. `arrays` is a table mapping non-empty array names to
+and returns `true`. `path_or_file` is a non-empty path or an open Lua file
+handle; caller-owned handles are written at their current position and are
+never closed. `arrays` is a table mapping non-empty array names to
 luatorch tensors. This matches `np.savez` and has no compression dependency.
 An empty `arrays` table writes a valid empty archive. Keys already ending in
 `.npy` are stored unchanged; other keys get a `.npy` suffix, as in NumPy.
@@ -1171,10 +1173,11 @@ An archive that would overflow any of these limits raises a
 silently wrapping a ZIP field. No output file is created on such an error.
 ZIP64 writing is not supported.
 
-### `numlua.savez_compressed(path, arrays[, options])`
+### `numlua.savez_compressed(path_or_file, arrays[, options])`
 
 Writes the same archive with every member deflated (ZIP method 8), matching
-`np.savez_compressed`, and returns `true`. Compression uses the optional system
+`np.savez_compressed`, and returns `true`. `path_or_file` accepts an open Lua
+file handle exactly like `savez`. Compression uses the optional system
 zlib loaded through LuaJIT FFI; no package beyond the zlib already used for
 reading deflate archives is required.
 
@@ -1189,12 +1192,16 @@ chooses the NPY member header version written by either path. An invalid
 version fails before any file is created. `NUMLUA_DISABLE_ZLIB=1` forces the
 no-zlib path for testing.
 
-### `numlua.loadz(path)`
+### `numlua.loadz(path_or_file)`
 
-Reads an `.npz` archive and returns a table whose keys are member names with
+Reads an `.npz` archive from a path or an open Lua file handle and returns a
+table whose keys are member names with
 the `.npy` suffix removed. Members are ordinary `.npy` files, so v1.0, v2.0,
 and v3.0 member headers are all accepted; a ZIP end-of-central-directory
-comment is ignored. Supported ZIP compression methods are:
+comment is ignored. An open handle is read from its current position to EOF and
+is left open, so seek to the start of a later archive before reading it;
+`loadz` cannot delimit concatenated archives on its own. Supported ZIP
+compression methods are:
 
 | method | written by | availability |
 | --- | --- | --- |
@@ -1417,9 +1424,9 @@ dtype, or backend constraints are forwarded as-is.
 - `.npy` reading supports v1.0, v2.0, and v3.0 headers; writing defaults to
   v1.0 and can emit v2.0/v3.0 with the `version` option. Files must be C order
   on little-endian hosts and use the dtypes listed above. Native-endian `=`
-  descr values are only aliases for the little-endian `<` spellings. `save`
-  and `load` accept open Lua file handles in addition to paths; the `.npz`
-  functions remain path-only.
+  descr values are only aliases for the little-endian `<` spellings. `save`,
+  `load`, `savez`, `savez_compressed`, and `loadz` accept open Lua file handles
+  in addition to paths; `loadz` reads from the current handle position to EOF.
 - `take` follows NumPy's scalar/N-D index result shapes but uses 1-based
   indices and rejects negative index values; NumPy resolves negatives relative
   to the end of the axis.

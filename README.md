@@ -312,13 +312,19 @@ directly through its tensor adapter. See `examples/plot.lua`.
 
 ## `.npz` I/O
 
-`numlua.savez(path, { arrays = tensor, ... })` writes a stored (uncompressed)
-ZIP archive of `.npy` members; `numlua.loadz(path)` returns a table keyed by
-array name. This matches the common `np.savez` output and needs no compression
-library. `numlua.savez_compressed` writes deflate-compressed members through
-the optional system zlib, matching `np.savez_compressed`; without zlib it
-raises a clear error unless `{ fallback = "stored" }` is passed, in which case
-it writes stored entries and returns `true, "stored"`.
+`numlua.savez(path_or_file, { arrays = tensor, ... })` writes a stored
+(uncompressed) ZIP archive of `.npy` members; `numlua.loadz(path_or_file)`
+returns a table keyed by array name. This matches the common `np.savez` output
+and needs no compression library. `numlua.savez_compressed` writes
+deflate-compressed members through the optional system zlib, matching
+`np.savez_compressed`; without zlib it raises a clear error unless
+`{ fallback = "stored" }` is passed, in which case it writes stored entries and
+returns `true, "stored"`.
+
+Both writers and the reader accept an open Lua file handle as well as a path.
+Caller-owned handles are used at their current position and are never closed;
+`loadz` reads to EOF, so seek to the start of a later archive before reading
+it.
 
 Both writers accept an options table with `version = 1`, `2`, or `3` (or
 `"1.0"`, `"2.0"`, `"3.0"`), selecting the NPY header version for every member.
@@ -584,8 +590,9 @@ This is an MVP, not a complete NumPy replacement:
   on little-endian hosts and use the dtypes above; `load` reads the complete
   file into memory before copying it into a tensor. Native-endian `=` descr
   values are accepted only as aliases for the little-endian `<` spellings.
-  `save`/`load`, `fromfile`/`tofile`, and `loadtxt`/`savetxt` accept open Lua
-  file handles and leave them open; `.npz` I/O remains path-only;
+  `save`/`load`, `savez`/`savez_compressed`/`loadz`, `fromfile`/`tofile`, and
+  `loadtxt`/`savetxt` accept open Lua file handles and leave them open;
+  `loadz` reads from the current position to EOF;
 - `.npz` writing is stored by default and deflate through `savez_compressed`;
   reading supports stored and deflate entries. Deflate needs a system zlib
   library loaded through FFI, while stored archives remain dependency-free.
