@@ -446,4 +446,263 @@ function npy.load(path)
   return tensor
 end
 
+-- ---------------------------------------------------------------------------
+-- raw binary array I/O (NumPy fromfile/tofile)
+-- ---------------------------------------------------------------------------
+
+local IO_DTYPE_BY_NAME = {}
+for _, info in pairs(DTYPES) do
+  IO_DTYPE_BY_NAME[info.name] = info
+  IO_DTYPE_BY_NAME[info.descr] = info
+end
+
+local function io_dtype(value, name, default_id)
+  if value == nil then
+    local default = DTYPES[default_id]
+    return { name = default.name, size = LOAD_DTYPES[default.descr].size }
+  end
+  local info
+  if type(value) == "string" then
+    info = IO_DTYPE_BY_NAME[value]
+  elseif type(value) == "number" and value % 1 == 0 then
+    info = DTYPES[value]
+  end
+  if info == nil then
+    error(string.format(
+      "numlua.%s: unsupported dtype %s (supported: %s)", name,
+      type(value) == "string" and ("'" .. value .. "'") or tostring(value),
+      SUPPORTED_NAMES), 3)
+  end
+  return { name = info.name, size = LOAD_DTYPES[info.descr].size }
+end
+
+local function io_options(options, name, allowed)
+  if options ~= nil and type(options) ~= "table" then
+    error("numlua." .. name .. ": options must be a table or nil", 3)
+  end
+  options = options or {}
+  for key in pairs(options) do
+    if not allowed[key] then
+      error("numlua." .. name .. ": unknown option '" ..
+        tostring(key) .. "'", 3)
+    end
+  end
+  return options
+end
+
+local FROMFILE_OPTIONS = {
+  dtype = true,
+  count = true,
+  offset = true,
+  sep = true,
+}
+
+local TOFILE_OPTIONS = { sep = true }
+
+local function check_sep(sep, name)
+  if sep == nil then return end
+  if type(sep) ~= "string" then
+    error("numlua." .. name .. ": sep must be a string or nil", 3)
+  end
+  if sep ~= "" then
+    error("numlua." .. name .. ": text-mode sep is not supported; use " ..
+      "loadtxt/savetxt for text data", 3)
+  end
+end
+
+local function check_count(value, name)
+  if value == nil then return -1 end
+  if type(value) ~= "number" or value ~= value or value % 1 ~= 0 or
+      value < -1 or value == math.huge or value == -math.huge then
+    error("numlua." .. name .. ": count must be an integer >= -1", 3)
+  end
+  return value
+end
+
+local function check_offset(value, name)
+  if value == nil then return 0 end
+  if type(value) ~= "number" or value ~= value or value % 1 ~= 0 or
+      value < 0 or value == math.huge or value == -math.huge then
+    error("numlua." .. name .. ": offset must be a non-negative integer", 3)
+  end
+  return value
+end
+
+local function raw_target(source, name)
+  local kind = io.type(source)
+  if kind == "closed file" then
+    error("numlua." .. name .. ": cannot use a closed file handle", 3)
+  end
+  if kind ~= "file" and (type(source) ~= "string" or source == "") then
+    error("numlua." .. name ..
+      " expects a non-empty file path or open file handle", 3)
+  end
+  return kind == "file"
+end
+
+local function open_raw_source(source, name)
+  local handle, open_error = io.open(source, "rb")
+  if handle == nil then
+    error("numlua." .. name .. ": cannot open '" .. source ..
+      "' for reading: " .. tostring(open_error), 3)
+  end
+  return handle
+end
+
+local function skip_raw_bytes(handle, offset, name, label)
+  if offset == 0 then return end
+  local position, seek_error = handle:seek("cur", offset)
+  if position ~= nil then return end
+  local skipped, read_error = handle:read(offset)
+  if skipped == nil or #skipped < offset then
+    error(string.format(
+      "numlua.%s: cannot skip %d byte(s) in %s: %s", name, offset, label,
+      tostring(read_error or seek_error)), 3)
+  end
+end
+
+local function read_raw_data(handle, count, size, name, label)
+  if count < 0 then
+    local data, read_error = handle:read("*a")
+    if data == nil then
+      error("numlua." .. name .. ": failed reading " .. label .. ": " ..
+        tostring(read_error), 3)
+    end
+    if #data % size ~= 0 then
+      error(string.format(
+        "numlua.%s: %s contains %d byte(s), not a multiple of the %d-byte " ..
+        "dtype size", name, label, #data, size), 3)
+    end
+    return data, #data / size
+  end
+  local expected = count * size
+  if expected == 0 then return "", 0 end
+  local data, read_error = handle:read(expected)
+  if data == nil or #data < expected then
+    error(string.format(
+      "numlua.%s: truncated %s: expected %d byte(s), got %d", name, label,
+      expected, data == nil and 0 or #data), 3)
+  end
+  return data, count
+end
+
+-- fromfile(path_or_file[, options]) reads raw little-endian elements as a 1-D
+-- tensor.  Options are dtype (default float64), count (-1 for all), offset in
+-- bytes, and sep (only the empty binary separator is supported).
+function npy.fromfile(source, options)
+  local is_handle = raw_target(source, "fromfile")
+  if not host_is_little_endian() then
+    error("numlua.fromfile: only little-endian hosts are supported", 2)
+  end
+  options = io_options(options, "fromfile", FROMFILE_OPTIONS)
+  local info = io_dtype(options.dtype, "fromfile", 1)
+  local count = check_count(options.count, "fromfile")
+  local offset = check_offset(options.offset, "fromfile")
+  check_sep(options.sep, "fromfile")
+
+  local handle, owns_handle = source, false
+  local label = "file handle"
+  if not is_handle then
+    handle = open_raw_source(source, "fromfile")
+    owns_handle = true
+    label = "'" .. source .. "'"
+  end
+
+  local ok, data_or_error, element_count = pcall(function()
+    skip_raw_bytes(handle, offset, "fromfile", label)
+    return read_raw_data(handle, count, info.size, "fromfile", label)
+  end)
+  local close_ok, close_error = true, nil
+  if owns_handle then
+    close_ok, close_error = handle:close()
+  end
+  if not ok then
+    error(data_or_error, 0)
+  end
+  if not close_ok then
+    error("numlua.fromfile: failed closing " .. label .. ": " ..
+      tostring(close_error), 2)
+  end
+
+  local data = data_or_error
+  local elements = element_count
+  local tensor
+  if elements == 0 then
+    tensor = torch.empty({ 0 }, { dtype = info.name })
+  else
+    tensor = torch.empty({ elements }, { dtype = info.name })
+    local pointer = lib.lt_data_ptr(tensor.h)
+    if pointer == nil then
+      error("numlua.fromfile: could not access tensor storage: " ..
+        tostring(last_error()), 2)
+    end
+    ffi.copy(ffi.cast("void*", pointer), data, #data)
+  end
+  return tensor
+end
+
+-- tofile(path_or_file, tensor[, options]) writes the tensor's raw C-order
+-- little-endian bytes.  The only option is sep, and only "" (binary) is
+-- accepted.  Caller-owned handles are written at their current position and
+-- are never closed.
+function npy.tofile(target, tensor, options)
+  local is_handle = raw_target(target, "tofile")
+  if not torch.is_tensor(tensor) then
+    error("numlua.tofile expects a tensor, got " .. type(tensor), 2)
+  end
+  if not host_is_little_endian() then
+    error("numlua.tofile: only little-endian hosts are supported", 2)
+  end
+  options = io_options(options, "tofile", TOFILE_OPTIONS)
+  check_sep(options.sep, "tofile")
+
+  local info = DTYPES[tensor:dtype_id()]
+  if info == nil then
+    error(string.format(
+      "numlua.tofile: unsupported dtype '%s' (supported: %s)",
+      tensor:dtype(), SUPPORTED_NAMES), 2)
+  end
+
+  local handle, owns_handle = target, false
+  local label = "file handle"
+  if not is_handle then
+    local open_error
+    handle, open_error = io.open(target, "wb")
+    if handle == nil then
+      error("numlua.tofile: cannot open '" .. target ..
+        "' for writing: " .. tostring(open_error), 2)
+    end
+    owns_handle = true
+    label = "'" .. target .. "'"
+  end
+
+  -- detach() and contiguous() mirror save(): autograd metadata is not written
+  -- and a non-contiguous input is serialized in C order.
+  local contiguous = tensor:detach():contiguous()
+  local ok, write_error = true, nil
+  local nbytes = contiguous:nbytes()
+  if nbytes > 0 then
+    local pointer = lib.lt_data_ptr(contiguous.h)
+    if pointer == nil then
+      ok, write_error = nil, last_error()
+    else
+      ok, write_error = handle:write(ffi.string(pointer, nbytes))
+    end
+  end
+  local close_ok, close_error = true, nil
+  if owns_handle then
+    close_ok, close_error = handle:close()
+  end
+
+  if ok == nil then
+    error("numlua.tofile: failed writing " .. label .. ": " ..
+      tostring(write_error), 2)
+  end
+  if not close_ok then
+    error("numlua.tofile: failed closing " .. label .. ": " ..
+      tostring(close_error), 2)
+  end
+  return true
+end
+
 return npy

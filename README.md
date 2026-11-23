@@ -270,7 +270,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Predicates/selection | `where`, `select`, `clip`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
-| NumPy I/O | `save`, `load`, `savez`, `savez_compressed`, `loadz` |
+| NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt` |
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
@@ -398,6 +398,22 @@ handle:seek("set", 0)
 assert(numlua.load(handle):equal(a))
 handle:close()
 ```
+
+Raw binary arrays use `numlua.tofile(path_or_file, tensor)` and
+`numlua.fromfile(path_or_file, options)`. These mirror NumPy's raw
+`tofile`/`fromfile` pair: there is no header, so the reader must be told the
+dtype. Both accept paths or open Lua handles, write/read C-order little-endian
+bytes, and leave caller-owned handles open. `fromfile` supports `dtype`
+(default `"float64"`), `count` (`-1` for all), and a byte `offset`; the only
+accepted `sep` is the binary empty string.
+
+```lua
+numlua.tofile("values.bin", numlua.array({ 1, 2, 3 }, { dtype = "int32" }))
+local values = numlua.fromfile("values.bin", { dtype = "int32" })
+-- {1, 2, 3}
+```
+
+Use `.npy` instead when the file should carry its dtype and shape.
 
 ## Text/CSV I/O
 

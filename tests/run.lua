@@ -179,6 +179,7 @@ local files = {
   "test_dtype.lua",
   "test_npy.lua",
   "test_npy_handles.lua",
+  "test_raw_io.lua",
   "test_npy_versions.lua",
   "test_npy_fixtures.lua",
   "test_generated_fixtures.lua",

@@ -1027,6 +1027,60 @@ local values = numlua.load(handle)
 handle:close()
 ```
 
+### `numlua.fromfile(path_or_file[, options])`
+
+Reads raw little-endian elements from a path or an already-open Lua file
+handle and returns a 1-D tensor. Unlike `load`, there is no `.npy` header and
+therefore no dtype or shape metadata: pass the matching `dtype` option. Options:
+
+| option | default | meaning |
+| --- | --- | --- |
+| `dtype` | `"float64"` | element dtype, a luatorch name/id or supported `descr` |
+| `count` | `-1` | number of elements to read; `-1` reads to the end |
+| `offset` | `0` | bytes to skip before reading |
+| `sep` | `""` | only the empty binary separator is supported |
+
+The supported dtypes are the same as `save`: `float16`, `float32`, `float64`,
+`int8`, `int16`, `int32`, `int64`, `uint8`, and `bool`. `fromfile` consumes
+exactly `offset + count * itemsize` bytes from a caller-owned handle (or to the
+end when `count = -1`), leaves the handle open and positioned after the data,
+and never reads past the requested count. A path is opened and closed by the
+call. Truncated input, a final byte count that is not a multiple of the dtype
+size when reading to the end, unsupported dtypes, negative counts/offsets,
+closed handles, and a non-empty `sep` raise a `numlua.fromfile:` error.
+
+```lua
+numlua.tofile("values.bin", numlua.array({ 1, 2, 3 },
+  { dtype = "int32" }))
+local values = numlua.fromfile("values.bin", { dtype = "int32" })
+-- {1, 2, 3}, dtype int32
+local middle = numlua.fromfile("values.bin", {
+  dtype = "int32", offset = 4, count = 1,
+})
+-- {2}
+```
+
+### `numlua.tofile(path_or_file, tensor[, options])`
+
+Writes the tensor's raw C-order little-endian bytes to a path or an open Lua
+file handle and returns `true`. Autograd metadata is not written, and a
+non-contiguous tensor is materialized in C order first. The only option is
+`sep`, and only `""` (binary mode) is accepted; text output uses `savetxt`.
+Caller-owned handles are written at their current position and are never
+closed. Unsupported dtypes, non-empty `sep`, invalid targets, and write
+failures raise a `numlua.tofile:` error.
+
+Raw files carry no shape or dtype, so `fromfile` must use the same dtype that
+`tofile` wrote. Use `.npy` when self-describing files matter.
+
+```lua
+local handle = assert(io.open("stream.bin", "w+b"))
+numlua.tofile(handle, numlua.array({ 4, 5 }, { dtype = "float32" }))
+handle:seek("set", 0)
+local values = numlua.fromfile(handle, { dtype = "float32" })
+handle:close()
+```
+
 ### `numlua.savez(path, arrays[, options])`
 
 Writes a ZIP archive of `.npy` members using the stored (uncompressed) method
