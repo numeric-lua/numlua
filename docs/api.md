@@ -519,6 +519,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.diff(t[, n[, axis]])` | default axis is the last |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices; at least 1-D input |
+| `numlua.sort(t[, axis[, descending]])` | sorted values; last axis by default; at least 1-D input |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; scalar and N-D index tensors |
 | `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
 | `numlua.apply_along_axis(func, axis, t[, ...])` | call `func` on each 1-D slice along `axis` (materialized) |
@@ -546,6 +547,19 @@ in C order before selection. All selections are 1-based.
 (the last axis by default). `descending` is a numlua extension; when provided it
 must be a boolean or `nil`, so a typo such as `1` or `"true"` raises an error
 instead of silently sorting ascending.
+
+`numlua.sort(t[, axis[, descending]])` returns the sorted values, using the
+last axis by default like `np.sort`. `axis` may be negative. Passing
+`descending = true` is a numlua extension that matches
+`numlua.argsort(t, axis, true)`, and the result owns independent storage.
+Inputs below 1-D are rejected, matching `argsort`; use `numlua.ravel` first if a
+flat sort is wanted.
+
+```lua
+local a = numlua.array({ { 3, 1, 2 }, { 6, 4, 5 } })
+numlua.sort(a)          -- {{1, 2, 3}, {4, 5, 6}}
+numlua.sort(a, 2, true) -- {{3, 2, 1}, {6, 5, 4}}
+```
 
 `numlua.take_along_axis(t, indices[, axis])` is the per-slice companion to
 `take`, matching `np.take_along_axis`. `indices` must be an integer tensor with

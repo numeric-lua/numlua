@@ -167,6 +167,7 @@ local files = {
   "test_apply_along_axis.lua",
   "test_apply_over_axes.lua",
   "test_selection.lua",
+  "test_numpy_helpers.lua",
   "test_layout_extensions.lua",
   "test_npz.lua",
   "test_dtype_promotion.lua",

@@ -850,6 +850,21 @@ function M.argsort(t, axis_value, descending)
   return indices
 end
 
+-- sort returns the values in ascending order along the last axis by default,
+-- matching np.sort.  The optional descending flag is the same numlua
+-- extension as argsort.  The result owns independent storage.
+function M.sort(t, axis_value, descending)
+  tensor(t, "sort")
+  if t:dim() == 0 then
+    error("numlua.sort expects at least a 1-D tensor", 2)
+  end
+  if descending ~= nil and type(descending) ~= "boolean" then
+    error("numlua.sort: descending must be a boolean or nil", 2)
+  end
+  local dim = axis_value == nil and t:dim() or axis(axis_value, t:dim(), "sort")
+  return (t:sort(dim, descending == true))
+end
+
 local TAKE_INDEX_DTYPES = {
   int64 = true,
   int32 = true,
