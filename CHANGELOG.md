@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.22.0 — 2026-11-23
+
+### Added
+
+- `numlua.rot90(t[, k[, axes]])` rotates in the plane of two 1-based axes,
+  reducing `k` modulo four; `numlua.fliplr` and `numlua.flipud` reverse the
+  column and row axes. All three preserve dtype (`bool` included); `rot90`
+  materializes its result except for `k = 0`, which returns the input.
+- `numlua.diagonal(t[, offset[, axis1[, axis2]]])` extracts a diagonal over any
+  two axes and appends it after the batch dimensions, and
+  `numlua.trace(t[, offset[, axis1[, axis2]]])` sums that diagonal while
+  keeping batch axes. Non-empty numeric diagonals are writable views; bool
+  diagonals are materialized through `uint8`.
+- `numlua.zeros_like`, `numlua.ones_like`, `numlua.empty_like`, and
+  `numlua.full_like` inherit a prototype's shape and dtype and accept `dtype`
+  and NumPy 2.x-style `shape` overrides, including 0-D results. `empty_like`
+  leaves storage uninitialized; `full_like` requires a numeric fill value.
+- `numlua.savez`, `numlua.savez_compressed`, and `numlua.loadz` accept an
+  already-open Lua file handle as well as a path. Caller-owned handles are used
+  at their current position and are never closed; `loadz` reads to EOF.
+- `numlua.fromfile` and `numlua.tofile` support NumPy-style text mode through a
+  non-empty `sep`. `fromfile` parses float `nan`/`inf` spellings, truncates
+  numeric integer fields toward zero, and accepts `True`/`False`/`1`/`0` for
+  bool; `tofile` writes values joined by `sep` with a trailing newline and
+  accepts a printf-style `format`.
+
+### Changed
+
+- The release metadata, README, API reference, and runnable example cover the
+  new rotation, diagonal, `*_like`, `.npz` handle, and raw text-mode behavior.
+- `.npz` and raw text I/O now document their handle ownership and EOF rules;
+  the previous `sep`-is-binary-only restriction is gone.
+- No runtime dependency was added; all new work delegates to luatorch or uses
+  only the Lua standard library.
+
+### Tests
+
+- 315 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_rotate.lua` covers quarter turns, negative/reduced `k`, explicit axes,
+  dtypes, materialization, and rank errors; `test_diagonal.lua` covers offsets,
+  axis pairs, batch and empty shapes, bool input, trace shapes, and errors;
+  `test_like.lua` covers dtype/shape overrides, 0-D and non-contiguous
+  prototypes, independence, and invalid options; `test_npz_handles.lua` covers
+  stored/deflate handle round-trips, offsets, compressed fallback, and failure
+  ownership; `test_raw_text.lua` covers every dtype, separators, formats,
+  count/offset, parsing, handles, and error paths.
+
 ## 0.21.0 — 2026-11-23
 
 ### Added

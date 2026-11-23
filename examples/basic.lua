@@ -63,6 +63,13 @@ print("tril:\n" .. numlua.tril(numlua.array({
 })):format())
 assert(numlua.diag(numlua.array({ 1, 1 })):equal(numlua.eye(2)))
 
+print("rot90:\n" .. numlua.rot90(a):format())
+print("diagonal: " .. table.concat(numlua.diagonal(a):totable(), ", "))
+print("trace = " .. tostring(numlua.trace(a):item()))
+assert(numlua.trace(a):item() == 6)
+local like = numlua.zeros_like(a, { dtype = "float64" })
+assert(numlua.dtype(like) == "float64" and like:sum():item() == 0)
+
 heading("Matrix multiply")
 local weights = numlua.array({
   { 1.0, -1.0 },
@@ -155,6 +162,17 @@ handle:close()
 print("restored the same tensor through an open file handle")
 os.remove(path)
 
+local npz_path = root .. "/examples/.basic-demo.npz"
+local npz_handle = assert(io.open(npz_path, "w+b"))
+assert(numlua.savez(npz_handle, { block = product }))
+npz_handle:seek("set", 0)
+local archive = numlua.loadz(npz_handle)
+assert(archive.block:equal(product))
+assert(io.type(npz_handle) == "file")
+npz_handle:close()
+print("restored the same tensor from an .npz file handle")
+os.remove(npz_path)
+
 heading("Raw binary round-trip")
 local raw_path = root .. "/examples/.basic-demo.bin"
 local raw_input = numlua.array({ 1, 2, 3 }, { dtype = "int32" })
@@ -164,6 +182,14 @@ assert(raw_restored:equal(raw_input))
 print("restored " .. tostring(raw_restored:numel()) ..
   " int32 values from " .. raw_path)
 os.remove(raw_path)
+
+local raw_text_path = root .. "/examples/.basic-demo-raw.txt"
+assert(numlua.tofile(raw_text_path, raw_input, { sep = "," }))
+local raw_text_restored = numlua.fromfile(raw_text_path,
+  { dtype = "int32", sep = "," })
+assert(raw_text_restored:equal(raw_input))
+print("restored int32 values from comma-separated text")
+os.remove(raw_text_path)
 
 heading("Text/CSV round-trip")
 local text_path = root .. "/examples/.basic-demo.csv"
