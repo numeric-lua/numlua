@@ -521,6 +521,8 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices; at least 1-D input |
 | `numlua.sort(t[, axis[, descending]])` | sorted values; last axis by default; at least 1-D input |
 | `numlua.unique(t[, options])` | sorted unique flattened values with optional index/inverse/counts |
+| `numlua.nonzero(t)` | one 1-based coordinate tensor per input axis |
+| `numlua.argwhere(t)` | `(N, ndim)` int64 matrix of 1-based non-zero coordinates |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; scalar and N-D index tensors |
 | `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
 | `numlua.apply_along_axis(func, axis, t[, ...])` | call `func` on each 1-D slice along `axis` (materialized) |
@@ -586,6 +588,23 @@ local values, index, inverse, counts = numlua.unique(a, {
 -- index   = {2, 3, 1}
 -- inverse = {{3, 1, 2}, {3, 2, 1}}
 -- counts  = {2, 2, 2}
+```
+
+`numlua.nonzero(t)` returns one `int64` coordinate tensor per input axis,
+matching `np.nonzero` with 1-based coordinates. The input must be at least 1-D;
+columns are enumerated in C order. Because the number of return values depends
+on the input rank, assign one variable per axis (for example
+`local rows, columns = numlua.nonzero(a)`). `numlua.argwhere(t)` returns the
+same coordinates as a single `(N, ndim)` `int64` matrix, including `(0, ndim)`
+for empty input. Both functions treat NaN and any non-zero value as non-zero.
+Use `numlua.flatnonzero` for a flat index vector or for 0-D input.
+
+```lua
+local a = numlua.array({ { 0, 2, 0 }, { 3, 0, 4 } })
+local rows, columns = numlua.nonzero(a)
+-- rows    = {1, 2, 2}
+-- columns = {2, 1, 3}
+numlua.argwhere(a) -- {{1, 2}, {2, 1}, {2, 3}}
 ```
 
 `numlua.take_along_axis(t, indices[, axis])` is the per-slice companion to

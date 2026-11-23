@@ -475,6 +475,40 @@ function numlua.unique(t, options)
   return unpack(result, 1, #result)
 end
 
+-- nonzero/argwhere use luatorch's C-order coordinate kernel.  luatorch returns
+-- a 1-D empty tensor for an empty selection, so normalize that to NumPy's
+-- (0, ndim) coordinate shape before splitting or returning it.
+local function nonzero_coordinates(t, name)
+  check_tensor(t, name)
+  if t:dim() == 0 then
+    error(string.format(
+      "numlua.%s expects at least a 1-D tensor (use numlua.flatnonzero " ..
+      "for 0-D input)", name), 3)
+  end
+  local coords = t:nonzero()
+  if coords:numel() == 0 then
+    return torch.empty({ 0, t:dim() }, { dtype = "int64" })
+  end
+  return coords
+end
+
+-- nonzero returns one 1-based coordinate tensor per input axis, like NumPy's
+-- tuple of index arrays.  The variable number of results follows the input
+-- rank; assign one variable per axis or collect the results with a helper.
+function numlua.nonzero(t)
+  local coords = nonzero_coordinates(t, "nonzero")
+  local result = {}
+  for dim = 1, t:dim() do
+    result[dim] = coords:narrow(2, dim, 1):squeeze(2)
+  end
+  return unpack(result, 1, #result)
+end
+
+-- argwhere returns an (N, ndim) int64 tensor of 1-based coordinates.
+function numlua.argwhere(t)
+  return nonzero_coordinates(t, "argwhere")
+end
+
 function numlua.percentile(t, q, axis, keepdims)
   if type(q) == "table" then
     local scaled = {}

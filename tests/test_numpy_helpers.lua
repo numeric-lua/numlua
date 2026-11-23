@@ -4,6 +4,10 @@
 
 local numlua = require("numlua")
 
+local function pack(...)
+  return { n = select("#", ...), ... }
+end
+
 test("sort returns values along the last axis by default", function()
   local matrix = numlua.array({ { 6, 1, 2 }, { 3, 4, 5 } })
   local sorted = numlua.sort(matrix)
@@ -170,4 +174,87 @@ test("unique validates options and the input", function()
   assert_error(function()
     numlua.unique(t, { return_index = "yes" })
   end, "return_index must be a boolean")
+end)
+
+test("nonzero returns one 1-based coordinate tensor per axis", function()
+  local matrix = numlua.array({ { 0, 2, 0 }, { 3, 0, 4 } })
+  local rows, columns = numlua.nonzero(matrix)
+  assert_dtype(rows, "int64")
+  assert_dtype(columns, "int64")
+  assert_shape(rows, { 3 })
+  assert_shape(columns, { 3 })
+  assert_tensor(rows, { 1, 2, 2 })
+  assert_tensor(columns, { 2, 1, 3 })
+  assert_eq(select("#", numlua.nonzero(matrix)), 2)
+
+  local vector = numlua.array({ 0, 5, 0, -1 })
+  local positions = numlua.nonzero(vector)
+  assert_shape(positions, { 2 })
+  assert_tensor(positions, { 2, 4 })
+  assert_eq(select("#", numlua.nonzero(vector)), 1)
+
+  -- A 3-D result is enumerated in C order, with the last axis fastest.
+  local cube = numlua.array({
+    { { 0, 2 }, { 0, 0 } },
+    { { 3, 0 }, { 0, 4 } },
+  })
+  local first, second, third = numlua.nonzero(cube)
+  assert_tensor(first, { 1, 2, 2 })
+  assert_tensor(second, { 1, 1, 2 })
+  assert_tensor(third, { 2, 1, 2 })
+end)
+
+test("argwhere returns NumPy-shaped coordinate matrices", function()
+  local matrix = numlua.array({ { 0, 2, 0 }, { 3, 0, 4 } })
+  local coords = numlua.argwhere(matrix)
+  assert_dtype(coords, "int64")
+  assert_shape(coords, { 3, 2 })
+  assert_tensor(coords, { { 1, 2 }, { 2, 1 }, { 2, 3 } })
+
+  local vector = numlua.array({ 0, 5, 0, -1 })
+  local vector_coords = numlua.argwhere(vector)
+  assert_shape(vector_coords, { 2, 1 })
+  assert_tensor(vector_coords, { { 2 }, { 4 } })
+
+  local cube = numlua.argwhere(numlua.array({
+    { { 0, 2 }, { 0, 0 } },
+    { { 3, 0 }, { 0, 4 } },
+  }))
+  assert_shape(cube, { 3, 3 })
+  assert_tensor(cube, { { 1, 1, 2 }, { 2, 1, 1 }, { 2, 2, 2 } })
+end)
+
+test("nonzero treats NaN and booleans as non-zero and handles empties",
+    function()
+  local special = numlua.nonzero(numlua.array({ 0, 0 / 0, 3 }))
+  assert_tensor(special, { 2, 3 })
+  local bools = numlua.nonzero(
+    numlua.array({ true, false, true }, { dtype = "bool" }))
+  assert_tensor(bools, { 1, 3 })
+
+  -- C order coordinates of a non-contiguous transpose stay 1-based.
+  local transposed = numlua.transpose(
+    numlua.array({ { 0, 2, 0 }, { 3, 0, 4 } }))
+  local rows, columns = numlua.nonzero(transposed)
+  assert_tensor(rows, { 1, 2, 3 })
+  assert_tensor(columns, { 2, 1, 2 })
+
+  local packed = pack(numlua.nonzero(numlua.zeros(2, 0)))
+  assert_eq(packed.n, 2)
+  assert_shape(packed[1], { 0 })
+  assert_shape(packed[2], { 0 })
+  assert_shape(numlua.argwhere(numlua.zeros(2, 0)), { 0, 2 })
+
+  local empty_vector = numlua.nonzero(numlua.zeros(0))
+  assert_shape(empty_vector, { 0 })
+  assert_shape(numlua.argwhere(numlua.zeros(0)), { 0, 1 })
+end)
+
+test("nonzero and argwhere reject 0-D and non-tensor inputs", function()
+  assert_error(function() numlua.nonzero(numlua.array(3)) end,
+    "at least a 1-D tensor")
+  assert_error(function() numlua.argwhere(numlua.array(3)) end,
+    "at least a 1-D tensor")
+  assert_error(function() numlua.nonzero({ 1, 2 }) end, "expects a tensor")
+  assert_error(function() numlua.argwhere(nil) end, "expects a tensor")
 end)

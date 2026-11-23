@@ -240,7 +240,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize` |
 | Combine | `concatenate`, `stack` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `take`, `take_along_axis`, `put` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
 | Reductions | `sum`, `mean`, `max`, `min`, `argmax`, `argmin` |
@@ -253,8 +253,9 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `pad`,
 `tile`, `repeat_`, `flip`, `roll`, `diff`, `cumsum`, `cumprod`, `argsort`,
-`sort`, `unique`, `take`, and `take_along_axis` allocate independent storage;
-see [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
+`sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
+allocate independent storage; see
+[docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
 `put` is the exception: it writes into its input tensor in place and returns
 it. `pad` supports `constant`, `edge`, `linear_ramp`, `maximum`, `mean`,
 `median`, `minimum`, `reflect`, `symmetric`, and `wrap` modes. Its fill value
