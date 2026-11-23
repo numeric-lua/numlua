@@ -272,7 +272,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Group | Functions |
 | --- | --- |
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace` |
-| Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `tril`, `triu` |
+| Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
@@ -292,6 +292,9 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 `sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
 allocate independent storage (`rot90(t, 0)` returns the input); see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
+`diagonal` returns a writable view for non-empty numeric input, while `trace`
+sums that diagonal and returns a 0-D tensor for 2-D input or the batch shape
+for higher-rank input.
 `put` is the exception: it writes into its input tensor in place and returns
 it. `pad` supports `constant`, `edge`, `linear_ramp`, `maximum`, `mean`,
 `median`, `minimum`, `reflect`, `symmetric`, and `wrap` modes. Its fill value

@@ -215,6 +215,35 @@ numlua.diagflat(numlua.array({ { 1, 2 }, { 3, 4 } }))
 -- a 4 x 4 matrix with 1, 2, 3, 4 on the main diagonal
 ```
 
+### `numlua.diagonal(t[, offset[, axis1[, axis2]]])`
+
+Extracts the `offset`-th diagonal from the plane spanned by `axis1` and
+`axis2`, appending the diagonal as the last dimension after any batch
+dimensions. Axes are 1-based, default to `1` and `2`, may be negative, and must
+be different; the input must be at least 2-D. The offset follows `diag`:
+positive is above the main diagonal and negative is below it. Non-empty numeric
+diagonals alias the input, matching NumPy's view (NumPy marks the view
+read-only; luatorch does not). `bool` input is supported by casting through
+`uint8`, so bool diagonals are materialized. An out-of-range offset returns an
+empty last dimension.
+
+```lua
+local cube = numlua.arange(24):reshape(2, 3, 4)
+numlua.diagonal(cube, 0, 1, 3) -- shape {3, 2}: {{0, 13}, {4, 17}, {8, 21}}
+```
+
+### `numlua.trace(t[, offset[, axis1[, axis2]]])`
+
+Sums the diagonal selected by `diagonal` and returns a tensor. A 2-D input
+produces a 0-D tensor; higher-rank input keeps the batch dimensions, so the
+above 3-D example returns shape `{3}`. The dtype follows the delegated sum, so
+`bool` and narrow integer diagonals use luatorch/ATen's reduction dtype rather
+than NumPy's default integer promotion.
+
+```lua
+numlua.trace(numlua.array({ { 1, 2 }, { 3, 4 } })) -- 0-D tensor containing 5
+```
+
 ### `numlua.tril(t[, k])`, `numlua.triu(t[, k])`
 
 Return a copy with the elements above (`tril`) or below (`triu`) the `k`-th
@@ -638,6 +667,8 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.resize(t, shape)` | zero-fill/truncate to a new shape (materialized) |
 | `numlua.diag(v[, k])` | construct from a vector or extract a diagonal (materialized) |
 | `numlua.diagflat(t[, k])` | flatten and construct a diagonal matrix (materialized) |
+| `numlua.diagonal(t[, offset[, axis1[, axis2]]])` | extract a diagonal over two axes (view for non-empty numeric input; bool is materialized) |
+| `numlua.trace(t[, offset[, axis1[, axis2]]])` | sum the selected diagonal, keeping batch axes |
 | `numlua.tril(t[, k])` / `numlua.triu(t[, k])` | zero one triangle of the last two axes (materialized) |
 | `numlua.split(t, sections[, axis])` | split along an axis; 1-based boundary tables (views) |
 | `numlua.array_split(t, sections[, axis])` | split into unequal sections (views) |
@@ -913,6 +944,9 @@ Views share storage with the input, so mutating one is visible through the
 other: `transpose`, `swapaxes`, `moveaxis`, `atleast_1d`, `atleast_2d`,
 `atleast_3d`, `squeeze`, `unsqueeze`, `broadcast_to`, `broadcast_arrays`,
 contiguous `reshape`, and contiguous `ravel`.
+
+`diagonal` returns a writable view for non-empty numeric input (a copy for
+`bool` input or an empty diagonal); `trace` only allocates its result.
 
 `split`, `array_split`, `hsplit`, `vsplit`, and `dsplit` return views created
 with `narrow`. These allocate independent storage: `resize`, `diag`,

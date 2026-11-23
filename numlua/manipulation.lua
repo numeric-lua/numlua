@@ -424,6 +424,44 @@ function M.diagflat(t, k)
   return M.diag(t:reshape({ t:numel() }), k)
 end
 
+local function diagonal_axes(t, axis1, axis2, name)
+  tensor(t, name)
+  if t:dim() < 2 then
+    error(string.format("numlua.%s expects at least a 2-D tensor", name), 2)
+  end
+  local first = axis1 == nil and 1 or axis(axis1, t:dim(), name)
+  local second = axis2 == nil and 2 or axis(axis2, t:dim(), name)
+  if first == second then
+    error(string.format("numlua.%s: axes must be different", name), 2)
+  end
+  return first, second
+end
+
+-- diagonal(t[, offset[, axis1[, axis2]]]) extracts a diagonal from the plane
+-- spanned by two axes, appending the diagonal dimension last like NumPy.  The
+-- offset is positive above and negative below the main diagonal.  Non-empty
+-- numeric diagonals alias the input, matching NumPy's view; bool input is
+-- routed through uint8 because ATen's diagonal does not accept bool, so bool
+-- diagonals are materialized.
+function M.diagonal(t, offset, axis1, axis2)
+  local first, second = diagonal_axes(t, axis1, axis2, "diagonal")
+  local k = diagonal_offset(offset, "diagonal")
+  if t:dtype() == "bool" then
+    return t:to("uint8"):diagonal(k, first, second):ne(0)
+  end
+  return t:diagonal(k, first, second)
+end
+
+-- trace sums the selected diagonal over its last axis and leaves the batch
+-- dimensions intact, like np.trace.  A 2-D input therefore returns a 0-D
+-- tensor; higher-rank input returns the batch shape.  The dtype is whatever
+-- the diagonal's sum produces (bool and narrow integers follow
+-- luatorch/ATen's reduction dtype).
+function M.trace(t, offset, axis1, axis2)
+  local diagonal = M.diagonal(t, offset, axis1, axis2)
+  return diagonal:sum(diagonal:dim())
+end
+
 local function triangular(t, k, upper, name)
   tensor(t, name)
   if t:dim() < 2 then
