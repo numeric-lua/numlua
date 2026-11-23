@@ -520,6 +520,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices; at least 1-D input |
 | `numlua.sort(t[, axis[, descending]])` | sorted values; last axis by default; at least 1-D input |
+| `numlua.unique(t[, options])` | sorted unique flattened values with optional index/inverse/counts |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; scalar and N-D index tensors |
 | `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
 | `numlua.apply_along_axis(func, axis, t[, ...])` | call `func` on each 1-D slice along `axis` (materialized) |
@@ -559,6 +560,32 @@ flat sort is wanted.
 local a = numlua.array({ { 3, 1, 2 }, { 6, 4, 5 } })
 numlua.sort(a)          -- {{1, 2, 3}, {4, 5, 6}}
 numlua.sort(a, 2, true) -- {{3, 2, 1}, {6, 5, 4}}
+```
+
+`numlua.unique(t[, options])` flattens the input in C order and returns the
+sorted unique values, following `np.unique` without an `axis` argument. The
+input may be 0-D; the result is always 1-D. The optional `options` table
+accepts `return_index`, `return_inverse`, and `return_counts`, all booleans.
+Requested results are returned after the values in NumPy's fixed order:
+`values[, index[, inverse[, counts]]]`. `index` contains the 1-based flat
+position of the first occurrence of each value, `inverse` has the input's
+shape (a 1-D shape for 0-D input) and maps each position to its 1-based slot
+in `values`, and `counts` gives the multiplicity of each value. All index
+results are `int64`; `values` keeps the input dtype. Unknown options and
+non-boolean flags raise a `numlua.unique:` error. There is no `axis`,
+`equal_nan`, or unsorted mode.
+
+```lua
+local a = numlua.array({ { 3, 1, 2 }, { 3, 2, 1 } })
+local values, index, inverse, counts = numlua.unique(a, {
+  return_index = true,
+  return_inverse = true,
+  return_counts = true,
+})
+-- values  = {1, 2, 3}
+-- index   = {2, 3, 1}
+-- inverse = {{3, 1, 2}, {3, 2, 1}}
+-- counts  = {2, 2, 2}
 ```
 
 `numlua.take_along_axis(t, indices[, axis])` is the per-slice companion to

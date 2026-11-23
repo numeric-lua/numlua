@@ -22,6 +22,8 @@ local manipulation = require("numlua.manipulation")
 local ufunc = require("numlua.ufunc")
 local npz = require("numlua.npz")
 
+local unpack = table.unpack or unpack
+
 local numlua = {}
 
 numlua.VERSION = "0.19.0"
@@ -413,6 +415,64 @@ function numlua.flatnonzero(t)
   local coords = t:reshape(-1):nonzero()
   if coords:numel() == 0 then return coords:reshape(-1) end
   return coords:narrow(2, 1, 1):squeeze(2)
+end
+
+local UNIQUE_OPTIONS = {
+  return_index = true,
+  return_inverse = true,
+  return_counts = true,
+}
+
+-- unique(t[, options]) flattens the input and returns the sorted unique
+-- values, optionally followed by first-occurrence indices, the inverse
+-- mapping, and counts in NumPy's order.  luatorch supplies the sort/unique
+-- kernel; numlua only derives return_index from the inverse mapping.
+function numlua.unique(t, options)
+  check_tensor(t, "unique")
+  if options ~= nil and type(options) ~= "table" then
+    error("numlua.unique: options must be a table or nil", 2)
+  end
+  options = options or {}
+  for key in pairs(options) do
+    if not UNIQUE_OPTIONS[key] then
+      error("numlua.unique: unknown option '" .. tostring(key) .. "'", 2)
+    end
+  end
+  for key in pairs(UNIQUE_OPTIONS) do
+    if options[key] ~= nil and type(options[key]) ~= "boolean" then
+      error("numlua.unique: " .. key .. " must be a boolean or nil", 2)
+    end
+  end
+
+  local want_index = options.return_index == true
+  local want_inverse = options.return_inverse == true
+  local want_counts = options.return_counts == true
+  local flat = t:reshape({ t:numel() })
+  local values, inverse, counts = flat:unique(
+    true, want_index or want_inverse, want_counts)
+
+  local index
+  if want_index then
+    local first = {}
+    local mapping = inverse:reshape(-1):totable()
+    for position = 1, #mapping do
+      local slot = mapping[position]
+      if first[slot] == nil then first[slot] = position end
+    end
+    index = torch.tensor(first, { dtype = "int64" })
+  end
+  if want_inverse then
+    inverse = inverse:reshape(t:dim() == 0 and { 1 } or t:sizes())
+  end
+
+  if not (want_index or want_inverse or want_counts) then
+    return values
+  end
+  local result = { values }
+  if want_index then result[#result + 1] = index end
+  if want_inverse then result[#result + 1] = inverse end
+  if want_counts then result[#result + 1] = counts end
+  return unpack(result, 1, #result)
 end
 
 function numlua.percentile(t, q, axis, keepdims)
