@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.19.0"
+print(numlua.VERSION) -- "0.20.0"
 ```
 
 ## Conventions
@@ -779,9 +779,10 @@ other: `transpose`, `swapaxes`, `moveaxis`, `atleast_1d`, `atleast_2d`,
 contiguous `reshape`, and contiguous `ravel`.
 
 These allocate independent storage: `resize`, `pad`, `tile`, `repeat_`, `flip`,
-`roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `take`, `take_along_axis`, and
-`apply_along_axis`. `reshape` and `ravel` also copy when their input is not
-contiguous, because ATen must materialize a C-order layout first. Tests cover
+`roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`,
+`argwhere`, `take`, `take_along_axis`, and `apply_along_axis`. `reshape` and
+`ravel` also copy when their input is not contiguous, because ATen must
+materialize a C-order layout first. Tests cover
 the view/copy boundary, including large arrays, so a regression cannot silently
 turn a view into a full-size copy or make an allocating helper alias its input.
 `take` and `take_along_axis` allocate independent results; `put` instead
@@ -823,7 +824,7 @@ v1.0. Pass `options.version = 2` or `3` (the strings `"2.0"` and `"3.0"` are
 accepted too) to write v2.0/v3.0 instead. Those versions replace v1.0's 2-byte
 header length with a 4-byte one; v3.0 additionally permits UTF-8 header text,
 though this writer only emits ASCII keys. Unknown options and invalid version
-values raise a `numlua.save:` error before the output file is opened. A v1.0
+values raise a `numlua.save:` error before any output is written. A v1.0
 header above 65535 bytes is rejected; v2.0/v3.0 headers are bounded by their
 32-bit length field. A caller-owned handle is written at its current position
 and is never closed by `save`; close or reposition it yourself. A closed handle
@@ -1162,7 +1163,9 @@ dtype, or backend constraints are forwarded as-is.
 - `.npy` reading supports v1.0, v2.0, and v3.0 headers; writing defaults to
   v1.0 and can emit v2.0/v3.0 with the `version` option. Files must be C order
   on little-endian hosts and use the dtypes listed above. Native-endian `=`
-  descr values are only aliases for the little-endian `<` spellings.
+  descr values are only aliases for the little-endian `<` spellings. `save`
+  and `load` accept open Lua file handles in addition to paths; the `.npz`
+  functions remain path-only.
 - `take` follows NumPy's scalar/N-D index result shapes but uses 1-based
   indices and rejects negative index values; NumPy resolves negatives relative
   to the end of the axis.
@@ -1187,8 +1190,13 @@ dtype, or backend constraints are forwarded as-is.
   is not supported by either text function. Unknown option keys are rejected,
   and `int64` text output can round values beyond the exactly representable
   double range; use `.npy` when exact large integers matter.
-- `argsort`'s `descending` flag is a numlua extension; NumPy has no positional
-  descending argument. The flag must be a boolean or `nil`.
+- `argsort` and `sort` accept a `descending` flag that is a numlua extension;
+  NumPy has no descending argument. The flag must be a boolean or `nil`.
+  `sort` defaults to the last axis and rejects 0-D input, like `argsort`.
+- `unique` always flattens and sorts; it has no `axis`, `equal_nan`, or unsorted
+  mode. Its first-occurrence and inverse indices are 1-based.
+- `nonzero` and `argwhere` return 1-based coordinates in C order and reject
+  0-D input; use `flatnonzero` for flat indices or a 0-D scalar.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.
 - `.npz` writing is stored by default and deflate through
   `savez_compressed`; reading supports stored and deflate entries. Deflate

@@ -56,7 +56,8 @@ test("new public API and format support are documented", function()
   local api = read_file(root .. "/docs/api.md")
   for _, symbol in ipairs({ "numlua.put", "numlua.take_along_axis",
       "numlua.apply_along_axis", "numlua.apply_over_axes",
-      "numlua.select" }) do
+      "numlua.select", "numlua.sort", "numlua.unique", "numlua.nonzero",
+      "numlua.argwhere" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -66,7 +67,14 @@ test("new public API and format support are documented", function()
       api:find("v3.0", 1, true) ~= nil,
     "docs/api.md does not document NPY v2.0/v3.0 reading")
   assert_true(api:find("numlua.save(path_or_file, tensor[, options])", 1, true) ~= nil,
-    "docs/api.md does not document the save version option")
+    "docs/api.md does not document save options")
+  assert_true(api:find("open Lua file handle", 1, true) ~= nil,
+    "docs/api.md does not document file-handle .npy I/O")
+  assert_true(api:find("numlua.nonzero", 1, true) ~= nil and
+      api:find("numlua.argwhere", 1, true) ~= nil,
+    "docs/api.md does not document nonzero/argwhere")
+  assert_true(api:find("numlua.unique", 1, true) ~= nil,
+    "docs/api.md does not document unique")
   assert_true(api:find("version = 2", 1, true) ~= nil,
     "docs/api.md does not document writing NPY v2.0")
   assert_true(api:find("0-D index removes", 1, true) ~= nil,
@@ -88,8 +96,8 @@ test("new public API and format support are documented", function()
   assert_true(api:find('-- "' .. numlua.VERSION .. '"', 1, true) ~= nil,
     "docs/api.md version example does not match numlua.VERSION")
 
-  for _, option in ipairs({ "skiprows", "max_rows", "usecols", "unpack",
-      "ndmin", "header", "footer", "comments", "newline" }) do
+  for _, option in ipairs({ "skiprows", "max_rows", "usecols", "converters",
+      "unpack", "ndmin", "header", "footer", "comments", "newline" }) do
     assert_true(api:find("`" .. option .. "`", 1, true) ~= nil,
       "docs/api.md does not document the text option " .. option)
   end
@@ -117,6 +125,15 @@ test("new public API and format support are documented", function()
     "README.md does not demonstrate numlua.apply_along_axis")
   assert_true(readme:find("numlua.apply_over_axes", 1, true) ~= nil,
     "README.md does not demonstrate numlua.apply_over_axes")
+  assert_true(readme:find("numlua.sort", 1, true) ~= nil and
+      readme:find("numlua.unique", 1, true) ~= nil,
+    "README.md does not document sort/unique")
+  assert_true(readme:find("numlua.argwhere", 1, true) ~= nil,
+    "README.md does not document argwhere")
+  assert_true(readme:find("converters", 1, true) ~= nil,
+    "README.md does not document loadtxt converters")
+  assert_true(readme:find("file handle", 1, true) ~= nil,
+    "README.md does not document .npy file handles")
   for _, option in ipairs({ "usecols", "ndmin", "header", "newline" }) do
     assert_true(readme:find(option, 1, true) ~= nil,
       "README.md does not mention the text option " .. option)

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.20.0 — 2026-11-23
+
+### Added
+
+- `numlua.sort(t[, axis[, descending]])`, the value-returning counterpart to
+  `argsort`. The last axis is the default, negative axes are accepted, and the
+  optional `descending` flag matches `argsort`'s numlua extension.
+- `numlua.unique(t[, options])`, matching `np.unique` without `axis`: the input
+  is flattened in C order and sorted unique values are returned. The
+  `return_index`, `return_inverse`, and `return_counts` boolean options append
+  results in NumPy's order, using 1-based first-occurrence/inverse indices.
+- `numlua.nonzero(t)` returns one 1-based C-order coordinate tensor per input
+  axis, and `numlua.argwhere(t)` returns the same coordinates as an
+  `(N, ndim)` `int64` matrix. Both reject 0-D input; `flatnonzero` remains the
+  flat/0-D helper.
+- `numlua.loadtxt(..., { converters = ... })` accepts a single function for all
+  physical columns or a table of 1-based physical column numbers to functions.
+  Converters receive the raw field string, run before the numeric parser, must
+  return a Lua number, and are validated with line/column errors.
+- `numlua.save` and `numlua.load` now accept an already-open Lua file handle as
+  well as a path. Caller-owned handles are used at their current position and
+  are never closed; `load` can read consecutive arrays from one handle.
+
+### Changed
+
+- The release metadata, README, API reference, and runnable example cover the
+  new sorting, set, coordinate, converter, and file-handle behavior.
+- No runtime dependency was added; all new work delegates to luatorch or uses
+  only the Lua standard library.
+
+### Tests
+
+- 259 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_numpy_helpers.lua` covers sort axes/descending/independence, unique
+  result ordering/0-D/empty/non-contiguous inputs, and nonzero/argwhere
+  coordinate shapes and errors; `test_txt.lua` covers converter dispatch,
+  physical `usecols` interaction, early stopping, and failures;
+  `test_npy_handles.lua` covers handle round-trips, sequential arrays, path
+  compatibility, closed handles, and write-failure ownership.
+
 ## 0.19.0 — 2026-11-22
 
 ### Added

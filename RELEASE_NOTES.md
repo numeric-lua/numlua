@@ -1,23 +1,23 @@
-# numlua 0.19.0
+# numlua 0.20.0
 
 NumPy-shaped arrays for LuaJIT, backed by luatorch.
 
 ## Highlights
 
-- `numlua.loadtxt` gains five NumPy text-I/O controls:
-  `skiprows`/`max_rows` for row windows, 1-based `usecols` for column
-  selection, `unpack` to transpose a 2-D result, and `ndmin` to keep one-row or
-  one-column input as a `(1, N)`/`(N, 1)` tensor. `usecols` supports negative
-  columns and preserves duplicates, and only selected fields are converted.
-- `numlua.savetxt` gains `header`, `footer`, `comments`, and `newline` for
-  comment-framed text files, plus per-column `fmt` tables. Header/footer lines
-  are written so `loadtxt` ignores them, and existing output is unchanged when
-  the new options are omitted.
-- All new options validate their types and ranges with `numlua.loadtxt:` /
-  `numlua.savetxt:` errors. `skiprows` counts physical lines, `max_rows` counts
-  data rows, and rows beyond `max_rows` are not parsed.
-- No runtime dependency was added. The text implementation remains pure Lua
-  plus luatorch.
+- `numlua.sort` returns sorted values along the last axis by default, with
+  optional axis and descending controls matching `argsort`.
+- `numlua.unique` flattens and sorts unique values and can also return
+  first-occurrence indices, the inverse mapping, and counts. Indices follow
+  numlua's 1-based convention.
+- `numlua.nonzero` returns one 1-based coordinate tensor per axis, while
+  `numlua.argwhere` returns the same coordinates as an `(N, ndim)` matrix.
+- `numlua.loadtxt` gains a `converters` option for sentinel handling and custom
+  field parsing, keyed by 1-based physical columns.
+- `numlua.save` and `numlua.load` accept open Lua file handles, including
+  reading several arrays sequentially from one handle. Handles stay open and
+  are used at their current position.
+- All new features are documented in `README.md` and `docs/api.md`; no runtime
+  dependency was added.
 
 ## Requirements
 
@@ -26,9 +26,9 @@ archives and all non-compression features work without it.
 
 ## Verification
 
-- 237 tests passed with system zlib
-- 237 tests passed with `NUMLUA_DISABLE_ZLIB=1`
+- 259 tests passed with system zlib
+- 259 tests passed with `NUMLUA_DISABLE_ZLIB=1`
 - `examples/basic.lua` runs
-- LuaRocks builtin install smoke-tested from `numlua-0.19.0-1.rockspec`
+- LuaRocks builtin install smoke-tested from `numlua-0.20.0-1.rockspec`
 
-Tag and GitHub release: `v0.19.0`.
+Tag and GitHub release: `v0.20.0`.

@@ -11,7 +11,7 @@ a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.19.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.20.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`, and text I/O.  It is packaged on LuaRocks and tested against
 > luatorch 0.25.x.
@@ -161,6 +161,18 @@ print(numlua.apply_over_axes(numlua.sum, cube, { -1 }):format())
 Extra callback arguments are forwarded, and a callback result must either keep
 the input rank or drop exactly one axis. Scalar, boolean, and Lua-table results
 are materialized like `apply_along_axis` results.
+
+Sorting and coordinate helpers follow the same 1-based convention:
+
+```lua
+local a = numlua.array({ { 3, 1, 2 }, { 3, 2, 1 } })
+print(numlua.sort(a):format())              -- rows sorted ascending
+local values, counts = numlua.unique(a, { return_counts = true })
+print(values:format(), counts:format())     -- {1, 2, 3}, {2, 2, 2}
+local rows, columns = numlua.nonzero(a:eq(1))
+print(rows:format(), columns:format())      -- {1, 2}, {2, 3}
+print(numlua.argwhere(a:eq(1)):format())    -- {{1, 2}, {2, 3}}
+```
 
 ## Requirements
 
@@ -440,8 +452,9 @@ make test
 The suite is dependency-free and covers constructors, shape operations,
 elementwise ufuncs, reductions, predicates and conditional selection, linear
 algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
-1-D/2-D/3-D/empty/0-D shapes, non-contiguous tensors, whitespace/CSV text
-round-trips, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
+1-D/2-D/3-D/empty/0-D shapes, file-handle `.npy` I/O, non-contiguous tensors,
+whitespace/CSV text round-trips and `loadtxt` converters, `sort`/`unique`/
+`nonzero`/`argwhere`, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
 corruption paths, ZIP32 writer limits, native-endian `.npy` headers, NPY v2.0
 and v3.0 readers and writers, byte-level writer conformance, `.npz` members and
 member versions, conditional `select`, empty and pre-suffixed `.npz` members,
@@ -451,7 +464,7 @@ release metadata, and error paths. The pad tests compare wrap results with
 an independent index walk and cover every constant-value form; the selection
 and I/O tests cover empty/0-D branches, Unicode and colliding `.npz` names,
 EOCD comments, invalid members, and zero-width text tensors.
-It currently contains 193 tests.
+It currently contains 259 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -500,13 +513,21 @@ This is an MVP, not a complete NumPy replacement:
   boolean scalars are rejected (use a `bool` tensor);
 - fancy indexing is not exposed; use the returned luatorch tensors and `torch`
   for those operations;
+- `sort` defaults to the last axis and accepts a numlua `descending` flag;
+  0-D input is rejected, as in `argsort`;
+- `unique` always flattens and sorts; it has no `axis`, `equal_nan`, or unsorted
+  mode, and its first-occurrence/inverse indices are 1-based;
+- `nonzero` and `argwhere` use 1-based C-order coordinates and reject 0-D
+  input; use `flatnonzero` for flat indices or a 0-D scalar;
 - `squeeze` delegates to luatorch; squeezing an axis whose size is not 1 leaves
   that axis unchanged rather than raising NumPy's error;
 - `.npy` reading supports v1.0, v2.0, and v3.0 headers; writing defaults to
   v1.0 and can emit v2.0/v3.0 with the `version` option. Files must be C order
   on little-endian hosts and use the dtypes above; `load` reads the complete
   file into memory before copying it into a tensor. Native-endian `=` descr
-  values are accepted only as aliases for the little-endian `<` spellings;
+  values are accepted only as aliases for the little-endian `<` spellings.
+  `save` and `load` also accept open Lua file handles and leave them open;
+  `.npz` I/O remains path-only;
 - `.npz` writing is stored by default and deflate through `savez_compressed`;
   reading supports stored and deflate entries. Deflate needs a system zlib
   library loaded through FFI, while stored archives remain dependency-free.
@@ -519,12 +540,13 @@ This is an MVP, not a complete NumPy replacement:
 - text I/O is intentionally simple: it does not store shape/dtype metadata,
   quote strings, or parse header metadata (`savetxt` header/footer lines are
   comments to `loadtxt`), and it rejects `bool` rather than guessing a textual
-  boolean spelling. `loadtxt` `usecols` is 1-based (NumPy uses 0-based
-  columns), and one-row/one-column input is squeezed to 1-D unless `ndmin = 2`.
+  boolean spelling. `loadtxt` `usecols` and `converters` use 1-based physical
+  columns (NumPy uses 0-based keys), and one-row/one-column input is squeezed to
+  1-D unless `ndmin = 2`.
   LF, CRLF, and CR line endings load, unknown option keys are rejected, and
   `int64` text output can round values beyond the exact double range (use
   `.npy` for those);
-- LuaRocks packaging is provided by `numlua-0.19.0-1.rockspec`; the native
+- LuaRocks packaging is provided by `numlua-0.20.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License

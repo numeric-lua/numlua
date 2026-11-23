@@ -93,6 +93,19 @@ local sorted = numlua.take_along_axis(matrix, numlua.argsort(matrix, 2), 2)
 print("argsort + take_along_axis:\n" .. sorted:format())
 assert(sorted:equal(numlua.array({ { 10, 20, 30 }, { 40, 50, 60 } })))
 
+print("sort values:\n" .. numlua.sort(matrix):format())
+assert(numlua.sort(matrix):equal(sorted))
+
+local unique_values, unique_counts = numlua.unique(
+  numlua.array({ 3, 1, 3, 2 }), { return_counts = true })
+print("unique values:\n" .. unique_values:format())
+print("unique counts:\n" .. unique_counts:format())
+assert(unique_values:equal(numlua.array({ 1, 2, 3 })))
+
+local coordinates = numlua.argwhere(matrix:gt(25))
+print("argwhere above 25:\n" .. coordinates:format())
+assert(numlua.dtype(coordinates) == "int64")
+
 heading("Elementwise ufuncs")
 local roots = numlua.sqrt(numlua.array({ 1.0, 4.0, 9.0 }))
 print("square roots:\n" .. roots:format())
@@ -115,6 +128,15 @@ assert(numlua.save(v3_path, product, { version = 3 }))
 assert(numlua.load(v3_path):equal(product))
 print("restored the same tensor from a v3.0 header")
 os.remove(v3_path)
+
+local handle = assert(io.open(path, "w+b"))
+assert(numlua.save(handle, product))
+handle:seek("set", 0)
+assert(numlua.load(handle):equal(product))
+assert(io.type(handle) == "file")
+handle:close()
+print("restored the same tensor through an open file handle")
+os.remove(path)
 
 heading("Text/CSV round-trip")
 local text_path = root .. "/examples/.basic-demo.csv"

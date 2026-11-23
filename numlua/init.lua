@@ -26,7 +26,7 @@ local unpack = table.unpack or unpack
 
 local numlua = {}
 
-numlua.VERSION = "0.19.0"
+numlua.VERSION = "0.20.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
