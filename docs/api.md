@@ -647,6 +647,9 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.tile(t, reps)` | repeat whole blocks (materialized); `reps` is a number or table |
 | `numlua.repeat_(t, repeats[, axis])` | repeat elements (materialized); `numlua["repeat"]` is the same function |
 | `numlua.flip(t, axis)` | reverse one axis or a table of axes (materialized) |
+| `numlua.fliplr(t)` | reverse axis 2; requires at least 2-D (materialized) |
+| `numlua.flipud(t)` | reverse axis 1; requires at least 1-D (materialized) |
+| `numlua.rot90(t[, k[, axes]])` | quarter-turn rotation; `k` is reduced modulo 4 and `axes` is a pair of 1-based axes (materialized; `k = 0` returns the input) |
 | `numlua.roll(t, shift[, axis])` | cyclic shift; flattens when `axis` is omitted |
 | `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"linear_ramp"`, `"maximum"`, `"mean"`, `"median"`, `"minimum"`, `"reflect"`, `"symmetric"`, and `"wrap"`; `value` is mode-specific (materialized) |
 | `numlua.diff(t[, n[, axis]])` | default axis is the last |
@@ -913,9 +916,11 @@ contiguous `reshape`, and contiguous `ravel`.
 
 `split`, `array_split`, `hsplit`, `vsplit`, and `dsplit` return views created
 with `narrow`. These allocate independent storage: `resize`, `diag`,
-`diagflat`, `tril`, `triu`, `pad`, `tile`, `repeat_`, `flip`,
-`roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`,
-`argwhere`, `take`, `take_along_axis`, and `apply_along_axis`. `reshape` and
+`diagflat`, `tril`, `triu`, `pad`, `tile`, `repeat_`, `flip`, `fliplr`,
+`flipud`, `rot90`, `roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`,
+`unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, and
+`apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
+unchanged. `reshape` and
 `ravel` also copy when their input is not contiguous, because ATen must
 materialize a C-order layout first. Tests cover
 the view/copy boundary, including large arrays, so a regression cannot silently

@@ -172,6 +172,7 @@ local files = {
   "test_selection.lua",
   "test_numpy_helpers.lua",
   "test_layout_extensions.lua",
+  "test_rotate.lua",
   "test_npz.lua",
   "test_dtype_promotion.lua",
   "test_linalg.lua",

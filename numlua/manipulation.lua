@@ -533,6 +533,67 @@ function M.flip(t, axis_value)
   return result
 end
 
+-- fliplr/flipud are the axis-specific flips NumPy exposes for matrices and
+-- stacks of vectors.  They use flip(), which materializes an independent
+-- result in luatorch/ATen.
+function M.fliplr(t)
+  tensor(t, "fliplr")
+  if t:dim() < 2 then
+    error("numlua.fliplr expects at least a 2-D tensor", 2)
+  end
+  return M.flip(t, 2)
+end
+
+function M.flipud(t)
+  tensor(t, "flipud")
+  if t:dim() < 1 then
+    error("numlua.flipud expects at least a 1-D tensor", 2)
+  end
+  return M.flip(t, 1)
+end
+
+-- rot90(t[, k[, axes]]) rotates in the plane spanned by two axes.  A positive
+-- k rotates counter-clockwise, k is reduced modulo 4, and the default axes are
+-- the first two (NumPy's axes=(0, 1)).  Each quarter turn is a transpose plus
+-- a flip; luatorch materializes flip, so k = 1, 2, 3 allocate independent
+-- storage.  k = 0 returns the input unchanged.
+function M.rot90(t, k, axes_value)
+  tensor(t, "rot90")
+  local ndim = t:dim()
+  if ndim < 2 then
+    error("numlua.rot90 expects at least a 2-D tensor", 2)
+  end
+  k = k == nil and 1 or k
+  if type(k) ~= "number" or k ~= k or k % 1 ~= 0 or
+      k == math.huge or k == -math.huge then
+    error("numlua.rot90: k must be a finite integer", 2)
+  end
+  k = k % 4
+
+  local first, second = 1, 2
+  if axes_value ~= nil then
+    if type(axes_value) ~= "table" or #axes_value ~= 2 then
+      error("numlua.rot90: axes must be a table of two axes", 2)
+    end
+    first = axis(axes_value[1], ndim, "rot90")
+    second = axis(axes_value[2], ndim, "rot90")
+    if first == second then
+      error("numlua.rot90: axes must be different", 2)
+    end
+  end
+  if k == 0 then return t end
+
+  local order = {}
+  for index = 1, ndim do order[index] = index end
+  order[first], order[second] = order[second], order[first]
+
+  local result = t
+  for _ = 1, k do
+    result = result:permute(order):flip(first)
+  end
+  return result
+end
+
 local function roll_axis(t, shift, dim)
   local size = t:size(dim)
   if size == 0 then return t:clone() end
