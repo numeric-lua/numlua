@@ -184,6 +184,7 @@ local files = {
   "test_npy_fixtures.lua",
   "test_generated_fixtures.lua",
   "test_txt.lua",
+  "test_txt_handles.lua",
   "test_errors.lua",
   "test_release.lua",
 }

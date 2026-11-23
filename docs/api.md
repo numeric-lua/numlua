@@ -1166,10 +1166,14 @@ the real size mismatch instead.
 
 ## Text and CSV I/O
 
-### `numlua.loadtxt(path[, options])`
+### `numlua.loadtxt(path_or_file[, options])`
 
 Reads a whitespace- or delimiter-separated numeric text file and returns a
-luatorch tensor. Options:
+luatorch tensor. The source may be a path string or an already-open Lua file
+handle; a caller-owned handle is read from its current position and is never
+closed. Text has no record boundaries beyond rows, so `loadtxt` consumes the
+remaining data from a handle (use `max_rows` when only a prefix is wanted).
+Options:
 
 | option | default | meaning |
 | --- | --- | --- |
@@ -1275,9 +1279,13 @@ Supported result dtypes are the numeric luatorch dtypes: `float16`, `float32`,
 `float64`, `int8`, `int16`, `int32`, `int64`, and `uint8`. `bool` is rejected;
 write `0`/`1` with an integral dtype instead.
 
-### `numlua.savetxt(path, tensor[, options])`
+### `numlua.savetxt(path_or_file, tensor[, options])`
 
-Writes a 1-D or 2-D tensor as numeric text and returns `true`. Options:
+Writes a 1-D or 2-D tensor as numeric text and returns `true`. The target may
+be a path string or an already-open Lua file handle; a caller-owned handle is
+written at its current position and is never closed, including when a write
+fails. Closed handles and invalid targets raise a `numlua.savetxt:` error.
+Options:
 
 | option | default | meaning |
 | --- | --- | --- |

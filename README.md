@@ -417,11 +417,13 @@ Use `.npy` instead when the file should carry its dtype and shape.
 
 ## Text/CSV I/O
 
-`numlua.savetxt(path, tensor[, options])` writes a 1-D or 2-D tensor as numeric
-text. `numlua.loadtxt(path[, options])` reads it back as a luatorch tensor.
-Plain whitespace is the default separator, and `delimiter = ","` handles simple
-CSV. Comment markers default to `"#"` and can be changed, supplied as a table,
-or disabled.
+`numlua.savetxt(path_or_file, tensor[, options])` writes a 1-D or 2-D tensor as
+numeric text. `numlua.loadtxt(path_or_file[, options])` reads it back as a
+luatorch tensor. Both accept a path or an already-open Lua file handle; handles
+are used at their current position and are never closed by `numlua`. Plain
+whitespace is the default separator, and `delimiter = ","` handles simple CSV.
+Comment markers default to `"#"` and can be changed, supplied as a table, or
+disabled.
 
 ```lua
 local numlua = require("numlua")
@@ -554,8 +556,8 @@ This is an MVP, not a complete NumPy replacement:
   on little-endian hosts and use the dtypes above; `load` reads the complete
   file into memory before copying it into a tensor. Native-endian `=` descr
   values are accepted only as aliases for the little-endian `<` spellings.
-  `save` and `load` also accept open Lua file handles and leave them open;
-  `.npz` I/O remains path-only;
+  `save`/`load`, `fromfile`/`tofile`, and `loadtxt`/`savetxt` accept open Lua
+  file handles and leave them open; `.npz` I/O remains path-only;
 - `.npz` writing is stored by default and deflate through `savez_compressed`;
   reading supports stored and deflate entries. Deflate needs a system zlib
   library loaded through FFI, while stored archives remain dependency-free.

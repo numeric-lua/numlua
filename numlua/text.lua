@@ -235,20 +235,38 @@ local function trim(value)
   return (value:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-local function read_file(path)
-  local handle, open_error = io.open(path, "r")
+-- Read text from a path or an already-open Lua file handle.  Caller-owned
+-- handles are read from their current position and are never closed.
+local function read_input(source)
+  local kind = io.type(source)
+  if kind == "file" then
+    local data, read_error = source:read("*a")
+    if data == nil then
+      error("numlua.loadtxt: failed reading file handle: " ..
+        tostring(read_error), 3)
+    end
+    return data
+  end
+  if kind == "closed file" then
+    error("numlua.loadtxt: cannot read from a closed file handle", 3)
+  end
+  if type(source) ~= "string" or source == "" then
+    error("numlua.loadtxt expects a non-empty file path or open file " ..
+      "handle", 3)
+  end
+  local handle, open_error = io.open(source, "r")
   if handle == nil then
-    error("numlua.loadtxt: cannot open '" .. path .. "' for reading: " ..
-      tostring(open_error), 3)
+    error("numlua.loadtxt: cannot open '" .. source ..
+      "' for reading: " .. tostring(open_error), 3)
   end
   local data, read_error = handle:read("*a")
   local close_ok, close_error = handle:close()
   if data == nil then
-    error("numlua.loadtxt: failed reading '" .. path .. "': " ..
+    error("numlua.loadtxt: failed reading '" .. source .. "': " ..
       tostring(read_error), 3)
   end
   if not close_ok then
-    error("numlua.loadtxt: failed closing '" .. path .. "': " ..
+    error("numlua.loadtxt: failed closing '" .. source .. "': " ..
       tostring(close_error), 3)
   end
   return data
@@ -349,8 +367,13 @@ end
 -- Read a whitespace- or delimiter-separated text file and return a 1-D/2-D
 -- luatorch tensor.  Each non-comment line must have the same number of fields.
 function text.loadtxt(path, options)
-  if type(path) ~= "string" or path == "" then
-    error("numlua.loadtxt expects a non-empty file path", 2)
+  local target_kind = io.type(path)
+  if target_kind == "closed file" then
+    error("numlua.loadtxt: cannot read from a closed file handle", 2)
+  end
+  if target_kind ~= "file" and (type(path) ~= "string" or path == "") then
+    error("numlua.loadtxt expects a non-empty file path or open file " ..
+      "handle", 2)
   end
   options = check_options(options, "loadtxt", LOAD_OPTIONS)
   local delimiter = check_delimiter(options.delimiter, "loadtxt")
@@ -365,7 +388,7 @@ function text.loadtxt(path, options)
   local unpack = check_unpack(options.unpack)
   local ndmin = check_ndmin(options.ndmin)
 
-  local data = read_file(path)
+  local data = read_input(path)
   local rows = {}
   local columns = nil
   local selected = nil
@@ -618,8 +641,13 @@ end
 -- Write a 1-D/2-D tensor as numeric text.  Floating-point defaults use enough
 -- digits to round-trip at the tensor's dtype; integral dtypes use base 10.
 function text.savetxt(path, tensor, options)
-  if type(path) ~= "string" or path == "" then
-    error("numlua.savetxt expects a non-empty file path", 2)
+  local target_kind = io.type(path)
+  if target_kind == "closed file" then
+    error("numlua.savetxt: cannot write to a closed file handle", 2)
+  end
+  if target_kind ~= "file" and (type(path) ~= "string" or path == "") then
+    error("numlua.savetxt expects a non-empty file path or open file " ..
+      "handle", 2)
   end
   if not torch.is_tensor(tensor) then
     error("numlua.savetxt expects a tensor, got " .. type(tensor), 2)
@@ -644,10 +672,17 @@ function text.savetxt(path, tensor, options)
   local columns = dim == 1 and 1 or sizes[2]
   local fmt = check_fmt(options.fmt, columns)
 
-  local handle, open_error = io.open(path, "w")
-  if handle == nil then
-    error("numlua.savetxt: cannot open '" .. path .. "' for writing: " ..
-      tostring(open_error), 2)
+  local handle, owns_handle = path, false
+  local label = "file handle"
+  if target_kind ~= "file" then
+    local open_error
+    handle, open_error = io.open(path, "w")
+    if handle == nil then
+      error("numlua.savetxt: cannot open '" .. path .. "' for writing: " ..
+        tostring(open_error), 2)
+    end
+    owns_handle = true
+    label = "'" .. path .. "'"
   end
 
   local write_ok, write_error = true, nil
@@ -694,17 +729,20 @@ function text.savetxt(path, tensor, options)
         handle, footer, comments, newline)
     end
   end)
-  local close_ok, close_error = handle:close()
+  local close_ok, close_error = true, nil
+  if owns_handle then
+    close_ok, close_error = handle:close()
+  end
 
   if not format_ok then
     error(format_error, 0)
   end
   if write_ok == nil then
-    error("numlua.savetxt: failed writing '" .. path .. "': " ..
+    error("numlua.savetxt: failed writing " .. label .. ": " ..
       tostring(write_error), 2)
   end
   if not close_ok then
-    error("numlua.savetxt: failed closing '" .. path .. "': " ..
+    error("numlua.savetxt: failed closing " .. label .. ": " ..
       tostring(close_error), 2)
   end
   return true
