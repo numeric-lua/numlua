@@ -271,7 +271,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 
 | Group | Functions |
 | --- | --- |
-| Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace` |
+| Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
@@ -283,6 +283,11 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt` |
+
+`zeros_like`, `ones_like`, `empty_like`, and `full_like` inherit the
+prototype's shape and dtype by default and accept `{ dtype = ..., shape = ... }`
+overrides. `empty_like` leaves storage uninitialized; `full_like` takes a
+numeric fill value.
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,

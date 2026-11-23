@@ -88,6 +88,24 @@ numlua.linspace(0, 1, 5)
 numlua.linspace(0, 1, { dtype = "float64" })
 ```
 
+### `numlua.zeros_like(t[, opts])`, `ones_like`, `empty_like`, `full_like`
+
+The `*_like` constructors use `t` for shape and dtype unless `opts` overrides
+them, matching NumPy's `np.zeros_like` family. `opts.dtype` is a dtype name or
+luatorch dtype id; `opts.shape` is a dimension or a shape table, where `{}`
+requests a 0-D result and `0` requests a length-0 vector.
+`full_like(t, fill_value[, opts])`
+requires a numeric fill value. `empty_like` leaves the new storage
+uninitialized and allocates it in C order; the other three initialize every
+element and do not alias the prototype. 0-D prototypes are supported.
+
+```lua
+local a = numlua.array({ { 1, 2 }, { 3, 4 } }, { dtype = "int64" })
+numlua.zeros_like(a)                       -- int64 2x2 of zeros
+numlua.ones_like(a, { dtype = "float64" }) -- float64 2x2 of ones
+numlua.full_like(a, 7, { shape = { 4 } })  -- int64 {7, 7, 7, 7}
+```
+
 ## Shape
 
 ### `numlua.shape(t)`

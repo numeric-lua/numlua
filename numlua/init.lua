@@ -164,6 +164,111 @@ function numlua.linspace(start, stop, num, opts)
 end
 
 -- ---------------------------------------------------------------------------
+-- *_like constructors
+-- ---------------------------------------------------------------------------
+
+local LIKE_OPTIONS = { dtype = true, shape = true }
+
+-- Validate the small, NumPy-shaped options table shared by the *_like
+-- constructors.  `shape` is an optional NumPy 2.x override: a dimension or a
+-- table (including an empty table for 0-D).  A nil shape uses the prototype's
+-- shape.  `dtype` is passed to luatorch as a name or dtype id.
+local function like_options(opts, name)
+  if opts ~= nil and type(opts) ~= "table" then
+    error(string.format(
+      "numlua.%s: options must be a table or nil", name), 3)
+  end
+  opts = opts or {}
+  for key in pairs(opts) do
+    if not LIKE_OPTIONS[key] then
+      error(string.format(
+        "numlua.%s: unknown option '%s'", name, tostring(key)), 3)
+    end
+  end
+  local dtype = opts.dtype
+  if dtype ~= nil and type(dtype) ~= "string" and type(dtype) ~= "number" then
+    error(string.format(
+      "numlua.%s: dtype must be a name, dtype id, or nil", name), 3)
+  end
+  local shape = opts.shape
+  if shape ~= nil then
+    if type(shape) == "number" then
+      shape = { shape }
+    elseif type(shape) ~= "table" then
+      error(string.format(
+        "numlua.%s: shape must be a dimension or a table", name), 3)
+    else
+      local copy = {}
+      for index = 1, #shape do copy[index] = shape[index] end
+      shape = copy
+    end
+    for index = 1, #shape do
+      local dimension = shape[index]
+      if type(dimension) ~= "number" or dimension ~= dimension or
+          dimension % 1 ~= 0 or dimension < 0 or
+          dimension == math.huge or dimension == -math.huge then
+        error(string.format(
+          "numlua.%s: shape entries must be non-negative integers", name), 3)
+      end
+    end
+  end
+  return shape, dtype
+end
+
+local function like_alloc(proto, opts, name, kind, value)
+  check_tensor(proto, name)
+  local shape, dtype = like_options(opts, name)
+  local dtype_opts = { dtype = dtype or proto:dtype() }
+  if shape == nil then
+    if kind == "zeros" then return torch.zeros_like(proto, dtype_opts) end
+    if kind == "ones" then return torch.ones_like(proto, dtype_opts) end
+    if kind == "full" then return torch.full_like(proto, value, dtype_opts) end
+    if proto:dim() == 0 then
+      return torch.empty({ 1 }, dtype_opts):reshape({})
+    end
+    return torch.empty(proto:sizes(), dtype_opts)
+  end
+
+  local scalar = #shape == 0
+  local target = scalar and { 1 } or shape
+  local result
+  if kind == "zeros" then
+    result = torch.zeros(target, dtype_opts)
+  elseif kind == "ones" then
+    result = torch.ones(target, dtype_opts)
+  elseif kind == "full" then
+    result = torch.full(target, value, dtype_opts)
+  else
+    result = torch.empty(target, dtype_opts)
+  end
+  if scalar then result = result:reshape({}) end
+  return result
+end
+
+-- zeros_like / ones_like / empty_like / full_like follow np.*_like: the
+-- prototype supplies shape and dtype unless overridden.  `empty_like` leaves
+-- the new storage uninitialized; the other three initialize every element.
+function numlua.zeros_like(t, opts)
+  return like_alloc(t, opts, "zeros_like", "zeros")
+end
+
+function numlua.ones_like(t, opts)
+  return like_alloc(t, opts, "ones_like", "ones")
+end
+
+function numlua.empty_like(t, opts)
+  return like_alloc(t, opts, "empty_like", "empty")
+end
+
+function numlua.full_like(t, fill_value, opts)
+  if type(fill_value) ~= "number" then
+    error("numlua.full_like expects a numeric fill value, got " ..
+      type(fill_value), 2)
+  end
+  return like_alloc(t, opts, "full_like", "full", fill_value)
+end
+
+-- ---------------------------------------------------------------------------
 -- shape
 -- ---------------------------------------------------------------------------
 
