@@ -88,6 +88,11 @@ test("diag and diagflat handle empty, scalar, and flattened inputs", function()
   assert_shape(empty, { 0, 0 })
   assert_eq(empty:numel(), 0)
 
+  local bool_empty = numlua.diag(numlua.array({}, { dtype = "bool" }))
+  assert_dtype(bool_empty, "bool")
+  assert_shape(bool_empty, { 0, 0 })
+  assert_eq(bool_empty:numel(), 0)
+
   local empty_offset = numlua.diag(numlua.zeros(0), 2)
   assert_shape(empty_offset, { 2, 2 })
   assert_eq(empty_offset:numel(), 4)

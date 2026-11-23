@@ -320,6 +320,9 @@ end
 -- splits depth (1-based axis 3), requiring the matching input rank.
 function M.hsplit(t, sections)
   tensor(t, "hsplit")
+  if t:dim() == 0 then
+    error("numlua.hsplit expects at least a 1-D tensor", 2)
+  end
   return split_impl(t, sections, t:dim() == 1 and 1 or 2, "hsplit", false)
 end
 
@@ -353,6 +356,7 @@ end
 local function bool_diag_vector(t, offset)
   local n = t:size(1)
   local size = n + math.abs(offset)
+  if size == 0 then return torch.zeros({ 0, 0 }, { dtype = "bool" }) end
   local rows = {}
   for i = 1, size do
     rows[i] = {}

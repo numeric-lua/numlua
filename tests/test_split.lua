@@ -136,6 +136,8 @@ test("split family validates sections, boundaries, axes, and ranks", function()
     "out of range")
   assert_error(function() numlua.split({ 1, 2 }, 1) end,
     "expects a tensor")
+  assert_error(function() numlua.hsplit(numlua.array(1), 1) end,
+    "at least a 1-D tensor")
   assert_error(function() numlua.vsplit(vector, 2) end,
     "at least a 2-D tensor")
   assert_error(function() numlua.dsplit(numlua.zeros(2, 2), 2) end,
