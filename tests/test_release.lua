@@ -61,7 +61,10 @@ test("new public API and format support are documented", function()
       "numlua.hsplit", "numlua.vsplit", "numlua.dsplit", "numlua.diag",
       "numlua.diagflat", "numlua.tril", "numlua.triu", "numlua.isclose",
       "numlua.allclose", "numlua.array_equal", "numlua.array_equiv",
-      "numlua.fromfile", "numlua.tofile" }) do
+      "numlua.fromfile", "numlua.tofile", "numlua.rot90", "numlua.fliplr",
+      "numlua.flipud", "numlua.diagonal", "numlua.trace",
+      "numlua.zeros_like", "numlua.ones_like", "numlua.empty_like",
+      "numlua.full_like" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -81,7 +84,14 @@ test("new public API and format support are documented", function()
     "docs/api.md does not document unique")
   assert_true(api:find("numlua.fromfile", 1, true) ~= nil and
       api:find("numlua.tofile", 1, true) ~= nil,
-    "docs/api.md does not document raw binary I/O")
+    "docs/api.md does not document raw I/O")
+  assert_true(api:find("numlua.savez(path_or_file", 1, true) ~= nil and
+      api:find("numlua.loadz(path_or_file", 1, true) ~= nil,
+    "docs/api.md does not document .npz file handles")
+  assert_true(api:find("text mode", 1, true) ~= nil,
+    "docs/api.md does not document raw text mode")
+  assert_true(api:find("printf-style format", 1, true) ~= nil,
+    "docs/api.md does not document the tofile text format")
   assert_true(api:find("numlua.array_equiv", 1, true) ~= nil,
     "docs/api.md does not document array_equiv")
   assert_true(api:find("version = 2", 1, true) ~= nil,
@@ -145,7 +155,18 @@ test("new public API and format support are documented", function()
     "README.md does not document file handles")
   assert_true(readme:find("numlua.fromfile", 1, true) ~= nil and
       readme:find("numlua.tofile", 1, true) ~= nil,
-    "README.md does not document raw binary I/O")
+    "README.md does not document raw I/O")
+  assert_true(readme:find("savez(path_or_file", 1, true) ~= nil and
+      readme:find("loadz(path_or_file", 1, true) ~= nil,
+    "README.md does not document .npz file handles")
+  assert_true(readme:find("printf-style", 1, true) ~= nil,
+    "README.md does not document the tofile text format")
+  assert_true(readme:find("numlua.rot90", 1, true) ~= nil and
+      readme:find("numlua.diagonal", 1, true) ~= nil,
+    "README.md does not document rotation/diagonal helpers")
+  assert_true(readme:find("numlua.zeros_like", 1, true) ~= nil and
+      readme:find("numlua.full_like", 1, true) ~= nil,
+    "README.md does not document *_like constructors")
   assert_true(readme:find("numlua.split", 1, true) ~= nil and
       readme:find("numlua.array_split", 1, true) ~= nil,
     "README.md does not document the split family")

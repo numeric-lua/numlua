@@ -25,6 +25,10 @@
 -- accepted as aliases for the '<' spellings, matching NumPy's dtype parser.
 -- Only little-endian hosts are supported (LuaJIT ffi.abi("le")).
 --
+-- The raw fromfile/tofile helpers support NumPy's binary mode (sep = "") and
+-- simple numeric text mode (non-empty sep).  Text mode has no header, comment,
+-- quoting, or column selection; loadtxt/savetxt cover those cases.
+--
 
 local ffi = require("ffi")
 local torch = require("torch")
@@ -497,16 +501,154 @@ local FROMFILE_OPTIONS = {
   sep = true,
 }
 
-local TOFILE_OPTIONS = { sep = true }
+local TOFILE_OPTIONS = { sep = true, format = true }
 
+-- An empty separator selects the binary format.  Any non-empty string
+-- selects NumPy-style text mode, where items are separated by that string
+-- (whitespace runs when the separator itself is whitespace).
 local function check_sep(sep, name)
-  if sep == nil then return end
+  if sep == nil then return "" end
   if type(sep) ~= "string" then
     error("numlua." .. name .. ": sep must be a string or nil", 3)
   end
-  if sep ~= "" then
-    error("numlua." .. name .. ": text-mode sep is not supported; use " ..
-      "loadtxt/savetxt for text data", 3)
+  return sep
+end
+
+-- Default text formats.  The floating formats carry enough significant digits
+-- to round-trip the corresponding IEEE dtype; integer and bool values have
+-- exact spellings.
+local TEXT_FORMATS = {
+  float16 = "%.5g",
+  float32 = "%.9g",
+  float64 = "%.17g",
+  int8 = "%d",
+  int16 = "%d",
+  int32 = "%d",
+  int64 = "%d",
+  uint8 = "%d",
+}
+
+local function text_label(label)
+  return label or "input"
+end
+
+-- Parse one numeric or boolean text field.  NumPy's text readers accept nan
+-- and infinity spellings for floating dtypes; integer tokens truncate toward
+-- zero, matching numlua's other integer casts, and reject non-finite values.
+local function parse_text_value(token, info, name, label)
+  local lower = token:lower()
+  if info.name == "bool" then
+    if lower == "true" or token == "1" then return true end
+    if lower == "false" or token == "0" then return false end
+    error(string.format(
+      "numlua.%s: cannot parse text value %q as bool in %s",
+      name, token, text_label(label)), 3)
+  end
+
+  local value
+  if lower == "nan" or lower == "+nan" or lower == "-nan" then
+    value = 0 / 0
+  elseif lower == "inf" or lower == "+inf" or lower == "infinity" or
+      lower == "+infinity" then
+    value = math.huge
+  elseif lower == "-inf" or lower == "-infinity" then
+    value = -math.huge
+  else
+    value = tonumber(token)
+  end
+  if value == nil then
+    error(string.format(
+      "numlua.%s: cannot parse text value %q as %s in %s",
+      name, token, info.name, text_label(label)), 3)
+  end
+  if not info.name:match("^float") then
+    if value ~= value or value == math.huge or value == -math.huge then
+      error(string.format(
+        "numlua.%s: non-finite text value %q cannot be stored as %s in %s",
+        name, token, info.name, text_label(label)), 3)
+    end
+    value = value >= 0 and math.floor(value) or math.ceil(value)
+  end
+  return value
+end
+
+-- Split text input into fields.  A whitespace-only separator uses runs of
+-- whitespace; any other separator is matched literally and surrounding
+-- whitespace is trimmed.  Empty trailing fields are ignored, while an empty
+-- field between two separators is an error so malformed CSV is not silently
+-- reinterpreted.
+local function split_text_fields(data, sep, name, label)
+  local fields = {}
+  if sep:match("^%s+$") then
+    for token in data:gmatch("%S+") do fields[#fields + 1] = token end
+    return fields
+  end
+
+  local position = 1
+  while true do
+    local found = data:find(sep, position, true)
+    local raw = found and data:sub(position, found - 1) or data:sub(position)
+    local token = raw:match("^%s*(.-)%s*$")
+    if token ~= "" then
+      fields[#fields + 1] = token
+    elseif found ~= nil then
+      local rest = data:sub(found + #sep)
+      if rest:match("^%s*$") then break end
+      error(string.format(
+        "numlua.%s: empty text field in %s", name, text_label(label)), 3)
+    end
+    if found == nil then break end
+    position = found + #sep
+  end
+  return fields
+end
+
+local function read_text_data(handle, info, sep, count, name, label)
+  local data, read_error = handle:read("*a")
+  if data == nil then
+    error("numlua." .. name .. ": failed reading " .. text_label(label) ..
+      ": " .. tostring(read_error), 3)
+  end
+  local fields = split_text_fields(data, sep, name, label)
+  local limit = count < 0 and #fields or math.min(count, #fields)
+  local values = {}
+  for index = 1, limit do
+    values[index] = parse_text_value(fields[index], info, name, label)
+  end
+  if #values == 0 then
+    return torch.empty({ 0 }, { dtype = info.name })
+  end
+  return torch.tensor(values, { dtype = info.name })
+end
+
+local function format_text_value(value, info, format, name)
+  if info.name == "bool" and format == nil then
+    return value and "True" or "False"
+  end
+  local pattern = format or TEXT_FORMATS[info.name]
+  local argument = info.name == "bool" and (value and 1 or 0) or value
+  local ok, formatted = pcall(string.format, pattern, argument)
+  if not ok then
+    error("numlua." .. name .. ": invalid text format '" .. pattern ..
+      "': " .. tostring(formatted), 3)
+  end
+  return formatted
+end
+
+local function write_text_data(handle, tensor, info, sep, format, name,
+    label)
+  local contiguous = tensor:detach():contiguous()
+  local values = contiguous:reshape({ contiguous:numel() }):totable()
+  local parts = {}
+  for index = 1, #values do
+    parts[index] = format_text_value(values[index], info, format, name)
+  end
+  local payload = table.concat(parts, sep)
+  if #parts > 0 then payload = payload .. "\n" end
+  local ok, write_error = handle:write(payload)
+  if ok == nil then
+    error("numlua." .. name .. ": failed writing " .. text_label(label) ..
+      ": " .. tostring(write_error), 3)
   end
 end
 
@@ -586,9 +728,10 @@ local function read_raw_data(handle, count, size, name, label)
   return data, count
 end
 
--- fromfile(path_or_file[, options]) reads raw little-endian elements as a 1-D
--- tensor.  Options are dtype (default float64), count (-1 for all), offset in
--- bytes, and sep (only the empty binary separator is supported).
+-- fromfile(path_or_file[, options]) reads a 1-D tensor.  Options are dtype
+-- (default float64), count (-1 for all), offset in bytes, and sep.  sep = ""
+-- (the default) reads raw little-endian bytes; a non-empty sep reads numeric
+-- text with that item separator, following NumPy's text mode.
 function npy.fromfile(source, options)
   local is_handle = raw_target(source, "fromfile")
   if not host_is_little_endian() then
@@ -598,7 +741,8 @@ function npy.fromfile(source, options)
   local info = io_dtype(options.dtype, "fromfile", 1)
   local count = check_count(options.count, "fromfile")
   local offset = check_offset(options.offset, "fromfile")
-  check_sep(options.sep, "fromfile")
+  local sep = check_sep(options.sep, "fromfile")
+  local text_mode = sep ~= ""
 
   local handle, owns_handle = source, false
   local label = "file handle"
@@ -610,6 +754,9 @@ function npy.fromfile(source, options)
 
   local ok, data_or_error, element_count = pcall(function()
     skip_raw_bytes(handle, offset, "fromfile", label)
+    if text_mode then
+      return read_text_data(handle, info, sep, count, "fromfile", label)
+    end
     return read_raw_data(handle, count, info.size, "fromfile", label)
   end)
   local close_ok, close_error = true, nil
@@ -623,6 +770,8 @@ function npy.fromfile(source, options)
     error("numlua.fromfile: failed closing " .. label .. ": " ..
       tostring(close_error), 2)
   end
+
+  if text_mode then return data_or_error end
 
   local data = data_or_error
   local elements = element_count
@@ -641,10 +790,11 @@ function npy.fromfile(source, options)
   return tensor
 end
 
--- tofile(path_or_file, tensor[, options]) writes the tensor's raw C-order
--- little-endian bytes.  The only option is sep, and only "" (binary) is
--- accepted.  Caller-owned handles are written at their current position and
--- are never closed.
+-- tofile(path_or_file, tensor[, options]) writes the tensor's C-order data.
+-- sep = "" (the default) writes raw little-endian bytes; a non-empty sep
+-- writes text with that separator and an optional printf-style `format`.
+-- Caller-owned handles are written at their current position and are never
+-- closed.
 function npy.tofile(target, tensor, options)
   local is_handle = raw_target(target, "tofile")
   if not torch.is_tensor(tensor) then
@@ -654,7 +804,16 @@ function npy.tofile(target, tensor, options)
     error("numlua.tofile: only little-endian hosts are supported", 2)
   end
   options = io_options(options, "tofile", TOFILE_OPTIONS)
-  check_sep(options.sep, "tofile")
+  local sep = check_sep(options.sep, "tofile")
+  local format = options.format
+  if format ~= nil then
+    if type(format) ~= "string" or format == "" then
+      error("numlua.tofile: format must be a non-empty string or nil", 2)
+    end
+    if sep == "" then
+      error("numlua.tofile: format requires a non-empty sep", 2)
+    end
+  end
 
   local info = DTYPES[tensor:dtype_id()]
   if info == nil then
@@ -674,6 +833,23 @@ function npy.tofile(target, tensor, options)
     end
     owns_handle = true
     label = "'" .. target .. "'"
+  end
+
+  if sep ~= "" then
+    local text_ok, text_error = pcall(write_text_data, handle, tensor, info,
+      sep, format, "tofile", label)
+    local close_ok, close_error = true, nil
+    if owns_handle then
+      close_ok, close_error = handle:close()
+    end
+    if not text_ok then
+      error(text_error, 0)
+    end
+    if not close_ok then
+      error("numlua.tofile: failed closing " .. label .. ": " ..
+        tostring(close_error), 2)
+    end
+    return true
   end
 
   -- detach() and contiguous() mirror save(): autograd metadata is not written

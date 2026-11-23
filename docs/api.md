@@ -88,7 +88,7 @@ numlua.linspace(0, 1, 5)
 numlua.linspace(0, 1, { dtype = "float64" })
 ```
 
-### `numlua.zeros_like(t[, opts])`, `ones_like`, `empty_like`, `full_like`
+### `numlua.zeros_like(t[, opts])`, `numlua.ones_like`, `numlua.empty_like`, `numlua.full_like`
 
 The `*_like` constructors use `t` for shape and dtype unless `opts` overrides
 them, matching NumPy's `np.zeros_like` family. `opts.dtype` is a dtype name or
@@ -1086,25 +1086,39 @@ handle:close()
 
 ### `numlua.fromfile(path_or_file[, options])`
 
-Reads raw little-endian elements from a path or an already-open Lua file
-handle and returns a 1-D tensor. Unlike `load`, there is no `.npy` header and
-therefore no dtype or shape metadata: pass the matching `dtype` option. Options:
+Reads elements from a path or an already-open Lua file handle and returns a
+1-D tensor. Unlike `load`, there is no `.npy` header and therefore no dtype or
+shape metadata: pass the matching `dtype` option. Options:
 
 | option | default | meaning |
 | --- | --- | --- |
 | `dtype` | `"float64"` | element dtype, a luatorch name/id or supported `descr` |
-| `count` | `-1` | number of elements to read; `-1` reads to the end |
+| `count` | `-1` | number of elements to read; `-1` reads everything |
 | `offset` | `0` | bytes to skip before reading |
-| `sep` | `""` | only the empty binary separator is supported |
+| `sep` | `""` | `""` reads raw little-endian bytes; a non-empty string reads text |
 
 The supported dtypes are the same as `save`: `float16`, `float32`, `float64`,
-`int8`, `int16`, `int32`, `int64`, `uint8`, and `bool`. `fromfile` consumes
-exactly `offset + count * itemsize` bytes from a caller-owned handle (or to the
-end when `count = -1`), leaves the handle open and positioned after the data,
-and never reads past the requested count. A path is opened and closed by the
-call. Truncated input, a final byte count that is not a multiple of the dtype
-size when reading to the end, unsupported dtypes, negative counts/offsets,
-closed handles, and a non-empty `sep` raise a `numlua.fromfile:` error.
+`int8`, `int16`, `int32`, `int64`, `uint8`, and `bool`.
+
+With the default binary `sep = ""`, `fromfile` consumes exactly
+`offset + count * itemsize` bytes from a caller-owned handle (or to the end
+when `count = -1`), leaves the handle open and positioned after the data, and
+never reads past the requested count. A path is opened and closed by the call.
+Truncated input, a final byte count that is not a multiple of the dtype size
+when reading to the end, unsupported dtypes, negative counts/offsets, and
+closed handles raise a `numlua.fromfile:` error.
+
+With a non-empty `sep`, the remaining text is parsed as numeric fields. A
+whitespace-only separator such as `" "` or `"\t"` splits on runs of whitespace;
+any other separator is matched literally, with surrounding whitespace trimmed
+from each field. `count` limits how many fields are parsed (extra data is
+ignored, and fewer fields than `count` is not an error). Text mode reads to EOF
+even when `count` is given, so a caller-owned handle ends at EOF. Floating
+dtypes accept `nan`, `inf`, `-inf`, and `infinity` spellings; integers
+truncate toward zero and reject non-finite values; `bool` accepts
+`True`/`False` (case-insensitive) and `1`/`0`. Empty interior fields, invalid
+tokens, and unsupported dtypes raise a `numlua.fromfile:` error. Text files
+still carry no shape or dtype metadata.
 
 ```lua
 numlua.tofile("values.bin", numlua.array({ 1, 2, 3 },
@@ -1115,20 +1129,35 @@ local middle = numlua.fromfile("values.bin", {
   dtype = "int32", offset = 4, count = 1,
 })
 -- {2}
+
+numlua.tofile("values.txt", numlua.array({ 1, 2, 3 },
+  { dtype = "int32" }), { sep = "," })
+numlua.fromfile("values.txt", { dtype = "int32", sep = "," }) -- {1, 2, 3}
 ```
 
 ### `numlua.tofile(path_or_file, tensor[, options])`
 
-Writes the tensor's raw C-order little-endian bytes to a path or an open Lua
-file handle and returns `true`. Autograd metadata is not written, and a
-non-contiguous tensor is materialized in C order first. The only option is
-`sep`, and only `""` (binary mode) is accepted; text output uses `savetxt`.
-Caller-owned handles are written at their current position and are never
-closed. Unsupported dtypes, non-empty `sep`, invalid targets, and write
-failures raise a `numlua.tofile:` error.
+Writes the tensor's C-order data to a path or an open Lua file handle and
+returns `true`. Autograd metadata is not written, and a non-contiguous tensor
+is materialized in C order first. Caller-owned handles are written at their
+current position and are never closed.
 
-Raw files carry no shape or dtype, so `fromfile` must use the same dtype that
-`tofile` wrote. Use `.npy` when self-describing files matter.
+| option | default | meaning |
+| --- | --- | --- |
+| `sep` | `""` | `""` writes raw little-endian bytes; a non-empty string writes text |
+| `format` | dtype-specific | printf-style format for text mode; requires a non-empty `sep` |
+
+In binary mode (`sep = ""`) the output is exactly the raw little-endian
+payload. In text mode each C-order value is formatted, joined with `sep`, and
+followed by one trailing newline (an empty tensor writes nothing). The default
+formats are `%.5g`/`%.9g`/`%.17g` for `float16`/`float32`/`float64`, `%d` for
+integer dtypes, and `True`/`False` for `bool`; a custom `format` receives the
+numeric value (`1`/`0` for `bool`). `format` must be a non-empty string and
+requires a non-empty `sep`. Unsupported dtypes, invalid formats, invalid
+targets, and write failures raise a `numlua.tofile:` error.
+
+Raw and text files carry no shape or dtype, so `fromfile` must use the same
+dtype that `tofile` wrote. Use `.npy` when self-describing files matter.
 
 ```lua
 local handle = assert(io.open("stream.bin", "w+b"))
@@ -1439,9 +1468,12 @@ dtype, or backend constraints are forwarded as-is.
   `bool`; `tril`/`triu` apply to the last two axes and reject input below 2-D.
 - `isclose` compares mixed or integral dtypes through `float64`; `allclose`,
   `array_equal`, and `array_equiv` return Lua booleans rather than tensors.
-- `fromfile`/`tofile` are binary-only (`sep = ""`) and carry no shape/dtype
-  metadata. `fromfile` defaults to `float64`, so pass the dtype written by
-  `tofile`. Use `.npy` for self-describing files.
+- `fromfile`/`tofile` default to binary (`sep = ""`) and carry no shape/dtype
+  metadata. A non-empty `sep` selects simple numeric text mode, not
+  `loadtxt`/`savetxt`: text mode has no headers, comments, quoting, or column
+  selection, and it reads a caller-owned handle to EOF. `fromfile` defaults to
+  `float64`, so pass the dtype written by `tofile`. Use `.npy` for
+  self-describing files.
 - `apply_along_axis` takes a Lua callback rather than a NumPy ufunc and has no
   keyword arguments; extra positional arguments are forwarded. Its callback
   must return a scalar or 1-D result, matching NumPy's restriction, and input

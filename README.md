@@ -284,9 +284,9 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt` |
 
-`zeros_like`, `ones_like`, `empty_like`, and `full_like` inherit the
-prototype's shape and dtype by default and accept `{ dtype = ..., shape = ... }`
-overrides. `empty_like` leaves storage uninitialized; `full_like` takes a
+`numlua.zeros_like`, `numlua.ones_like`, `numlua.empty_like`, and
+`numlua.full_like` inherit the prototype's shape and dtype by default and
+accept `{ dtype = ..., shape = ... }` overrides. `empty_like` leaves storage uninitialized; `full_like` takes a
 numeric fill value.
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
@@ -297,9 +297,10 @@ numeric fill value.
 `sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
 allocate independent storage (`rot90(t, 0)` returns the input); see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
-`diagonal` returns a writable view for non-empty numeric input, while `trace`
-sums that diagonal and returns a 0-D tensor for 2-D input or the batch shape
-for higher-rank input.
+`numlua.rot90` rotates in a 1-based axis plane (with `fliplr`/`flipud` as the
+axis-specific flips); `numlua.diagonal` returns a writable view for non-empty
+numeric input, while `numlua.trace` sums that diagonal and returns a 0-D tensor
+for 2-D input or the batch shape for higher-rank input.
 `put` is the exception: it writes into its input tensor in place and returns
 it. `pad` supports `constant`, `edge`, `linear_ramp`, `maximum`, `mean`,
 `median`, `minimum`, `reflect`, `symmetric`, and `wrap` modes. Its fill value
@@ -425,18 +426,33 @@ assert(numlua.load(handle):equal(a))
 handle:close()
 ```
 
-Raw binary arrays use `numlua.tofile(path_or_file, tensor)` and
+Raw arrays use `numlua.tofile(path_or_file, tensor)` and
 `numlua.fromfile(path_or_file, options)`. These mirror NumPy's raw
 `tofile`/`fromfile` pair: there is no header, so the reader must be told the
-dtype. Both accept paths or open Lua handles, write/read C-order little-endian
-bytes, and leave caller-owned handles open. `fromfile` supports `dtype`
-(default `"float64"`), `count` (`-1` for all), and a byte `offset`; the only
-accepted `sep` is the binary empty string.
+dtype. Both accept paths or open Lua handles and leave caller-owned handles
+open. With the default `sep = ""` they write/read C-order little-endian bytes;
+`fromfile` supports `dtype` (default `"float64"`), `count` (`-1` for all), and a
+byte `offset`.
 
 ```lua
 numlua.tofile("values.bin", numlua.array({ 1, 2, 3 }, { dtype = "int32" }))
 local values = numlua.fromfile("values.bin", { dtype = "int32" })
 -- {1, 2, 3}
+```
+
+A non-empty `sep` selects NumPy-style numeric text mode: `tofile` writes each
+C-order value separated by `sep` and ends with a newline, while `fromfile`
+parses fields from the remaining text. `tofile` also accepts a printf-style
+`format`; `fromfile` accepts float `nan`/`inf` spellings, integer values
+truncated toward zero, and `True`/`False` or `1`/`0` for bool. Text mode has no
+headers, comments, quoting, or column selection; use `loadtxt`/`savetxt` for
+files that need those. It reads a caller-owned handle to EOF even when `count`
+is given.
+
+```lua
+local ints = numlua.array({ 1, 2, 3 }, { dtype = "int32" })
+numlua.tofile("values.txt", ints, { sep = "," })
+numlua.fromfile("values.txt", { dtype = "int32", sep = "," }) -- {1, 2, 3}
 ```
 
 Use `.npy` instead when the file should carry its dtype and shape.
@@ -582,9 +598,12 @@ This is an MVP, not a complete NumPy replacement:
 - `split` boundary tables are 1-based, and integer `split` requires an even
   division; `array_split` gives the remainder to the leading chunks. The
   `hsplit`/`vsplit`/`dsplit` helpers use 1-based column/row/depth axes.
-- raw `fromfile`/`tofile` are binary-only (`sep = ""`), carry no shape or dtype
-  metadata, and default `fromfile` to `float64`; pass the matching dtype used
-  by `tofile`. Use `.npy` for self-describing files;
+- `fromfile`/`tofile` default to raw binary (`sep = ""`) and carry no shape or
+  dtype metadata; a non-empty `sep` selects simple numeric text with an
+  optional printf `format`, not the richer `loadtxt`/`savetxt` options. Text
+  mode reads a caller-owned handle to EOF. `fromfile` defaults to `float64`;
+  pass the matching dtype used by `tofile`. Use `.npy` for self-describing
+  files;
 - `.npy` reading supports v1.0, v2.0, and v3.0 headers; writing defaults to
   v1.0 and can emit v2.0/v3.0 with the `version` option. Files must be C order
   on little-endian hosts and use the dtypes above; `load` reads the complete

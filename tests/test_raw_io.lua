@@ -153,7 +153,7 @@ test("raw I/O validates options, dtypes, and targets", function()
   assert_error(function() numlua.fromfile(path, { offset = -1 }) end,
     "offset must be a non-negative integer")
   assert_error(function() numlua.fromfile(path, { sep = "," }) end,
-    "text-mode sep is not supported")
+    "cannot parse text value")
   assert_error(function() numlua.fromfile(path, { sep = 1 }) end,
     "sep must be a string")
   assert_error(function() numlua.fromfile(path, { nope = true }) end,
@@ -165,8 +165,11 @@ test("raw I/O validates options, dtypes, and targets", function()
 
   assert_error(function() numlua.tofile(path, { 1, 2 }) end,
     "expects a tensor")
-  assert_error(function() numlua.tofile(path, values, { sep = "," }) end,
-    "text-mode sep is not supported")
+  assert_error(function() numlua.tofile(path, values, { format = "%d" }) end,
+    "format requires a non-empty sep")
+  assert_error(function()
+    numlua.tofile(path, values, { sep = ",", format = "" })
+  end, "format must be a non-empty string")
   assert_error(function() numlua.tofile(path, values, { nope = true }) end,
     "unknown option")
   assert_error(function() numlua.tofile("", values) end,
