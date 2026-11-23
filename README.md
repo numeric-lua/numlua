@@ -6,14 +6,14 @@ NumPy-shaped arrays for LuaJIT, implemented as a **thin facade over
 `numlua` gives LuaJIT the parts of NumPy that are useful around a tensor
 engine: array construction, shape manipulation, elementwise ufuncs, reductions,
 predicates and selection, small linear algebra operations, dtype conversion,
-NumPy `.npy` file I/O, and simple whitespace/CSV text I/O. It does not implement
+NumPy `.npy` and raw binary file I/O, and simple whitespace/CSV text I/O. It does not implement
 a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.20.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.21.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
-> `.npy`/`.npz`, and text I/O.  It is packaged on LuaRocks and tested against
+> `.npy`/`.npz`/raw binary, and text I/O.  It is packaged on LuaRocks and tested against
 > luatorch 0.25.x.
 
 ## Why a facade?
@@ -90,6 +90,17 @@ local edited = numlua.arange(6)
 numlua.put(edited, { 1, 6 }, { 10, 60 })  -- {10, 1, 2, 3, 4, 60}
 numlua.put(edited, { 9 }, -1, "wrap")     -- wraps index 9 to index 3
 print(edited:format())
+```
+
+Array splitting follows `np.split`: `numlua.split` requires an even integer
+division, `numlua.array_split` distributes the remainder, and boundary tables
+use 1-based positions. `numlua.hsplit`, `vsplit`, and `dsplit` are the
+column/row/depth conveniences:
+
+```lua
+local rows = numlua.split(numlua.arange(6):reshape(3, 2), 3, 1)
+print(rows[1]:format(), rows[2]:format(), rows[3]:format())
+local left, right = table.unpack(numlua.hsplit(rows[1]:reshape(1, 2), 2))
 ```
 
 `numlua.take` uses the same 1-based indices and accepts scalar (0-D) or N-D
@@ -489,12 +500,14 @@ corruption paths, ZIP32 writer limits, native-endian `.npy` headers, NPY v2.0
 and v3.0 readers and writers, byte-level writer conformance, `.npz` members and
 member versions, conditional `select`, empty and pre-suffixed `.npz` members,
 layout view/copy semantics,
-broadcast/take/take_along_axis/put edge shapes, deflate expansion guardrails,
-release metadata, and error paths. The pad tests compare wrap results with
-an independent index walk and cover every constant-value form; the selection
-and I/O tests cover empty/0-D branches, Unicode and colliding `.npz` names,
-EOCD comments, invalid members, and zero-width text tensors.
-It currently contains 259 tests.
+broadcast/take/take_along_axis/put edge shapes, split/diagonal/triangular
+helpers, closeness predicates, raw binary I/O, text file handles, deflate
+expansion guardrails, release metadata, and error paths. The pad tests compare
+wrap results with an independent index walk and cover every constant-value
+form; the selection and I/O tests cover empty/0-D branches, Unicode and
+colliding `.npz` names, EOCD comments, invalid members, zero-width text
+tensors, sequential handles, and truncation.
+It currently contains 292 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -551,6 +564,12 @@ This is an MVP, not a complete NumPy replacement:
   input; use `flatnonzero` for flat indices or a 0-D scalar;
 - `squeeze` delegates to luatorch; squeezing an axis whose size is not 1 leaves
   that axis unchanged rather than raising NumPy's error;
+- `split` boundary tables are 1-based, and integer `split` requires an even
+  division; `array_split` gives the remainder to the leading chunks. The
+  `hsplit`/`vsplit`/`dsplit` helpers use 1-based column/row/depth axes.
+- raw `fromfile`/`tofile` are binary-only (`sep = ""`), carry no shape or dtype
+  metadata, and default `fromfile` to `float64`; pass the matching dtype used
+  by `tofile`. Use `.npy` for self-describing files;
 - `.npy` reading supports v1.0, v2.0, and v3.0 headers; writing defaults to
   v1.0 and can emit v2.0/v3.0 with the `version` option. Files must be C order
   on little-endian hosts and use the dtypes above; `load` reads the complete
@@ -575,8 +594,9 @@ This is an MVP, not a complete NumPy replacement:
   1-D unless `ndmin = 2`.
   LF, CRLF, and CR line endings load, unknown option keys are rejected, and
   `int64` text output can round values beyond the exact double range (use
-  `.npy` for those);
-- LuaRocks packaging is provided by `numlua-0.20.0-1.rockspec`; the native
+  `.npy` for those). Both text functions accept caller-owned file handles at
+  their current position and leave them open;
+- LuaRocks packaging is provided by `numlua-0.21.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License

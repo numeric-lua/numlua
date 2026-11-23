@@ -57,7 +57,11 @@ test("new public API and format support are documented", function()
   for _, symbol in ipairs({ "numlua.put", "numlua.take_along_axis",
       "numlua.apply_along_axis", "numlua.apply_over_axes",
       "numlua.select", "numlua.sort", "numlua.unique", "numlua.nonzero",
-      "numlua.argwhere" }) do
+      "numlua.argwhere", "numlua.split", "numlua.array_split",
+      "numlua.hsplit", "numlua.vsplit", "numlua.dsplit", "numlua.diag",
+      "numlua.diagflat", "numlua.tril", "numlua.triu", "numlua.isclose",
+      "numlua.allclose", "numlua.array_equal", "numlua.array_equiv",
+      "numlua.fromfile", "numlua.tofile" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -75,6 +79,11 @@ test("new public API and format support are documented", function()
     "docs/api.md does not document nonzero/argwhere")
   assert_true(api:find("numlua.unique", 1, true) ~= nil,
     "docs/api.md does not document unique")
+  assert_true(api:find("numlua.fromfile", 1, true) ~= nil and
+      api:find("numlua.tofile", 1, true) ~= nil,
+    "docs/api.md does not document raw binary I/O")
+  assert_true(api:find("numlua.array_equiv", 1, true) ~= nil,
+    "docs/api.md does not document array_equiv")
   assert_true(api:find("version = 2", 1, true) ~= nil,
     "docs/api.md does not document writing NPY v2.0")
   assert_true(api:find("0-D index removes", 1, true) ~= nil,
@@ -133,7 +142,16 @@ test("new public API and format support are documented", function()
   assert_true(readme:find("converters", 1, true) ~= nil,
     "README.md does not document loadtxt converters")
   assert_true(readme:find("file handle", 1, true) ~= nil,
-    "README.md does not document .npy file handles")
+    "README.md does not document file handles")
+  assert_true(readme:find("numlua.fromfile", 1, true) ~= nil and
+      readme:find("numlua.tofile", 1, true) ~= nil,
+    "README.md does not document raw binary I/O")
+  assert_true(readme:find("numlua.split", 1, true) ~= nil and
+      readme:find("numlua.array_split", 1, true) ~= nil,
+    "README.md does not document the split family")
+  assert_true(readme:find("numlua.isclose", 1, true) ~= nil and
+      readme:find("numlua.array_equiv", 1, true) ~= nil,
+    "README.md does not document closeness predicates")
   for _, option in ipairs({ "usecols", "ndmin", "header", "newline" }) do
     assert_true(readme:find(option, 1, true) ~= nil,
       "README.md does not mention the text option " .. option)

@@ -50,6 +50,19 @@ print("per-row argmax:\n" .. numlua.argmax(a, 2):format())
 print("stacked rows shape: " ..
   table.concat(numlua.shape(numlua.concatenate({ a, a }, 1)), " x "))
 
+local split_rows = numlua.split(a, 2, 1)
+local top, bottom = split_rows[1], split_rows[2]
+print("split rows: " .. table.concat(numlua.shape(top), " x ") .. " and " ..
+  table.concat(numlua.shape(bottom), " x "))
+assert(top:equal(a:narrow(1, 1, 1)) and bottom:equal(a:narrow(1, 2, 1)))
+
+print("diag:\n" .. numlua.diag(numlua.array({ 1, 2, 3 })):format())
+print("tril:\n" .. numlua.tril(numlua.array({
+  { 1, 2 },
+  { 3, 4 },
+})):format())
+assert(numlua.diag(numlua.array({ 1, 1 })):equal(numlua.eye(2)))
+
 heading("Matrix multiply")
 local weights = numlua.array({
   { 1.0, -1.0 },
@@ -81,6 +94,10 @@ print("nonzeros = " .. tostring(numlua.count_nonzero(values):item()))
 print("any positive = " .. tostring(numlua.any(values:gt(0)):item()))
 print("all above -3 = " .. tostring(numlua.all(values:gt(-3)):item()))
 print("isnan mask:\n" .. numlua.isnan(values):format())
+print("isclose against itself: " ..
+  tostring(numlua.allclose(values, values)))
+print("array_equiv scalar: " .. tostring(numlua.array_equiv(1, numlua.ones(3))))
+assert(numlua.array_equal(numlua.array({ 1, 2 }), numlua.array({ 1, 2 })))
 
 local edited = numlua.arange(6)
 numlua.put(edited, { 1, 6 }, { 10, 60 })
@@ -137,6 +154,16 @@ assert(io.type(handle) == "file")
 handle:close()
 print("restored the same tensor through an open file handle")
 os.remove(path)
+
+heading("Raw binary round-trip")
+local raw_path = root .. "/examples/.basic-demo.bin"
+local raw_input = numlua.array({ 1, 2, 3 }, { dtype = "int32" })
+assert(numlua.tofile(raw_path, raw_input))
+local raw_restored = numlua.fromfile(raw_path, { dtype = "int32" })
+assert(raw_restored:equal(raw_input))
+print("restored " .. tostring(raw_restored:numel()) ..
+  " int32 values from " .. raw_path)
+os.remove(raw_path)
 
 heading("Text/CSV round-trip")
 local text_path = root .. "/examples/.basic-demo.csv"

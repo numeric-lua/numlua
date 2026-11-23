@@ -44,8 +44,8 @@ jobs:
           LUATORCH_LIB: ${{ github.workspace }}/luatorch/build/libluatorch.so
         run: |
           sudo apt-get install -y luarocks
-          luarocks --lua-version=5.1 make --tree="$PWD/.rock-tree" --deps-mode=none numlua-0.20.0-1.rockspec
+          luarocks --lua-version=5.1 make --tree="$PWD/.rock-tree" --deps-mode=none numlua-0.21.0-1.rockspec
           ROCK_LUA=$(find "$PWD/.rock-tree/share/lua" -maxdepth 1 -type d | tail -1)
           LUATORCH_LIB="$LUATORCH_LIB" \
           LUA_PATH="$ROCK_LUA/?.lua;$ROCK_LUA/?/init.lua;$PWD/luatorch/lua/?.lua;$PWD/luatorch/lua/?/init.lua;;" \
-            luajit -e 'local n=require("numlua"); assert(n.VERSION=="0.20.0"); print(n.zeros(2,2):sum():item())'
+            luajit -e 'local n=require("numlua"); assert(n.VERSION=="0.21.0"); print(n.zeros(2,2):sum():item())'

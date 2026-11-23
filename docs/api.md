@@ -2,14 +2,14 @@
 
 `numlua` is a thin, NumPy-shaped facade over luatorch tensors. Array-producing
 functions return luatorch `Tensor`s (`shape` and `dtype` return plain Lua
-values, and `save`/`savetxt` return `true`), and the numerical work is
-delegated to luatorch/ATen.
+values, and `save`/`tofile`/`savetxt` return `true`), and the numerical work
+is delegated to luatorch/ATen.
 
 Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.20.0"
+print(numlua.VERSION) -- "0.21.0"
 ```
 
 ## Conventions
@@ -1368,6 +1368,16 @@ dtype, or backend constraints are forwarded as-is.
   to the end of the axis.
 - `take_along_axis` uses 1-based indices and rejects negative index values;
   NumPy's version resolves them relative to the end of the axis.
+- `split` boundary tables are 1-based; `split` with an integer section count
+  requires an even division, while `array_split` distributes the remainder.
+  `hsplit`, `vsplit`, and `dsplit` require at least 1-D, 2-D, and 3-D input.
+- `diag`, `diagflat`, `tril`, and `triu` support all facade dtypes including
+  `bool`; `tril`/`triu` apply to the last two axes and reject input below 2-D.
+- `isclose` compares mixed or integral dtypes through `float64`; `allclose`,
+  `array_equal`, and `array_equiv` return Lua booleans rather than tensors.
+- `fromfile`/`tofile` are binary-only (`sep = ""`) and carry no shape/dtype
+  metadata. `fromfile` defaults to `float64`, so pass the dtype written by
+  `tofile`. Use `.npy` for self-describing files.
 - `apply_along_axis` takes a Lua callback rather than a NumPy ufunc and has no
   keyword arguments; extra positional arguments are forwarded. Its callback
   must return a scalar or 1-D result, matching NumPy's restriction, and input
@@ -1379,8 +1389,10 @@ dtype, or backend constraints are forwarded as-is.
   restored at the same position); NumPy's scalar and table return spellings
   are not accepted by `np.apply_over_axes`, which expects an ndarray.
 - Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
-  or parsed header metadata. `savetxt` header/footer text is written as
-  comments, so `loadtxt` ignores it rather than interpreting it. `loadtxt`
+  or parsed header metadata. `loadtxt`/`savetxt` accept caller-owned file
+  handles at their current position and never close them. `savetxt`
+  header/footer text is written as comments, so `loadtxt` ignores it rather
+  than interpreting it. `loadtxt`
   defaults to `float32`, and one-row/one-column files are squeezed to 1-D
   unless `ndmin = 2`. `usecols` uses **1-based** column numbers (NumPy uses
   0-based columns), though negative columns count from the end in both. `bool`

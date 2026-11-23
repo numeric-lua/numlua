@@ -1,34 +1,34 @@
-# numlua 0.20.0
+# numlua 0.21.0
 
 NumPy-shaped arrays for LuaJIT, backed by luatorch.
 
 ## Highlights
 
-- `numlua.sort` returns sorted values along the last axis by default, with
-  optional axis and descending controls matching `argsort`.
-- `numlua.unique` flattens and sorts unique values and can also return
-  first-occurrence indices, the inverse mapping, and counts. Indices follow
-  numlua's 1-based convention.
-- `numlua.nonzero` returns one 1-based coordinate tensor per axis, while
-  `numlua.argwhere` returns the same coordinates as an `(N, ndim)` matrix.
-- `numlua.loadtxt` gains a `converters` option for sentinel handling and custom
-  field parsing, keyed by 1-based physical columns.
-- `numlua.save` and `numlua.load` accept open Lua file handles, including
-  reading several arrays sequentially from one handle. Handles stay open and
-  are used at their current position.
+- `numlua.split`, `array_split`, `hsplit`, `vsplit`, and `dsplit` split along
+  1-based axes, with NumPy's even/uneven section rules and view-returning
+  boundary tables.
+- `numlua.diag`, `diagflat`, `tril`, and `triu` add NumPy's diagonal
+  constructors/extractors and triangular masks, including N-D and bool input.
+- `numlua.isclose`, `allclose`, `array_equal`, and `array_equiv` add
+  broadcasting-aware closeness/equality predicates with NumPy's tolerance and
+  infinity/NaN behavior.
+- `numlua.fromfile` and `numlua.tofile` add raw binary I/O for every supported
+  dtype, with `dtype`/`count`/byte-`offset` controls and path or handle targets.
+- `numlua.loadtxt` and `numlua.savetxt` accept open Lua file handles at their
+  current position and leave caller-owned handles open.
 - All new features are documented in `README.md` and `docs/api.md`; no runtime
   dependency was added.
 
 ## Requirements
 
 LuaJIT 2.1 and a built luatorch checkout. zlib remains optional: stored
-archives and all non-compression features work without it.
+archives, raw binary I/O, and all non-compression features work without it.
 
 ## Verification
 
-- 259 tests passed with system zlib
-- 259 tests passed with `NUMLUA_DISABLE_ZLIB=1`
+- 292 tests passed with system zlib
+- 292 tests passed with `NUMLUA_DISABLE_ZLIB=1`
 - `examples/basic.lua` runs
-- LuaRocks builtin install smoke-tested from `numlua-0.20.0-1.rockspec`
+- LuaRocks builtin install smoke-tested from `numlua-0.21.0-1.rockspec`
 
-Tag and GitHub release: `v0.20.0`.
+Tag and GitHub release: `v0.21.0`.

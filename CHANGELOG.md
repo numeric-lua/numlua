@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.21.0 — 2026-11-23
+
+### Added
+
+- `numlua.split`, `numlua.array_split`, `numlua.hsplit`, `numlua.vsplit`, and
+  `numlua.dsplit` split tensors along a 1-based axis. Integer sections require
+  an even division for `split` and distribute the remainder for
+  `array_split`; boundary tables are 1-based, accept negative and clamped
+  positions, and return views. `hsplit`/`vsplit`/`dsplit` use NumPy's
+  column/row/depth axes and rank requirements.
+- `numlua.diag`, `numlua.diagflat`, `numlua.tril`, and `numlua.triu` cover
+  NumPy's diagonal constructors/extractors and triangular masks. Offsets are
+  positive above and negative below the main diagonal; N-D triangular helpers
+  operate on the last two axes, and all four preserve dtype including `bool`.
+- `numlua.isclose`, `numlua.allclose`, `numlua.array_equal`, and
+  `numlua.array_equiv` implement NumPy's closeness and equality predicates,
+  including `rtol`/`atol` defaults, broadcasting, infinity handling, and
+  optional NaN equality. `allclose`, `array_equal`, and `array_equiv` return
+  Lua booleans.
+- `numlua.fromfile` and `numlua.tofile` provide NumPy-style raw binary I/O for
+  every supported dtype. `fromfile` accepts `dtype` (default `"float64"`),
+  `count`, and byte `offset`, reads paths or open handles, and `tofile` writes
+  C-order little-endian payloads. Raw files carry no metadata, so reading
+  requires the matching dtype.
+- `numlua.loadtxt` and `numlua.savetxt` now accept an already-open Lua file
+  handle as well as a path. Caller-owned handles are used at their current
+  position and are never closed, including on write failure.
+
+### Changed
+
+- The release metadata, README, API reference, and runnable example cover the
+  new split, diagonal, closeness, raw-binary, and text-handle behavior.
+- `hsplit` rejects 0-D input explicitly, and `diag` handles empty bool vectors.
+- No runtime dependency was added; all new work delegates to luatorch or uses
+  only the Lua standard library and LuaJIT FFI for raw buffers.
+
+### Tests
+
+- 292 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_split.lua` covers even/uneven sections, 1-based/negative/clamped
+  boundaries, empty axes, and rank errors; `test_diag.lua` covers vector
+  construction, matrix extraction, offsets, N-D and bool triangular masks, and
+  independence; `test_close.lua` covers tolerances, infinities, NaN,
+  broadcasting, and equality shapes; `test_raw_io.lua` covers every dtype,
+  count/offset windows, C-order writes, sequential handles, truncation, and
+  option errors; `test_txt_handles.lua` covers handle round-trips, current
+  positions, empty input, closed handles, and write-failure ownership.
+
 ## 0.20.0 — 2026-11-23
 
 ### Added
