@@ -974,6 +974,7 @@ luatorch tensor. Options:
 | `skiprows` | `0` | number of physical lines to skip before parsing |
 | `max_rows` | all | maximum number of data rows to read after skipping |
 | `usecols` | all | 1-based column number or table of column numbers to read |
+| `converters` | none | function or 1-based column-to-function table applied to raw fields |
 | `unpack` | `false` | transpose a 2-D result so columns become rows |
 | `ndmin` | `0` | minimum result rank: `0`, `1`, or `2` |
 
@@ -1001,6 +1002,30 @@ rectangular and agree with the first data row. `usecols = 0` raises a clear
 1-based error, and out-of-range indices raise a `numlua.loadtxt:` error once the
 first data row establishes the width. An empty file has no width to check and
 loads as an empty 1-D tensor.
+
+`converters` provides per-column parsing hooks. A single function applies to
+every physical input column; a table maps **1-based** physical column numbers
+to functions. Each function receives the raw field string and must return one
+Lua number. Converters run before the built-in numeric parser, so a sentinel
+such as `"NA"` can be mapped to a value; only columns that are actually read
+are converted. Converter keys refer to the file's physical columns, not to
+`usecols` output positions, and are bounds-checked after the first row
+establishes the width. A callback error or a non-number result raises a
+`numlua.loadtxt:` error naming the line and column. Empty input has no fields
+to convert and loads empty.
+
+```lua
+local values = numlua.loadtxt("data.csv", {
+  delimiter = ",",
+  dtype = "int64",
+  converters = {
+    [2] = function(field)
+      if field == "NA" then return -1 end
+      return tonumber(field)
+    end,
+  },
+})
+```
 
 `ndmin` controls the result rank before unpacking. With the default `0` (and
 with `1`), one-row and one-column input is squeezed to 1-D. With `2`, the

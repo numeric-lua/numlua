@@ -837,3 +837,131 @@ test("savetxt validates the fmt table shape and entries", function()
   end, "newline must be a string")
   assert_eq(io.open(path, "r"), nil)
 end)
+
+test("loadtxt converters transform raw fields before numeric parsing",
+    function()
+  local path = write_text(tmp_path("converters-all"), "1.5,2.5\n3.5,4.5\n")
+  local seen = {}
+  local loaded = numlua.loadtxt(path, {
+    delimiter = ",",
+    converters = function(field)
+      if type(field) ~= "string" then error("converter field is not a string") end
+      seen[field] = true
+      return tonumber(field) * 2
+    end,
+  })
+  assert_tensor(loaded, { { 3, 5 }, { 7, 9 } })
+  assert_true(seen["1.5"] and seen["2.5"] and seen["3.5"] and seen["4.5"])
+  os.remove(path)
+
+  -- A table maps 1-based physical columns.  A missing-value sentinel can be
+  -- mapped without teaching loadtxt a new numeric syntax.
+  local sentinel = write_text(tmp_path("converters-sentinel"),
+    "1,NA\n2,4\n")
+  local converted = numlua.loadtxt(sentinel, {
+    delimiter = ",",
+    dtype = "int64",
+    converters = {
+      [2] = function(field)
+        if field == "NA" then return -1 end
+        return tonumber(field)
+      end,
+    },
+  })
+  assert_tensor(converted, { { 1, -1 }, { 2, 4 } })
+  os.remove(sentinel)
+end)
+
+test("loadtxt converters follow physical usecols columns", function()
+  local path = write_text(tmp_path("converters-usecols"),
+    "1,10,100\n2,20,200\n")
+  local converted = numlua.loadtxt(path, {
+    delimiter = ",",
+    dtype = "int64",
+    usecols = { 2, 1 },
+    converters = {
+      [2] = function(field) return tonumber(field) + 1 end,
+    },
+  })
+  assert_tensor(converted, { { 11, 1 }, { 21, 2 } })
+
+  -- Unselected fields are not parsed or converted, so a malformed unused
+  -- field remains harmless when the selected column has a converter.
+  local unused = write_text(tmp_path("converters-unused"),
+    "1,nope\n2,bad\n")
+  local selected = numlua.loadtxt(unused, {
+    delimiter = ",",
+    dtype = "int64",
+    usecols = { 1 },
+    converters = {
+      [1] = function(field) return tonumber(field) * 10 end,
+    },
+  })
+  assert_tensor(selected, { 10, 20 })
+  os.remove(path)
+  os.remove(unused)
+end)
+
+test("loadtxt converters work with empty input and max_rows", function()
+  local empty = write_text(tmp_path("converters-empty"), "# only comments\n")
+  local result = numlua.loadtxt(empty, {
+    converters = { [1] = function() return 99 end },
+  })
+  assert_shape(result, { 0 })
+  os.remove(empty)
+
+  local path = write_text(tmp_path("converters-max-rows"), "1,2\n3,4\n")
+  local calls = 0
+  local limited = numlua.loadtxt(path, {
+    delimiter = ",",
+    max_rows = 1,
+    converters = function(field)
+      calls = calls + 1
+      return tonumber(field)
+    end,
+  })
+  assert_tensor(limited, { 1, 2 })
+  assert_eq(calls, 2)
+  os.remove(path)
+end)
+
+test("loadtxt validates converters and their results", function()
+  local path = write_text(tmp_path("converters-errors"), "1 2\n")
+  assert_error(function()
+    numlua.loadtxt(path, { converters = 5 })
+  end, "converters must be a function")
+  assert_error(function()
+    numlua.loadtxt(path, { converters = { [0] = tostring } })
+  end, "column 0 is invalid")
+  assert_error(function()
+    numlua.loadtxt(path, { converters = { [-1] = tostring } })
+  end, "positive 1-based")
+  assert_error(function()
+    numlua.loadtxt(path, { converters = { [1.5] = tostring } })
+  end, "converter columns must be integers")
+  assert_error(function()
+    numlua.loadtxt(path, { converters = { ["1"] = tostring } })
+  end, "converter columns must be integers")
+  assert_error(function()
+    numlua.loadtxt(path, { converters = { [1] = 5 } })
+  end, "converter for column 1 must be a function")
+  assert_error(function()
+    numlua.loadtxt(path, { converters = { [3] = tostring } })
+  end, "converter column 3 is out of range for 2 column(s)")
+  assert_error(function()
+    numlua.loadtxt(path, {
+      converters = { [2] = function() return nil end },
+    })
+  end, "converter for column 2 must return a number")
+  assert_error(function()
+    numlua.loadtxt(path, {
+      converters = { [2] = function() return "2" end },
+    })
+  end, "converter for column 2 must return a number")
+  assert_error(function()
+    numlua.loadtxt(path, {
+      converters = { [2] = function() error("boom") end },
+    })
+  end, "converter for column 2 failed:")
+  os.remove(path)
+end)

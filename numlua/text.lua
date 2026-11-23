@@ -63,6 +63,7 @@ local LOAD_OPTIONS = {
   skiprows = true,
   max_rows = true,
   usecols = true,
+  converters = true,
   unpack = true,
   ndmin = true,
 }
@@ -306,6 +307,45 @@ local function parse_number(field)
   return nil
 end
 
+-- Normalize the converters option.  A single function applies to every input
+-- column; a table maps 1-based physical column numbers to functions.  Unlike
+-- NumPy's 0-based dictionary keys, numlua keeps the facade's 1-based column
+-- convention.  Bounds are checked once the first data row establishes the
+-- file width.
+local function parse_converters(value)
+  if value == nil then
+    return nil
+  end
+  if type(value) == "function" then
+    return { all = value }
+  end
+  if type(value) ~= "table" then
+    error("numlua.loadtxt: converters must be a function, a table, or nil", 3)
+  end
+  local mapping = {}
+  for column, converter in pairs(value) do
+    if type(column) ~= "number" or column % 1 ~= 0 then
+      error("numlua.loadtxt: converter columns must be integers, got " ..
+        tostring(column), 3)
+    end
+    if column == 0 then
+      error("numlua.loadtxt: converter columns are 1-based; column 0 is " ..
+        "invalid (use 1 for the first column)", 3)
+    end
+    if column < 0 then
+      error("numlua.loadtxt: converter columns must be positive 1-based " ..
+        "column numbers, got " .. tostring(column), 3)
+    end
+    if type(converter) ~= "function" then
+      error(string.format(
+        "numlua.loadtxt: converter for column %d must be a function, got %s",
+        column, type(converter)), 3)
+    end
+    mapping[column] = converter
+  end
+  return { map = mapping }
+end
+
 -- Read a whitespace- or delimiter-separated text file and return a 1-D/2-D
 -- luatorch tensor.  Each non-comment line must have the same number of fields.
 function text.loadtxt(path, options)
@@ -321,6 +361,7 @@ function text.loadtxt(path, options)
   local max_rows = check_nonnegative_integer(
     options.max_rows, "max_rows", "loadtxt")
   local usecols = parse_usecols(options.usecols)
+  local converters = parse_converters(options.converters)
   local unpack = check_unpack(options.unpack)
   local ndmin = check_ndmin(options.ndmin)
 
@@ -349,6 +390,44 @@ function text.loadtxt(path, options)
     end
   end
 
+  -- Converter keys refer to physical input columns, not output positions, so
+  -- they are validated against the full file width even when usecols is set.
+  local function validate_converters()
+    if converters == nil or converters.map == nil then
+      return
+    end
+    for column in pairs(converters.map) do
+      if column > columns then
+        error(string.format(
+          "numlua.loadtxt: converter column %d is out of range for %d " ..
+          "column(s)", column, columns), 3)
+      end
+    end
+  end
+
+  -- Apply a per-column converter before the built-in numeric parser.  The
+  -- callback receives the raw field string and must return one number; this
+  -- lets callers handle sentinels such as "NA" without adding a text parser.
+  local function parse_field(field, line_number, column)
+    local converter = converters ~= nil and
+      (converters.all or (converters.map and converters.map[column])) or nil
+    if converter == nil then
+      return parse_number(field)
+    end
+    local ok, value = pcall(converter, field)
+    if not ok then
+      error(string.format(
+        "numlua.loadtxt: line %d: converter for column %d failed: %s",
+        line_number, column, tostring(value)), 3)
+    end
+    if type(value) ~= "number" then
+      error(string.format(
+        "numlua.loadtxt: line %d: converter for column %d must return a " ..
+        "number, got %s", line_number, column, type(value)), 3)
+    end
+    return value
+  end
+
   -- max_rows=0 reads no data rows at all, but still validates/open-reads the
   -- path and options first, like NumPy.
   if data ~= "" and max_rows ~= 0 then
@@ -371,6 +450,7 @@ function text.loadtxt(path, options)
           if columns == nil then
             columns = #fields
             resolve_usecols()
+            validate_converters()
           elseif #fields ~= columns then
             error(string.format(
               "numlua.loadtxt: line %d has %d column(s), expected %d",
@@ -380,7 +460,8 @@ function text.loadtxt(path, options)
           if selected ~= nil then
             for output_column = 1, #selected do
               local source_column = selected[output_column]
-              local value = parse_number(fields[source_column])
+              local value = parse_field(
+                fields[source_column], line_number, source_column)
               if value == nil then
                 error(string.format(
                   "numlua.loadtxt: line %d: invalid number '%s' in " ..
@@ -391,7 +472,7 @@ function text.loadtxt(path, options)
             end
           else
             for column = 1, #fields do
-              local value = parse_number(fields[column])
+              local value = parse_field(fields[column], line_number, column)
               if value == nil then
                 error(string.format(
                   "numlua.loadtxt: line %d: invalid number '%s' in " ..

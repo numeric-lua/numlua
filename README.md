@@ -389,7 +389,9 @@ assert(b:equal(a))
 
 `loadtxt` ignores blank lines and comments, requires every data row to have the
 same number of fields, and reports malformed rows or invalid numbers with the
-line number. `skiprows` skips physical lines (including comments and blanks),
+line number. A `converters` function (or a table of 1-based physical column
+numbers to functions) can transform raw fields before the numeric parser, which
+handles sentinels such as `"NA"`. `skiprows` skips physical lines (including comments and blanks),
 while `max_rows` limits the number of data rows read after that skip; `max_rows`
 does not count blank or comment lines. `usecols` selects 1-based columns (with
 `-1` for the last column and a table preserving order), `unpack = true`
