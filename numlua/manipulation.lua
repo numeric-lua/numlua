@@ -237,6 +237,108 @@ function M.tile(t, reps)
   return view
 end
 
+-- Normalize one split boundary.  Positive values are 1-based positions in
+-- `1 .. size + 1` and negative values count from the end of the axis, so -1
+-- splits just before the last element.  Values outside the range are clamped,
+-- matching NumPy's treatment of out-of-range split points.
+local function split_boundary(value, size, name)
+  if type(value) ~= "number" or value ~= value or value % 1 ~= 0 or
+      value == math.huge or value == -math.huge then
+    error(string.format(
+      "numlua.%s: split indices must be finite integers", name), 3)
+  end
+  local position = value < 0 and size + value + 1 or value
+  if position < 1 then return 1 end
+  if position > size + 1 then return size + 1 end
+  return position
+end
+
+-- Shared implementation for split() and array_split().  An integer sections
+-- argument divides the selected axis; split requires an even division while
+-- array_split gives the remainder to the leading chunks.  A table argument
+-- contains split boundaries and always produces #boundaries + 1 chunks.
+local function split_impl(t, sections, axis_value, name, allow_uneven)
+  tensor(t, name)
+  local dim = axis_value == nil and 1 or axis(axis_value, t:dim(), name)
+  local size = t:size(dim)
+  local result = {}
+
+  if type(sections) == "number" then
+    if sections ~= sections or sections % 1 ~= 0 or sections < 1 or
+        sections == math.huge or sections == -math.huge then
+      error(string.format(
+        "numlua.%s: sections must be a positive integer", name), 3)
+    end
+    if not allow_uneven and size % sections ~= 0 then
+      error(string.format(
+        "numlua.%s: axis %d with size %d cannot be split into %d equal " ..
+        "parts (use array_split for uneven sections)", name, dim, size,
+        sections), 3)
+    end
+    local base = math.floor(size / sections)
+    local extra = size % sections
+    local start = 1
+    for index = 1, sections do
+      local count = base + (index <= extra and 1 or 0)
+      result[index] = t:narrow(dim, start, count)
+      start = start + count
+    end
+    return result
+  end
+
+  if type(sections) ~= "table" then
+    error(string.format(
+      "numlua.%s expects an integer section count or a table of split " ..
+      "indices", name), 3)
+  end
+
+  local previous = 1
+  for index = 1, #sections do
+    local position = split_boundary(sections[index], size, name)
+    local count = position - previous
+    if count < 0 then count = 0 end
+    result[index] = t:narrow(dim, previous, count)
+    previous = position
+  end
+  result[#result + 1] = t:narrow(dim, previous, size + 1 - previous)
+  return result
+end
+
+-- split() follows np.split: an integer section count must divide the axis
+-- evenly, while a table lists 1-based boundaries.  Use array_split() when an
+-- uneven integer division is wanted.
+function M.split(t, sections, axis_value)
+  return split_impl(t, sections, axis_value, "split", false)
+end
+
+function M.array_split(t, sections, axis_value)
+  return split_impl(t, sections, axis_value, "array_split", true)
+end
+
+-- hsplit splits columns (1-based axis 2) above 1-D; for a 1-D input it
+-- splits the only axis.  vsplit splits rows (1-based axis 1) and dsplit
+-- splits depth (1-based axis 3), requiring the matching input rank.
+function M.hsplit(t, sections)
+  tensor(t, "hsplit")
+  return split_impl(t, sections, t:dim() == 1 and 1 or 2, "hsplit", false)
+end
+
+function M.vsplit(t, sections)
+  tensor(t, "vsplit")
+  if t:dim() < 2 then
+    error("numlua.vsplit expects at least a 2-D tensor", 2)
+  end
+  return split_impl(t, sections, 1, "vsplit", false)
+end
+
+function M.dsplit(t, sections)
+  tensor(t, "dsplit")
+  if t:dim() < 3 then
+    error("numlua.dsplit expects at least a 3-D tensor", 2)
+  end
+  return split_impl(t, sections, 3, "dsplit", false)
+end
+
 -- resize returns a new tensor with the requested shape.  It follows NumPy's
 -- ndarray.resize data rule: keep the C-order elements that fit, zero-fill any
 -- new space, and drop surplus elements.  Unlike np.resize, it never tiles the

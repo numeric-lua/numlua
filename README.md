@@ -251,7 +251,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | --- | --- |
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize` |
-| Combine | `concatenate`, `stack` |
+| Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |

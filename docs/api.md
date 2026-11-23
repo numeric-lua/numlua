@@ -198,6 +198,44 @@ Concatenates a non-empty table of tensors along `axis` (default `1`).
 Stacks a non-empty table of same-shaped tensors along a new `axis` (default
 `1`).
 
+### `numlua.split(t, sections[, axis])`
+### `numlua.array_split(t, sections[, axis])`
+
+Split a tensor along `axis` (default `1`) and return the resulting table of
+tensors. An integer `sections` divides the axis: `split` requires an even
+division and raises a `numlua.split:` error otherwise, while `array_split`
+distributes the remainder over the leading chunks, exactly like NumPy.
+
+A table of `sections` contains split boundaries. Boundaries are **1-based**:
+with `axis = 1`, `{ 2, 4 }` returns elements `1..1`, `2..3`, and `4..end`.
+Negative boundaries count from the end (`-1` splits before the last element),
+and out-of-range or non-monotonic boundaries are clamped or produce empty
+chunks instead of errors, following NumPy. An empty boundary table returns the
+whole input as one chunk. The chunks are views into the original tensor.
+
+```lua
+local v = numlua.array({ 1, 2, 3, 4, 5 })
+local a, b, c = table.unpack(numlua.split(v, { 2, 4 }))
+-- a = {1}, b = {2, 3}, c = {4, 5}
+local first, second, third = table.unpack(numlua.array_split(v, 3))
+-- shapes 2, 2, 1
+```
+
+### `numlua.hsplit(t, sections)`, `vsplit`, `dsplit`
+
+Convenience splitters with NumPy's axis choices translated to 1-based axes:
+
+| function | input rank | axis |
+| --- | --- | --- |
+| `hsplit` | 1-D | `1` |
+| `hsplit` | 2-D or higher | `2` (columns) |
+| `vsplit` | 2-D or higher | `1` (rows) |
+| `dsplit` | 3-D or higher | `3` (depth) |
+
+`vsplit` and `dsplit` reject input below their required rank with a
+`numlua.vsplit:`/`numlua.dsplit:` error. All three use `split`'s even-division
+rule for an integer section count and its boundary-table rule otherwise.
+
 ## Reductions
 
 ### `numlua.sum(t[, axis[, keepdims]])`
@@ -509,6 +547,9 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.moveaxis(t, source, destination)` | move one or more axes (view); accepts axis tables |
 | `numlua.atleast_1d(...)` / `atleast_2d` / `atleast_3d` | add size-1 dimensions (view); one result per input |
 | `numlua.resize(t, shape)` | zero-fill/truncate to a new shape (materialized) |
+| `numlua.split(t, sections[, axis])` | split along an axis; 1-based boundary tables (views) |
+| `numlua.array_split(t, sections[, axis])` | split into unequal sections (views) |
+| `numlua.hsplit` / `vsplit` / `dsplit` | NumPy column/row/depth splitters (views) |
 | `numlua.broadcast_to(t, shape)` | broadcast view; NumPy-compatible right alignment |
 | `numlua.broadcast_arrays(...)` | returns multiple broadcast views |
 | `numlua.tile(t, reps)` | repeat whole blocks (materialized); `reps` is a number or table |
@@ -778,7 +819,9 @@ other: `transpose`, `swapaxes`, `moveaxis`, `atleast_1d`, `atleast_2d`,
 `atleast_3d`, `squeeze`, `unsqueeze`, `broadcast_to`, `broadcast_arrays`,
 contiguous `reshape`, and contiguous `ravel`.
 
-These allocate independent storage: `resize`, `pad`, `tile`, `repeat_`, `flip`,
+`split`, `array_split`, `hsplit`, `vsplit`, and `dsplit` return views created
+with `narrow`. These allocate independent storage: `resize`, `pad`, `tile`,
+`repeat_`, `flip`,
 `roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`,
 `argwhere`, `take`, `take_along_axis`, and `apply_along_axis`. `reshape` and
 `ravel` also copy when their input is not contiguous, because ATen must

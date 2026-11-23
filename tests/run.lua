@@ -158,6 +158,7 @@ end
 local files = {
   "test_constructors.lua",
   "test_shape.lua",
+  "test_split.lua",
   "test_reductions.lua",
   "test_predicates.lua",
   "test_select.lua",
