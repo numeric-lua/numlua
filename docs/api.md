@@ -815,16 +815,19 @@ it is not full NumPy type-promotion parity.
 
 ## NumPy `.npy` / `.npz` I/O
 
-### `numlua.save(path, tensor[, options])`
+### `numlua.save(path_or_file, tensor[, options])`
 
-Writes a NumPy `.npy` file in C order and returns `true`. The default format is
+Writes a NumPy `.npy` file in C order to a path or an already-open Lua file
+handle and returns `true`. The default format is
 v1.0. Pass `options.version = 2` or `3` (the strings `"2.0"` and `"3.0"` are
 accepted too) to write v2.0/v3.0 instead. Those versions replace v1.0's 2-byte
 header length with a 4-byte one; v3.0 additionally permits UTF-8 header text,
 though this writer only emits ASCII keys. Unknown options and invalid version
 values raise a `numlua.save:` error before the output file is opened. A v1.0
 header above 65535 bytes is rejected; v2.0/v3.0 headers are bounded by their
-32-bit length field. Readers that only understand v1.0 cannot open v2.0/v3.0
+32-bit length field. A caller-owned handle is written at its current position
+and is never closed by `save`; close or reposition it yourself. A closed handle
+is rejected. Readers that only understand v1.0 cannot open v2.0/v3.0
 output, so request a newer version only when the consumer supports it.
 
 The tensor is detached and made contiguous before writing; autograd metadata is
@@ -847,9 +850,10 @@ error. Only little-endian hosts are supported. luatorch cannot construct a
 `float16` tensor directly from a Lua table; create it in another dtype and
 cast with `:to("float16")` first.
 
-### `numlua.load(path)`
+### `numlua.load(path_or_file)`
 
-Reads a NumPy `.npy` v1.0, v2.0, or v3.0 file and returns a luatorch tensor.
+Reads a NumPy `.npy` v1.0, v2.0, or v3.0 file from a path or an already-open
+Lua file handle and returns a luatorch tensor.
 v2.0/v3.0 differ from v1.0 only in the 4-byte header-length field (and v3.0's
 UTF-8 header encoding), which `load` parses directly; `save` writes v1.0 by
 default and can emit v2.0/v3.0 when asked. Supports 1-D, 2-D, N-D, and 0-D
@@ -869,12 +873,23 @@ Rejected with explicit errors:
   versions);
 - malformed headers, missing trailing newline, bad magic;
 - data whose byte length does not match `shape * itemsize`;
-- non-file paths or unreadable files.
+- invalid targets, unreadable files, and closed file handles.
 
-The header is validated before any tensor allocation. `load` reads the complete
-file into memory, then copies the payload into a C-order tensor. Arrays with
-shape `()` (0-D scalars), zero-sized dimensions, and non-contiguous source
-tensors are supported; non-contiguous tensors are written in C order.
+The header is validated before any tensor allocation. For a path, `load` reads
+the complete file into memory; for an open handle, it reads from the current
+position and leaves the handle open. If another NPY array follows in the same
+handle, `load` positions the handle at the next array so subsequent calls can
+read it. `save` and `load` never close caller-owned handles. Arrays with shape
+`()` (0-D scalars), zero-sized dimensions, and non-contiguous source tensors
+are supported; non-contiguous tensors are written in C order.
+
+```lua
+local handle = assert(io.open("arrays.npy", "w+b"))
+numlua.save(handle, numlua.array({ 1, 2, 3 }))
+handle:seek("set", 0)
+local values = numlua.load(handle)
+handle:close()
+```
 
 ### `numlua.savez(path, arrays[, options])`
 

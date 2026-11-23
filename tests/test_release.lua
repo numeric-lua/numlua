@@ -65,7 +65,7 @@ test("new public API and format support are documented", function()
   assert_true(api:find("v2.0", 1, true) ~= nil and
       api:find("v3.0", 1, true) ~= nil,
     "docs/api.md does not document NPY v2.0/v3.0 reading")
-  assert_true(api:find("numlua.save(path, tensor[, options])", 1, true) ~= nil,
+  assert_true(api:find("numlua.save(path_or_file, tensor[, options])", 1, true) ~= nil,
     "docs/api.md does not document the save version option")
   assert_true(api:find("version = 2", 1, true) ~= nil,
     "docs/api.md does not document writing NPY v2.0")

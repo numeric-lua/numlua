@@ -204,12 +204,38 @@ local function read_file(path)
   return data
 end
 
--- Write a tensor to path as a C-order .npy file.  The default is NPY v1.0;
--- pass an options table with `version = 2`/`3` (or "2.0"/"3.0") to write the
--- wider-header versions.  Returns true.
+-- Read from a path or an already-open Lua file handle.  Caller-owned handles
+-- are read from their current position and are never closed by numlua.
+local function read_input(source)
+  local kind = io.type(source)
+  if kind == "file" then
+    local data, read_error = source:read("*a")
+    if data == nil then
+      error("numlua.load: failed reading file handle: " ..
+        tostring(read_error), 3)
+    end
+    return data
+  end
+  if kind == "closed file" then
+    error("numlua.load: cannot read from a closed file handle", 3)
+  end
+  if type(source) ~= "string" or source == "" then
+    error("numlua.load expects a non-empty file path or open file handle", 3)
+  end
+  return read_file(source)
+end
+
+-- Write a tensor to a path or open file handle as a C-order .npy file.  The
+-- default is NPY v1.0; pass an options table with `version = 2`/`3` (or
+-- "2.0"/"3.0") to write the wider-header versions.  Open handles are written
+-- at their current position and are never closed by numlua.  Returns true.
 function npy.save(path, tensor, options)
-  if type(path) ~= "string" or path == "" then
-    error("numlua.save expects a non-empty file path", 2)
+  local target_kind = io.type(path)
+  if target_kind == "closed file" then
+    error("numlua.save: cannot write to a closed file handle", 2)
+  end
+  if target_kind ~= "file" and (type(path) ~= "string" or path == "") then
+    error("numlua.save expects a non-empty file path or open file handle", 2)
   end
   if not torch.is_tensor(tensor) then
     error("numlua.save expects a tensor, got " .. type(tensor), 2)
@@ -244,11 +270,18 @@ function npy.save(path, tensor, options)
     prefix = prefix .. write_u32(header_size)
   end
 
-  local handle, open_error = io.open(path, "wb")
-  if handle == nil then
-    error("numlua.save: cannot open '" .. path .. "' for writing: " ..
-      tostring(open_error), 2)
+  local handle, open_error
+  local owns_handle = target_kind ~= "file"
+  if owns_handle then
+    handle, open_error = io.open(path, "wb")
+    if handle == nil then
+      error("numlua.save: cannot open '" .. path .. "' for writing: " ..
+        tostring(open_error), 2)
+    end
+  else
+    handle = path
   end
+  local label = owns_handle and ("'" .. path .. "'") or "file handle"
 
   local ok, write_error = handle:write(prefix, header)
   if ok ~= nil then
@@ -262,29 +295,38 @@ function npy.save(path, tensor, options)
       end
     end
   end
-  local close_ok, close_error = handle:close()
+  local close_ok, close_error = true, nil
+  if owns_handle then
+    close_ok, close_error = handle:close()
+  end
 
   if ok == nil then
-    error("numlua.save: failed writing '" .. path .. "': " ..
+    error("numlua.save: failed writing " .. label .. ": " ..
       tostring(write_error), 2)
   end
   if not close_ok then
-    error("numlua.save: failed closing '" .. path .. "': " ..
+    error("numlua.save: failed closing " .. label .. ": " ..
       tostring(close_error), 2)
   end
   return true
 end
 
--- Load a NumPy .npy v1.0 file and return a luatorch Tensor.
+-- Load a NumPy .npy v1.0 file from a path or open file handle and return a
+-- luatorch Tensor.  Caller-owned handles are read from their current position
+-- and are never closed by numlua.
 function npy.load(path)
-  if type(path) ~= "string" or path == "" then
-    error("numlua.load expects a non-empty file path", 2)
+  local target_kind = io.type(path)
+  if target_kind == "closed file" then
+    error("numlua.load: cannot read from a closed file handle", 2)
+  end
+  if target_kind ~= "file" and (type(path) ~= "string" or path == "") then
+    error("numlua.load expects a non-empty file path or open file handle", 2)
   end
   if not host_is_little_endian() then
     error("numlua.load: only little-endian hosts are supported", 2)
   end
 
-  local data = read_file(path)
+  local data = read_input(path)
   if #data < 10 then
     error("numlua.load: truncated .npy file (missing header)", 2)
   end
@@ -360,7 +402,23 @@ function npy.load(path)
     numel = numel * shape[i]
   end
   local expected_bytes = numel * info.size
-  local payload = data:sub(prefix_size + header_size + 1)
+  local consumed = prefix_size + header_size + expected_bytes
+  -- A caller-owned handle may contain another array after this one.  Read all
+  -- available bytes to parse the header, then put back anything beyond this
+  -- array so a later load() starts at the next NPY prefix.
+  if target_kind == "file" and #data > consumed then
+    local position, seek_error = path:seek("cur", -(#data - consumed))
+    if position == nil then
+      error("numlua.load: failed positioning file handle: " ..
+        tostring(seek_error), 2)
+    end
+  end
+  local payload
+  if target_kind == "file" then
+    payload = data:sub(prefix_size + header_size + 1, consumed)
+  else
+    payload = data:sub(prefix_size + header_size + 1)
+  end
   if #payload ~= expected_bytes then
     error(string.format(
       "numlua.load: shape/data size mismatch: expected %d bytes, got %d",

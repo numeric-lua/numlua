@@ -320,9 +320,11 @@ including archives produced by NumPy.
 
 ## `.npy` I/O
 
-`numlua.save(path, tensor)` writes a NumPy v1.0 `.npy` file in C order.
-`numlua.load(path)` returns a luatorch tensor and accepts NPY v1.0, v2.0, and
-v3.0 headers. Pass `{ version = 2 }` or `{ version = 3 }` (or `"2.0"`/`"3.0"`)
+`numlua.save(path_or_file, tensor)` writes a NumPy v1.0 `.npy` file in C order
+and `numlua.load(path_or_file)` returns a luatorch tensor. Both accept a path
+string or an already-open Lua file handle; handles are read/written at their
+current position and are never closed by `numlua`. `load` accepts NPY v1.0,
+v2.0, and v3.0 headers. Pass `{ version = 2 }` or `{ version = 3 }` (or `"2.0"`/`"3.0"`)
 as the third argument to write v2.0/v3.0; the default remains v1.0, so existing
 output is byte-identical.
 
@@ -364,6 +366,13 @@ assert(b:equal(a))
 -- Opt in to the wider v2.0/v3.0 header format when the reader supports it.
 numlua.save("arrays-v3.npy", a, { version = 3 })
 assert(numlua.load("arrays-v3.npy"):equal(a))
+
+-- File handles avoid reopening the path; seek before reading a write handle.
+local handle = assert(io.open("arrays-handle.npy", "w+b"))
+numlua.save(handle, a)
+handle:seek("set", 0)
+assert(numlua.load(handle):equal(a))
+handle:close()
 ```
 
 ## Text/CSV I/O
