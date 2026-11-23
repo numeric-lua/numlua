@@ -706,6 +706,129 @@ function numlua.isnan(t)
   return t:ne(t)
 end
 
+-- ---------------------------------------------------------------------------
+-- closeness predicates
+-- ---------------------------------------------------------------------------
+
+local DEFAULT_RTOL = 1e-5
+local DEFAULT_ATOL = 1e-8
+
+local function closeness_operand(value, name, argument)
+  if torch.is_tensor(value) then return value end
+  if type(value) == "number" or type(value) == "boolean" then
+    return torch.tensor(value)
+  end
+  error(string.format(
+    "numlua.%s expects tensors or numbers for %s, got %s",
+    name, argument, type(value)), 3)
+end
+
+local function closeness_options(rtol, atol, equal_nan, name)
+  if rtol == nil then rtol = DEFAULT_RTOL end
+  if atol == nil then atol = DEFAULT_ATOL end
+  if type(rtol) ~= "number" or rtol ~= rtol or rtol < 0 or
+      rtol == math.huge then
+    error("numlua." .. name .. ": rtol must be a finite non-negative " ..
+      "number", 3)
+  end
+  if type(atol) ~= "number" or atol ~= atol or atol < 0 or
+      atol == math.huge then
+    error("numlua." .. name .. ": atol must be a finite non-negative " ..
+      "number", 3)
+  end
+  if equal_nan ~= nil and type(equal_nan) ~= "boolean" then
+    error("numlua." .. name .. ": equal_nan must be a boolean or nil", 3)
+  end
+  return rtol, atol, equal_nan == true
+end
+
+-- isclose only needs a bool result, so mixed or integral operands are cast
+-- through float64 before applying NumPy's formula.  Keeping both operands in
+-- their floating dtype preserves float32/float16 precision otherwise.
+local function closeness_operands(a, b, name)
+  a = closeness_operand(a, name, "a")
+  b = closeness_operand(b, name, "b")
+  if not a:is_floating_point() or not b:is_floating_point() or
+      a:dtype() ~= b:dtype() then
+    a, b = a:to("float64"), b:to("float64")
+  end
+  return a, b
+end
+
+-- isclose(a, b[, rtol[, atol[, equal_nan]]]) returns a bool tensor.  The
+-- formula is NumPy's array closeness rule, with equal infinities treated as
+-- close and finite/infinite pairs never close.  NaN is close only when
+-- equal_nan is true.
+function numlua.isclose(a, b, rtol, atol, equal_nan)
+  local relative, absolute, nan_equal = closeness_options(
+    rtol, atol, equal_nan, "isclose")
+  a, b = closeness_operands(a, b, "isclose")
+
+  local difference = a:sub(b):abs()
+  local tolerance = b:abs():mul(relative):add(absolute)
+  local finite = a:isinf():logical_not():logical_and(
+    b:isinf():logical_not())
+  local close = difference:le(tolerance):logical_and(finite)
+  close = close:logical_or(a:eq(b))
+  if nan_equal then
+    close = close:logical_or(a:ne(a):logical_and(b:ne(b)))
+  end
+  return close
+end
+
+-- allclose returns a Lua boolean, matching np.allclose; it is a scalar
+-- predicate rather than a tensor reduction.
+function numlua.allclose(a, b, rtol, atol, equal_nan)
+  return numlua.isclose(a, b, rtol, atol, equal_nan):all():item() ~= false
+end
+
+local function equality_operand(value, name, argument)
+  if torch.is_tensor(value) then return value end
+  if type(value) == "number" or type(value) == "boolean" then
+    return torch.tensor(value)
+  end
+  error(string.format(
+    "numlua.%s expects tensors or numbers for %s, got %s",
+    name, argument, type(value)), 3)
+end
+
+local function check_equal_nan(value, name)
+  if value ~= nil and type(value) ~= "boolean" then
+    error("numlua." .. name .. ": equal_nan must be a boolean or nil", 3)
+  end
+  return value == true
+end
+
+-- array_equal compares shapes exactly and returns a Lua boolean.  NaN is not
+-- equal to itself unless equal_nan is true, matching np.array_equal.
+function numlua.array_equal(a, b, equal_nan)
+  local nan_equal = check_equal_nan(equal_nan, "array_equal")
+  a = equality_operand(a, "array_equal", "a")
+  b = equality_operand(b, "array_equal", "b")
+  local left, right = a:sizes(), b:sizes()
+  if #left ~= #right then return false end
+  for i = 1, #left do
+    if left[i] ~= right[i] then return false end
+  end
+  local equal = a:eq(b)
+  if nan_equal then
+    equal = equal:logical_or(a:ne(a):logical_and(b:ne(b)))
+  end
+  return equal:all():item() ~= false
+end
+
+-- array_equiv allows broadcasting, so a scalar compares equal to a matching
+-- array.  Incompatible shapes return false rather than raising, as in NumPy.
+function numlua.array_equiv(a, b)
+  a = equality_operand(a, "array_equiv", "a")
+  b = equality_operand(b, "array_equiv", "b")
+  local ok, result = pcall(function()
+    return a:eq(b):all():item() ~= false
+  end)
+  if not ok then return false end
+  return result
+end
+
 local function logical_reduction(t, axis, keepdims, name)
   check_tensor(t, name)
   check_axis(axis, name)

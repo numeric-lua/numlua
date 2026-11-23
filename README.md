@@ -71,6 +71,17 @@ print(numlua.select({ values:lt(0), values:gt(0) }, { -1, 1 }, 0):format())
 print(numlua.count_nonzero(values):item(), numlua.any(values:gt(0)):item())
 ```
 
+Closeness predicates follow NumPy's defaults and semantics for infinities and
+NaN; `array_equal` requires matching shapes while `array_equiv` broadcasts:
+
+```lua
+print(numlua.isclose(values, values + 1e-7):all():item())  -- true
+print(numlua.allclose(values, values, 0, 0))               -- true
+print(numlua.array_equal(numlua.array({ 1 }), numlua.array({ 1, 1 })))
+-- false
+print(numlua.array_equiv(1, numlua.array({ 1, 1 })))       -- true
+```
+
 Flat selection writes use the same 1-based indices; `numlua.put` mutates and
 returns the input tensor:
 
@@ -256,7 +267,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
 | Reductions | `sum`, `mean`, `max`, `min`, `argmax`, `argmin` |
-| Predicates/selection | `where`, `select`, `clip`, `isnan`, `any`, `all`, `count_nonzero` |
+| Predicates/selection | `where`, `select`, `clip`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `savez`, `savez_compressed`, `loadz` |

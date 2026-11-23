@@ -418,6 +418,52 @@ Infinities are not NaN. Integer and boolean inputs produce an all-false mask.
 The implementation uses the IEEE rule that NaN is not equal to itself
 (`t:ne(t)`), so no separate native kernel is needed.
 
+### `numlua.isclose(a, b[, rtol[, atol[, equal_nan]]])`
+
+Returns a `bool` tensor using NumPy's closeness rule
+`|a - b| <= atol + rtol * |b|`, with `rtol = 1e-5` and `atol = 1e-8` by
+default. Operands may be tensors or Lua numbers and broadcast through ATen.
+Equal infinities are close, opposite or finite/infinite pairs are not, and a
+NaN is close only when `equal_nan = true`. Mixed or integral dtypes are
+compared through `float64`; equal floating dtypes keep their precision.
+`rtol` and `atol` must be finite and non-negative. The result shape follows
+ATen broadcasting.
+
+```lua
+numlua.isclose(numlua.array({ 1, 2, math.huge }),
+  numlua.array({ 1 + 1e-6, 2.5, math.huge }))
+-- {true, false, true}
+```
+
+### `numlua.allclose(a, b[, rtol[, atol[, equal_nan]]])`
+
+Returns a Lua boolean that is true when `numlua.isclose` is true for every
+broadcast element, matching `np.allclose`. It is a scalar predicate, not a
+tensor reduction; use `:item()` on `isclose` when a tensor is wanted.
+
+```lua
+assert(numlua.allclose(numlua.array({ 1, 2 }), numlua.array({ 1, 2 })))
+```
+
+### `numlua.array_equal(a, b[, equal_nan])`
+
+Returns a Lua boolean. Shapes must match exactly, every element must compare
+equal, and NaN is unequal unless `equal_nan = true`. Dtype differences are
+allowed when the values compare equal, as in NumPy.
+
+### `numlua.array_equiv(a, b)`
+
+Returns a Lua boolean. Unlike `array_equal`, shapes only need to be
+broadcast-compatible, so a scalar is equivalent to a matching array. Values
+must still all compare equal. Incompatible shapes return `false` rather than
+raising, matching `np.array_equiv`; NaN never compares equal.
+
+```lua
+assert(numlua.array_equiv(1, numlua.array({ 1, 1, 1 })))
+assert(not numlua.array_equiv(numlua.array({ 1, 2 }),
+  numlua.array({ 1, 2, 3 })))
+```
+
 ### `numlua.any(t[, axis[, keepdims]])`
 
 ### `numlua.all(t[, axis[, keepdims]])`

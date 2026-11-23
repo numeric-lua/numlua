@@ -162,6 +162,7 @@ local files = {
   "test_diag.lua",
   "test_reductions.lua",
   "test_predicates.lua",
+  "test_close.lua",
   "test_select.lua",
   "test_ufuncs.lua",
   "test_manipulation.lua",
