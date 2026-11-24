@@ -52,10 +52,11 @@ APIs.
 
 ## Safety and release rules
 
-- **No pushes to `main`, no merges, no tags, no GitHub releases, and no
-  LuaRocks publishes** unless a human coordinator explicitly asks for that
-  exact action.
-- Work on a branch or worktree; leave draft PRs for review.
+- **Releases are coordinator-only.** No tags, GitHub releases, version bumps,
+  rockspec edits, or LuaRocks publishes unless the human coordinator asks.
+- Pushes to `main` are allowed for the permanent project service after the
+  repository's tests pass, and for coordinator-authorized maintenance. Other
+  work goes on a branch or worktree for review.
 - Never add secrets, tokens, keys, or private paths to source, tests, docs,
   examples, or commit messages.
 - Do not commit generated `.npy` files, binaries, caches, logs, or scratch
