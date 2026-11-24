@@ -198,6 +198,132 @@ function M.atleast_1d(...) return atleast(1, "atleast_1d", ...) end
 function M.atleast_2d(...) return atleast(2, "atleast_2d", ...) end
 function M.atleast_3d(...) return atleast(3, "atleast_3d", ...) end
 
+local MESHGRID_OPTIONS = {
+  indexing = true,
+  sparse = true,
+  copy = true,
+}
+
+-- meshgrid(*xi[, options]) accepts 1-D tensors or Lua numeric tables and an
+-- optional trailing options table.  The options table is recognized by its
+-- string keys so coordinate arrays remain plain positional inputs.
+local function meshgrid_arguments(...)
+  local inputs = { ... }
+  local options = {}
+  if #inputs > 0 then
+    local candidate = inputs[#inputs]
+    if type(candidate) == "table" and not torch.is_tensor(candidate) then
+      local has_option = false
+      for key in pairs(candidate) do
+        if type(key) ~= "number" then
+          has_option = true
+          break
+        end
+      end
+      if has_option then
+        options = table.remove(inputs)
+        for key in pairs(options) do
+          if not MESHGRID_OPTIONS[key] then
+            error("numlua.meshgrid: unknown option '" .. tostring(key) .. "'", 3)
+          end
+        end
+      end
+    end
+  end
+  return inputs, options
+end
+
+local function meshgrid_input(value, index)
+  local result
+  if torch.is_tensor(value) then
+    result = value
+  elseif type(value) == "table" then
+    local ok, converted = pcall(torch.tensor, value)
+    if not ok then
+      error(string.format(
+        "numlua.meshgrid: input %d is not a numeric table: %s",
+        index, tostring(converted)), 3)
+    end
+    result = converted
+  else
+    error(string.format(
+      "numlua.meshgrid: input %d must be a 1-D tensor or table, got %s",
+      index, type(value)), 3)
+  end
+  if result:dim() ~= 1 then
+    error(string.format(
+      "numlua.meshgrid: input %d must be 1-D, got %d dimension(s)",
+      index, result:dim()), 3)
+  end
+  return result
+end
+
+-- Meshgrid follows NumPy's coordinate ordering: indexing="xy" (the default)
+-- swaps the first two output axes, while indexing="ij" keeps input order.
+-- sparse=true returns size-1 axes away from each input's own axis.  Results
+-- own independent storage unless copy=false is requested.
+function M.meshgrid(...)
+  local inputs, options = meshgrid_arguments(...)
+  if #inputs == 0 then
+    error("numlua.meshgrid expects at least one 1-D input", 2)
+  end
+  local indexing = options.indexing or "xy"
+  if indexing ~= "xy" and indexing ~= "ij" then
+    error("numlua.meshgrid: indexing must be 'xy' or 'ij'", 2)
+  end
+  if options.sparse ~= nil and type(options.sparse) ~= "boolean" then
+    error("numlua.meshgrid: sparse must be a boolean or nil", 2)
+  end
+  if options.copy ~= nil and type(options.copy) ~= "boolean" then
+    error("numlua.meshgrid: copy must be a boolean or nil", 2)
+  end
+  local sparse = options.sparse == true
+  local copy = options.copy ~= false
+
+  local size = {}
+  for index = 1, #inputs do
+    inputs[index] = meshgrid_input(inputs[index], index)
+    size[index] = inputs[index]:size(1)
+  end
+
+  local rank = #inputs
+  local target = {}
+  if indexing == "xy" and rank >= 2 then
+    target[1] = size[2]
+    target[2] = size[1]
+    for index = 3, rank do target[index] = size[index] end
+  else
+    for index = 1, rank do target[index] = size[index] end
+  end
+
+  local function output_axis(index)
+    if indexing == "ij" or rank == 1 then return index end
+    if index <= 2 then return 3 - index end
+    return index
+  end
+
+  local results = {}
+  for index = 1, rank do
+    local axis = output_axis(index)
+    local own_shape = {}
+    for dimension = 1, rank do own_shape[dimension] = 1 end
+    own_shape[axis] = size[index]
+
+    local output_shape = {}
+    if sparse then
+      for dimension = 1, rank do output_shape[dimension] = 1 end
+      output_shape[axis] = size[index]
+    else
+      for dimension = 1, rank do output_shape[dimension] = target[dimension] end
+    end
+
+    local result = inputs[index]:reshape(own_shape):expand(output_shape)
+    if copy then result = result:clone() end
+    results[index] = result
+  end
+  return results
+end
+
 function M.tile(t, reps)
   tensor(t, "tile")
   if type(reps) == "number" then reps = { reps } end

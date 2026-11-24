@@ -157,6 +157,7 @@ end
 
 local files = {
   "test_constructors.lua",
+  "test_meshgrid.lua",
   "test_like.lua",
   "test_shape.lua",
   "test_split.lua",

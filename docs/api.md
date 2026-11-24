@@ -88,6 +88,27 @@ numlua.linspace(0, 1, 5)
 numlua.linspace(0, 1, { dtype = "float64" })
 ```
 
+### `numlua.meshgrid(x1, x2, ...[, opts])`
+
+Builds coordinate grids from 1-D tensors or Lua numeric tables and returns a
+table with one tensor per input. The optional trailing options table accepts:
+
+| option | default | meaning |
+| --- | --- | --- |
+| `indexing` | `"xy"` | `"xy"` swaps the first two output axes; `"ij"` keeps input order |
+| `sparse` | `false` | keep size-1 axes away from each input's own axis |
+| `copy` | `true` | allocate independent storage; `false` returns expanded views |
+
+Each output keeps its input dtype. A single input returns a one-element table
+with that input's shape. At least one 1-D input is required, and
+`indexing`/`sparse`/`copy` must have their documented types.
+
+```lua
+local x, y = numlua.array({ 1, 2, 3 }), numlua.array({ 10, 20 })
+local gx, gy = table.unpack(numlua.meshgrid(x, y, { indexing = "ij" }))
+-- gx: 3x2, gy: 3x2
+```
+
 ### `numlua.zeros_like(t[, opts])`, `numlua.ones_like`, `numlua.empty_like`, `numlua.full_like`
 
 The `*_like` constructors use `t` for shape and dtype unless `opts` overrides
