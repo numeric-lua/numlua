@@ -414,6 +414,67 @@ function numlua.min(t, axis, keepdims)
   return (t:min(axis, keepdims))
 end
 
+-- Number of elements reduced along one axis.  ddof denominators need this;
+-- ATen's var/std only expose the unbiased 0/1 flag, so other ddof values are
+-- handled by the sum-of-squared-deviations formula below.
+local function reduction_count(t, axis, name)
+  if axis == nil then
+    return t:numel()
+  end
+  local ndim = t:dim()
+  local normalized = axis > 0 and axis or ndim + axis + 1
+  if normalized < 1 or normalized > ndim then
+    error(string.format(
+      "numlua.%s: axis %d is out of range for a %d-D tensor",
+      name, axis, ndim), 3)
+  end
+  return t:size(normalized)
+end
+
+local function check_ddof(ddof, name)
+  if ddof == nil then
+    return 0
+  end
+  if type(ddof) ~= "number" or ddof ~= ddof or
+      ddof == math.huge or ddof == -math.huge then
+    error(string.format(
+      "numlua.%s: ddof must be a finite number or nil, got %s",
+      name, tostring(ddof)), 3)
+  end
+  return ddof
+end
+
+-- NumPy's var/std default to ddof = 0 (population variance), unlike
+-- luatorch's unbiased default.  Integer and bool input promotes to float64,
+-- matching mean().
+local function variance(t, axis, keepdims, ddof, name)
+  ddof = check_ddof(ddof, name)
+  if not t:is_floating_point() then
+    t = t:to("float64")
+  end
+  if ddof == 0 or ddof == 1 then
+    return t:var(axis, ddof == 1, keepdims)
+  end
+  local count = reduction_count(t, axis, name)
+  local mean = t:mean(axis, true)
+  local difference = t:sub(mean)
+  return difference:mul(difference):sum(axis, keepdims):div(count - ddof)
+end
+
+function numlua.var(t, axis, keepdims, ddof)
+  check_tensor(t, "var")
+  check_axis(axis, "var")
+  check_keepdims(keepdims, "var")
+  return variance(t, axis, keepdims, ddof, "var")
+end
+
+function numlua.std(t, axis, keepdims, ddof)
+  check_tensor(t, "std")
+  check_axis(axis, "std")
+  check_keepdims(keepdims, "std")
+  return variance(t, axis, keepdims, ddof, "std"):sqrt()
+end
+
 -- argmax and argmin return 1-based flat indices when axis is nil, matching
 -- luatorch.  Both delegate the reduction kernel to luatorch.
 function numlua.median(t, axis, keepdims)

@@ -339,6 +339,15 @@ removed unless `keepdims` is true. `keepdims` must be a boolean when provided.
 Because ATen refuses to infer a dtype for integer/bool `mean`, numlua promotes
 non-floating input to `float64` first.
 
+### `numlua.var(t[, axis[, keepdims[, ddof]]])`, `numlua.std`
+
+Return the variance or standard deviation as a tensor, including a 0-D tensor
+for an all-axis reduction. `ddof` defaults to `0` (population variance), unlike
+luatorch's unbiased default; any finite number is accepted, and denominators
+`N - ddof` are computed from the reduced axis. Integer and bool input promotes
+to `float64`, while floating input keeps its dtype. `keepdims` follows the
+other reductions. `std` is the square root of `var`.
+
 ### `numlua.max(t[, axis[, keepdims]])`
 
 ### `numlua.min(t[, axis[, keepdims]])`

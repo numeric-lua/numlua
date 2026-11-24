@@ -254,7 +254,8 @@ luajit examples/basic.lua
   integers. `zeros`, `ones`, `eye`, and `linspace` default to `float32`.
   `arange` infers `int64` for integer bounds and `float32` otherwise.
   `mean` promotes integer/bool input to `float64` (ATen would otherwise reject
-  it); floating input keeps its dtype.
+  it); `var`/`std` do the same and default to `ddof = 0`, as in NumPy. Floating
+  input keeps its dtype.
 - **Elementwise dtype promotion is ATen's.** The ufuncs accept tensor or Lua
   number operands and delegate shape broadcasting and dtype promotion to
   luatorch/ATen. This is not NumPy's promotion table: for example, `int64` plus
@@ -277,7 +278,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
-| Reductions | `sum`, `mean`, `max`, `min`, `argmax`, `argmin` |
+| Reductions | `sum`, `mean`, `var`, `std`, `max`, `min`, `argmax`, `argmin` |
 | Predicates/selection | `where`, `select`, `clip`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
