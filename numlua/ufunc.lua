@@ -89,10 +89,20 @@ local UNARY_METHODS = {
   sqrt = "sqrt",
   exp = "exp",
   log = "log",
+  log1p = "log1p",
   sin = "sin",
   cos = "cos",
   tanh = "tanh",
   square = "square",
+  sign = "sign",
+  floor = "floor",
+  ceil = "ceil",
+  trunc = "trunc",
+  round = "round",
+  reciprocal = "reciprocal",
+  isinf = "isinf",
+  isfinite = "isfinite",
+  logical_not = "logical_not",
 }
 
 local function unary(value, name)
@@ -118,6 +128,47 @@ for name in pairs(UNARY_METHODS) do
   M[name] = function(value)
     return unary(value, name)
   end
+end
+
+-- Logical operators are the one group that accepts boolean Lua scalars as
+-- well as numbers and tensors.  Non-boolean operands are truth-tested before
+-- the ATen kernel, matching NumPy's logical ufuncs.
+local function logical_operand(value, name, side)
+  if torch.is_tensor(value) then
+    if value:dtype() == "bool" then return value end
+    return value:ne(0)
+  end
+  if type(value) == "number" then
+    return torch.tensor(value ~= 0)
+  end
+  if type(value) == "boolean" then
+    return torch.tensor(value)
+  end
+  error(string.format(
+    "numlua.%s expects a tensor, number, or boolean for the %s operand, " ..
+    "got %s", name, side, type(value)), 3)
+end
+
+local function logical_binary(left, right, name, method)
+  local a = logical_operand(left, name, "left")
+  local b = logical_operand(right, name, "right")
+  return a[method](a, b)
+end
+
+M.logical_and = function(left, right)
+  return logical_binary(left, right, "logical_and", "logical_and")
+end
+
+M.logical_or = function(left, right)
+  return logical_binary(left, right, "logical_or", "logical_or")
+end
+
+M.logical_xor = function(left, right)
+  return logical_binary(left, right, "logical_xor", "ne")
+end
+
+M.logical_not = function(value)
+  return logical_operand(value, "logical_not", "operand"):logical_not()
 end
 
 return M

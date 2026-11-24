@@ -186,6 +186,22 @@ print("scaled and shifted:\n" ..
 print("maximum with scalar 2.5:\n" .. numlua.maximum(roots, 2.5):format())
 assert(numlua.dtype(numlua.sqrt(numlua.arange(1, 4))) == "float32")
 
+local special = numlua.array({ 1, math.huge, -math.huge, 0 / 0 })
+print("isinf:\n" .. numlua.isinf(special):format())
+print("isfinite:\n" .. numlua.isfinite(special):format())
+print("floor/ceil/round:\n" .. numlua.floor(numlua.array({ 1.5, -1.5 }))
+  :format() .. numlua.ceil(numlua.array({ 1.5, -1.5 })):format() ..
+  numlua.round(numlua.array({ 1.5, 2.5 })):format())
+print("logical_and:\n" ..
+  numlua.logical_and(numlua.array({ 1, 0, 2 }), true):format())
+print("nan_to_num:\n" ..
+  numlua.nan_to_num(numlua.array({ 0 / 0, math.huge }), 7, 8, 9):format())
+print("nancumsum:\n" ..
+  numlua.nancumsum(numlua.array({ 1, 0 / 0, 3 })):format())
+print("unwrap:\n" .. numlua.unwrap(numlua.array({ 0, 3.5, 7 })):format())
+print("interp: " .. tostring(numlua.interp(2,
+  numlua.array({ 1, 3, 5 }), numlua.array({ 10, 30, 50 })):item()))
+
 heading(".npy round-trip")
 local path = root .. "/examples/.basic-demo.npy"
 assert(numlua.save(path, product))
@@ -259,6 +275,14 @@ local quoted = numlua.loadtxt(quoted_path, {
 print("quoted CSV:\n" .. quoted:format())
 assert(quoted:get(1, 1) == 1.5 and quoted:get(2, 2) == 4.5)
 os.remove(quoted_path)
+
+local bool_path = root .. "/examples/.basic-demo-bool.txt"
+local bool_values = numlua.array({ { true, false }, { false, true } })
+assert(numlua.savetxt(bool_path, bool_values))
+local bool_loaded = numlua.loadtxt(bool_path, { dtype = "bool" })
+print("bool text:\n" .. bool_loaded:format())
+assert(bool_loaded:equal(bool_values))
+os.remove(bool_path)
 
 local genfromtxt_path = root .. "/examples/.basic-demo-missing.csv"
 local missing_handle = assert(io.open(genfromtxt_path, "w"))

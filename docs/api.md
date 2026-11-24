@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.25.0"
+print(numlua.VERSION) -- "0.26.0"
 ```
 
 ## Conventions
@@ -441,6 +441,25 @@ the ordinary reduction aliases (no promotion for `nansum`/`nanprod`/`nanmin`/
 `nanmax`, `float64` for `nanmean`/`nanvar`/`nanstd`); floating input keeps its
 dtype.
 
+### `numlua.nan_to_num(t[, nan[, posinf[, neginf]]])`
+
+Replaces NaN and infinities with finite values. With no replacement arguments,
+ATen uses the dtype's maximum finite value for positive and negative infinity
+and `0` for NaN. Replacement values must be numbers or nil; integer and bool
+input is returned unchanged.
+
+```lua
+numlua.nan_to_num(numlua.array({ 0 / 0, math.huge }), 7, 8, 9)
+-- {7, 8}
+```
+
+### `numlua.nancumsum(t[, axis])`, `numlua.nancumprod`
+
+NaN-aware cumulative reductions. NaN is treated as zero for `nancumsum` and as
+one for `nancumprod`; an omitted axis flattens the input, while a 1-based axis
+accumulates along that dimension. Integer input follows the ordinary cumulative
+reduction and floating input keeps its dtype.
+
 ### `numlua.max(t[, axis[, keepdims]])`
 
 ### `numlua.min(t[, axis[, keepdims]])`
@@ -469,6 +488,31 @@ ATen's arithmetic promotion (`float32`), while floating input keeps its dtype.
 numlua.trapezoid(numlua.array({ 1, 2, 3 }))          -- 4
 numlua.trapezoid(numlua.array({ 1, 2, 3 }), nil, 2)  -- 8
 numlua.trapezoid(numlua.array({ 1, 2, 3 }), { 0, 1, 3 }) -- 6.5
+```
+
+### `numlua.interp(x, xp, fp[, left[, right]])`
+
+Linear interpolation of the 1-D strictly increasing grid `xp`/`fp` at `x`.
+`x` may be a number, tensor, or table and keeps its shape; the result is
+`float64`. Values outside the grid use `left`/`right`, defaulting to `fp[1]`
+and `fp[-1]`. NaN coordinates produce NaN.
+
+```lua
+numlua.interp(2, numlua.array({ 1, 3, 5 }), numlua.array({ 10, 30, 50 }))
+-- 20 (0-D float64 tensor)
+```
+
+### `numlua.unwrap(t[, discont[, axis[, period]]])`
+
+Removes phase jumps larger than `discont` along a 1-based axis by adding
+multiples of `period`, following `np.unwrap`. `axis` defaults to the last
+dimension, `period` defaults to `2*pi`, and `discont` defaults to
+`period/2`. Integer input is promoted to `float64`; the result owns independent
+storage. `period` must be positive and finite, and `discont` must be finite
+and non-negative.
+
+```lua
+numlua.unwrap(numlua.array({ 0, 3.5, 7 })) -- {0, -2.7832, -5.5664}
 ```
 
 ### `numlua.argmax(t[, axis[, keepdims]])`
@@ -692,8 +736,16 @@ numbers produces a 0-D tensor.
 | `numlua.sqrt(t)` | square root |
 | `numlua.exp(t)` | exponential |
 | `numlua.log(t)` | natural logarithm |
+| `numlua.log1p(t)` | log(1 + x) |
 | `numlua.sin(t)` / `numlua.cos(t)` / `numlua.tanh(t)` | trigonometric and hyperbolic functions |
 | `numlua.square(t)` | elementwise square |
+| `numlua.sign(t)` | sign (`-1`, `0`, `1`) |
+| `numlua.floor(t)` / `numlua.ceil(t)` / `numlua.trunc(t)` | rounding toward -infinity, +infinity, and zero |
+| `numlua.round(t)` | round half to even, following ATen |
+| `numlua.reciprocal(t)` | multiplicative inverse |
+| `numlua.isinf(t)` / `numlua.isfinite(t)` | boolean infinity/finiteness masks |
+| `numlua.logical_not(t)` | boolean negation |
+| `numlua.logical_and(a, b)` / `numlua.logical_or(a, b)` / `numlua.logical_xor(a, b)` | boolean logic over truth-tested operands |
 
 ```lua
 local a = numlua.array({ 1, 2, 3 })
@@ -706,10 +758,12 @@ numlua.maximum(a, 2)          -- {2, 2, 3}
 numlua.sqrt(numlua.array({ 1, 4, 9 })) -- {1, 2, 3}
 ```
 
-Lua booleans are not accepted as scalar operands; pass a `bool` tensor if you
-need boolean tensor arithmetic. Non-numeric/non-tensor operands raise a
-`numlua.<function>:` error. Incompatible broadcast shapes and unsupported dtype
-combinations are reported by luatorch/ATen and forwarded as-is.
+Lua booleans are not accepted as scalar operands by the arithmetic and
+transcendental ufuncs; pass a `bool` tensor if you need boolean tensor
+arithmetic. The logical ufuncs are the exception: they accept booleans,
+numbers, and tensors and return `bool` tensors. Non-numeric/non-tensor operands
+raise a `numlua.<function>:` error. Incompatible broadcast shapes and unsupported
+dtype combinations are reported by luatorch/ATen and forwarded as-is.
 
 ### Dtype behavior
 
@@ -732,13 +786,16 @@ conventions:
   floating result, so division by zero yields `inf`/`nan` rather than an error;
 - both-scalar calls produce a 0-D `float32` tensor, following `numlua.array`.
 
-Unary operations split into two groups:
+Unary operations split into four groups:
 
 - `negative`, `abs`, and `square` preserve an integral input dtype. ATen does
   not implement `abs` or negation for `bool` tensors; those calls error;
-- `sqrt`, `exp`, `log`, `sin`, `cos`, and `tanh` produce `float32` for
-  integer/bool input and preserve `float32`/`float64` floating input. NumPy
-  would normally use `float64` for integral input.
+- `sign`, `floor`, `ceil`, `trunc`, and `round` preserve numeric input dtypes;
+- `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, and `reciprocal`
+  produce `float32` for integer/bool input and preserve `float32`/`float64`
+  floating input. NumPy would normally use `float64` for integral input;
+- `isinf` and `isfinite` always return `bool` tensors. The logical ufuncs
+  truth-test their operands and return `bool` tensors.
 
 For `maximum`/`minimum` with a scalar, numlua materializes a 0-D operand with
 the input's dtype for integral scalars (or `int64` for a `bool` input) and
@@ -1157,7 +1214,9 @@ contiguous `reshape`, and contiguous `ravel`.
 with `narrow`. These allocate independent storage: `resize`, `diag`,
 `diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
 `repeat_`, `flip`, `fliplr`,
-`flipud`, `rot90`, `roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`,
+`flipud`, `rot90`, `roll`, `diff`, `gradient`, `unwrap`, `interp`,
+`nan_to_num`, `nancumsum`, `nancumprod`, `cumsum`, `cumprod`, `argsort`,
+`sort`,
 `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, and
 `apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
 unchanged. `reshape` and
@@ -1568,13 +1627,14 @@ numlua.loadtxt: line 3 has 4 column(s), expected 3
 numlua.loadtxt: line 2: invalid number 'oops' in column 2
 ```
 
-Supported result dtypes are the numeric luatorch dtypes: `float16`, `float32`,
-`float64`, `int8`, `int16`, `int32`, `int64`, and `uint8`. `bool` is rejected;
-write `0`/`1` with an integral dtype instead.
+Supported result dtypes are `float16`, `float32`, `float64`, `int8`, `int16`,
+`int32`, `int64`, `uint8`, and `bool`. Boolean fields accept `True`/`False`
+(case-insensitive) and numeric values, where zero is false; a configured
+converter's numeric result is truth-tested.
 
 ### `numlua.genfromtxt(path_or_file[, options])`
 
-Reads the same numeric text shape as `loadtxt` but treats configured missing
+Reads the same numeric/bool text shape as `loadtxt` but treats configured missing
 fields as values instead of errors. The source may be a path or an
 already-open Lua file handle; a caller-owned handle is read from its current
 position and is never closed. Options:
@@ -1583,7 +1643,7 @@ position and is never closed. Options:
 | --- | --- | --- |
 | `delimiter` | whitespace runs | field separator |
 | `comments` | `"#"` | comment marker, a table of markers, or `false`/`""` to disable |
-| `dtype` | `"float32"` | result dtype (numeric dtypes only) |
+| `dtype` | `"float32"` | result dtype, including `bool` |
 | `skip_header` | `0` | number of physical lines to skip at the start |
 | `skip_footer` | `0` | number of physical lines to skip at the end |
 | `max_rows` | all | maximum data rows to read; cannot be combined with `skip_footer` |
@@ -1613,7 +1673,7 @@ but `converters`, `missing_values`, and `filling_values` refer to physical input
 columns. A field that is neither converted nor missing must still parse as a
 number; `genfromtxt` does not silently replace unrelated malformed fields.
 Structured dtypes, names, string columns, and masked-array output are not
-supported; text I/O remains numeric-only. `max_rows = 0` returns an empty
+supported; text I/O remains numeric/bool-only. `max_rows = 0` returns an empty
 tensor, and `max_rows` together with `skip_footer` is rejected.
 
 ```lua
@@ -1642,7 +1702,7 @@ local values = numlua.genfromtxt("data.csv", {
 
 ### `numlua.savetxt(path_or_file, tensor[, options])`
 
-Writes a 1-D or 2-D tensor as numeric text and returns `true`. The target may
+Writes a 1-D or 2-D tensor as numeric/bool text and returns `true`. The target may
 be a path string or an already-open Lua file handle; a caller-owned handle is
 written at its current position and is never closed, including when a write
 fails. Closed handles and invalid targets raise a `numlua.savetxt:` error.
@@ -1682,8 +1742,9 @@ numlua.savetxt("values.csv", numlua.arange(6):reshape(2, 3), {
 })
 ```
 
-Zero-dimensional and higher-than-2-D tensors are rejected. `bool` is not a
-supported text dtype. Text files do not record shape or dtype, so load with the
+Zero-dimensional and higher-than-2-D tensors are rejected. Bool tensors are
+written as `True`/`False` by default; a custom `fmt` receives `1`/`0`. Text
+files do not record shape or dtype, so load with the
 matching `dtype` when exact integer or wider floating-point values matter; a
 1xN or Nx1 matrix cannot be distinguished from a vector after loading. Integral
 values are formatted through Lua numbers, so `int64` values outside the exactly
@@ -1725,12 +1786,21 @@ dtype, or backend constraints are forwarded as-is.
 - `trapezoid`/`trapz` integrate along one 1-based axis. A coordinate array may
   be 1-D for the selected axis or have the full input shape; integer input
   follows ATen's promotion to `float32`.
+- `interp` requires a strictly increasing 1-D `xp` grid and returns `float64`;
+  `left`/`right` are positional scalars and default to the first/last `fp`
+  value.
+- `unwrap` takes `discont`, `axis`, and `period` positionally (NumPy exposes
+  `discont`/`axis`/`period` as keywords), promotes integer input to `float64`,
+  and returns independent storage.
+- `nan_to_num` uses ATen's dtype-maximum defaults when replacement values are
+  omitted; `nancumsum`/`nancumprod` skip NaN rather than returning NaN.
 - Elementwise ufuncs delegate dtype promotion to ATen rather than to NumPy's
   promotion rules or `numlua.promote_types`. In particular, `int64` + `float32`
   stays `float32`, integer/integer division produces `float32` (not `float64`),
   and transcendental functions on integral input produce `float32`.
 - Elementwise ufuncs have no `out=`, `where=`, `dtype=`, or `casting=` options.
-  Lua scalar operands are numbers only; booleans require a `bool` tensor.
+  Arithmetic scalar operands are numbers only; the logical ufuncs additionally
+  accept Lua booleans.
 - Fancy indexing is not exposed; use the returned luatorch tensors and `torch`
   directly.
 - Broadcasting is not reimplemented; it is whatever luatorch/ATen does for the
@@ -1782,8 +1852,8 @@ dtype, or backend constraints are forwarded as-is.
   `edge_order = 2` option. Spacing may be uniform, a coordinate vector for one
   selected axis, or one entry per selected axis. Integer/bool input promotes
   to `float64`, and selected axes require at least two elements.
-- Text I/O stores only numeric fields: no shape/dtype metadata, quoted string
-  columns, or parsed header metadata. `quotechar` makes quoted numeric fields
+- Text I/O stores numeric and bool fields: no shape/dtype metadata, quoted
+  string columns, or parsed header metadata. `quotechar` makes quoted fields
   atomic during reading, but `savetxt` never writes quotes. `loadtxt`/`savetxt`
   accept caller-owned file
   handles at their current position and never close them. `savetxt`
@@ -1791,11 +1861,12 @@ dtype, or backend constraints are forwarded as-is.
   than interpreting it. `loadtxt`
   defaults to `float32`, and one-row/one-column files are squeezed to 1-D
   unless `ndmin = 2`. `usecols` uses **1-based** column numbers (NumPy uses
-  0-based columns), though negative columns count from the end in both. `bool`
-  is not supported by either text function. Unknown option keys are rejected,
-  and `int64` text output can round values beyond the exactly representable
-  double range; use `.npy` when exact large integers matter.
-- `genfromtxt` keeps the numeric-only text scope: no structured dtypes,
+  0-based columns), though negative columns count from the end in both. Bool
+  fields use `True`/`False` or numeric zero/nonzero spellings. Unknown option
+  keys are rejected, and `int64` text output can round values beyond the
+  exactly representable double range; use `.npy` when exact large integers
+  matter.
+- `genfromtxt` keeps the numeric/bool-only text scope: no structured dtypes,
   `names`, string columns, masked-array output, `usemask`, `loose`,
   `invalid_raise`, or `skiprows` alias. Missing/filling/converters use 1-based
   physical column numbers (NumPy uses 0-based keys), default dtype is `float32`,

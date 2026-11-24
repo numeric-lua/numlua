@@ -11,7 +11,7 @@ a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.25.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.26.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`/raw binary and text, and CSV I/O.  It is packaged on LuaRocks
 > and tested against luatorch 0.25.x.
@@ -275,10 +275,11 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `gradient`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
-| Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
-| Reductions | `sum`, `prod`, `mean`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `trapezoid`, `trapz` |
+| Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not` |
+| Reductions | `sum`, `prod`, `mean`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num` |
+| Numerical | `trapezoid`, `trapz`, `interp` |
 | Predicates/selection | `where`, `select`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
@@ -310,7 +311,18 @@ one. `numlua.prod` delegates the product reduction to ATen, and `numlua.ptp`
 returns `max - min` over the same axis (bool input becomes `int64`).
 `numlua.trapezoid` (with `numlua.trapz` as its historical alias) integrates
 along one axis with uniform `dx` or coordinate arrays; the default axis is the
-last one.
+last one. `numlua.interp` performs linear interpolation over a strictly
+increasing 1-D grid and keeps the shape of its coordinate input. `numlua.unwrap`
+removes phase jumps along a 1-based axis with a configurable period and
+discontinuity threshold.
+
+The elementwise surface also includes `numlua.isinf`, `numlua.isfinite`,
+`numlua.sign`, `numlua.floor`, `numlua.ceil`, `numlua.trunc`, `numlua.round`,
+`numlua.reciprocal`, `numlua.log1p`, and the logical ufuncs
+`numlua.logical_and`, `numlua.logical_or`, `numlua.logical_xor`, and
+`numlua.logical_not`.
+`numlua.nan_to_num` replaces NaN/infinity values, while `numlua.nancumsum` and
+`numlua.nancumprod` skip NaNs in cumulative reductions.
 
 `numlua.dot` now follows NumPy's shape rules for vectors, matrices, and batched
 inputs. `numlua.inner` sums over the last axis of both operands, `numlua.outer`
@@ -321,7 +333,7 @@ flattens both operands before forming the product, and `numlua.cross` computes
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
 `diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
 `repeat_`, `flip`, `fliplr`,
-`flipud`, `rot90`, `roll`, `diff`, `gradient`,
+`flipud`, `rot90`, `roll`, `diff`, `gradient`, `unwrap`, `interp`,
 `cumsum`, `cumprod`, `argsort`,
 `sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
 allocate independent storage (`rot90(t, 0)` returns the input); see
@@ -501,7 +513,7 @@ Use `.npy` instead when the file should carry its dtype and shape.
 ## Text/CSV I/O
 
 `numlua.savetxt(path_or_file, tensor[, options])` writes a 1-D or 2-D tensor as
-numeric text. `numlua.loadtxt(path_or_file[, options])` reads it back as a
+numeric/bool text. `numlua.loadtxt(path_or_file[, options])` reads it back as a
 luatorch tensor. Both accept a path or an already-open Lua file handle; handles
 are used at their current position and are never closed by `numlua`. Plain
 whitespace is the default separator, and `delimiter = ","` handles simple CSV.
@@ -537,14 +549,17 @@ transposes a 2-D result, and `ndmin = 2` keeps one-row/one-column input as a
 files become 1-D
 tensors (NumPy's default squeeze behavior), and an all-comment/empty file loads
 as an empty 1-D tensor. The default load dtype is `float32`; pass `dtype` to load
-integers or wider floats exactly. Text files do not store shape or dtype, so a
+integers, wider floats, or `bool` exactly. Boolean fields accept `True`/`False`
+or numeric values (zero is false), and a bool `savetxt` writes `True`/`False`
+by default. Text files do not store shape or dtype, so a
 1xN or Nx1 matrix cannot be distinguished from a vector after loading.
 
 `numlua.genfromtxt(path_or_file[, options])` extends the same numeric parser
 with missing-value handling. `missing_values` accepts a marker string, a marker
 list, or a table keyed by 1-based physical column; `filling_values` accepts one
-number, a per-column list, or a per-column map. Missing floats default to NaN
-and missing integers to zero, converters run before missing-value handling, and
+number, a per-column list, or a per-column map. Missing floats default to NaN,
+missing integers to zero, and missing bools to false; converters run before
+missing-value handling, and
 `skip_header`/`skip_footer` replace `loadtxt`'s `skiprows`. Numeric-only scope,
 `usecols`, `unpack`, `ndmin`, and the squeeze rules are unchanged.
 
@@ -552,9 +567,10 @@ and missing integers to zero, converters run before missing-value handling, and
 round-trips, writes `nan`/`inf` explicitly, and supports a `fmt` format string,
 function, or table with one format per column. `header` and `footer` add
 comment-prefixed text before and after
-the data (`comments` defaults to `"# "`), and `newline` changes the line ending.
-It rejects zero-dimensional and higher-than-2-D tensors and the `bool` dtype
-(use `0`/`1` values with an integral dtype instead). See
+the data (`comments` defaults to `"# "`), and `newline` changes the line
+ending. It rejects zero-dimensional and higher-than-2-D tensors. Bool tensors
+write `True`/`False` by default; a custom `fmt` receives `1`/`0` for bool
+values. See
 [docs/api.md](docs/api.md#text-and-csv-io) for the full option list.
 
 ## Testing
@@ -586,7 +602,8 @@ empty and pre-suffixed `.npz` members, layout view/copy semantics,
 broadcast/take/take_along_axis/put edge shapes, split/diagonal/triangular
 helpers, variance/NaN reductions, product/`ptp` reductions, logarithmic and
 Vandermonde/triangular constructors, dot/inner/outer/cross products,
-trapezoidal integration, quoted text fields, meshgrid, gradients, closeness
+trapezoidal integration, linear interpolation, phase unwrapping, additional
+ufuncs and NaN helpers, quoted/bool text fields, meshgrid, gradients, closeness
 predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
 fixtures, release
@@ -595,7 +612,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 397 tests.
+It currently contains 421 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -651,11 +668,15 @@ This is an MVP, not a complete NumPy replacement:
 - `trapezoid`/`trapz` default to the last axis, accept a 1-D coordinate vector
   or full-shape coordinates, and use ATen's arithmetic promotion (integer
   input becomes `float32`);
+- `interp` requires a strictly increasing 1-D grid, returns `float64`, and
+  takes `left`/`right` positionally; `unwrap` takes `discont`/`axis`/`period`
+  positionally and promotes integer input to `float64`;
 - elementwise ufuncs delegate dtype promotion to ATen, not NumPy's promotion
   rules or `numlua.promote_types`; integral input to transcendental functions
   becomes `float32`, and integer division becomes `float32`;
-- ufuncs have no `out=`, `where=`, `dtype=`, or `casting=` options, and Lua
-  boolean scalars are rejected (use a `bool` tensor);
+- ufuncs have no `out=`, `where=`, `dtype=`, or `casting=` options. Arithmetic
+  ufuncs reject Lua boolean scalars (use a `bool` tensor); the logical ufuncs
+  accept booleans, numbers, and tensors;
 - fancy indexing is not exposed; use the returned luatorch tensors and `torch`
   for those operations;
 - `sort` defaults to the last axis and accepts a numlua `descending` flag;
@@ -695,9 +716,10 @@ This is an MVP, not a complete NumPy replacement:
   32-bit fields; ZIP64 writing is not supported.
 - text I/O is intentionally simple: it does not store shape/dtype metadata or
   write quoted fields, or parse header metadata (`savetxt` header/footer lines
-  are comments to `loadtxt`), and it rejects `bool` rather than guessing a
-  textual boolean spelling. `loadtxt`/`genfromtxt` can read quoted fields with
-  a single-character `quotechar`, but quoted text is still parsed as a number.
+  are comments to `loadtxt`). Bool is supported with `True`/`False`/`0`/`1`
+  spellings. `loadtxt`/`genfromtxt` can read quoted fields with
+  a single-character `quotechar`, but quoted text is still parsed as a
+  numeric/bool value.
   `loadtxt` `usecols` and `converters` use 1-based physical
   columns (NumPy uses 0-based keys), and one-row/one-column input is squeezed to
   1-D unless `ndmin = 2`.
@@ -705,12 +727,12 @@ This is an MVP, not a complete NumPy replacement:
   `int64` text output can round values beyond the exact double range (use
   `.npy` for those). All three text functions accept caller-owned file handles
   at their current position and leave them open;
-- `genfromtxt` stays numeric-only: it has no structured dtypes, `names`, string
+- `genfromtxt` stays numeric/bool-only: it has no structured dtypes, `names`, string
   columns, masked output, `usemask`, `loose`, `invalid_raise`, or `skiprows`
   alias. Missing/filling/converters use 1-based physical columns, default dtype
   is `float32`, a malformed non-missing field is an error, and `max_rows`
   cannot be combined with `skip_footer`;
-- LuaRocks packaging is provided by `numlua-0.25.0-1.rockspec`; the native
+- LuaRocks packaging is provided by `numlua-0.26.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License

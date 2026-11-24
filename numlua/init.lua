@@ -26,7 +26,7 @@ local unpack = table.unpack or unpack
 
 local numlua = {}
 
-numlua.VERSION = "0.25.0"
+numlua.VERSION = "0.26.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
@@ -740,6 +740,43 @@ function numlua.nanstd(t, axis, keepdims, ddof)
   return nan_variance(t, axis, keepdims, ddof, "nanstd"):sqrt()
 end
 
+-- nan_to_num replaces NaN and infinities with finite values.  luatorch/ATen
+-- supplies NumPy's dtype maxima when no replacement is given.
+function numlua.nan_to_num(t, nan, posinf, neginf)
+  check_tensor(t, "nan_to_num")
+  for _, entry in ipairs({
+    { nan, "nan" }, { posinf, "posinf" }, { neginf, "neginf" },
+  }) do
+    local value, label = entry[1], entry[2]
+    if value ~= nil and type(value) ~= "number" then
+      error(string.format(
+        "numlua.nan_to_num: %s must be a number or nil, got %s",
+        label, type(value)), 2)
+    end
+  end
+  return t:nan_to_num(nan, posinf, neginf)
+end
+
+-- NaN-aware cumulative reductions treat NaN as the sum/product identity and
+-- otherwise delegate the cumulative kernel to ATen.
+function numlua.nancumsum(t, axis)
+  check_tensor(t, "nancumsum")
+  check_axis(axis, "nancumsum")
+  if not t:is_floating_point() then
+    return numlua.cumsum(t, axis)
+  end
+  return numlua.cumsum(t:masked_fill(nan_mask(t), 0), axis)
+end
+
+function numlua.nancumprod(t, axis)
+  check_tensor(t, "nancumprod")
+  check_axis(axis, "nancumprod")
+  if not t:is_floating_point() then
+    return numlua.cumprod(t, axis)
+  end
+  return numlua.cumprod(t:masked_fill(nan_mask(t), 1), axis)
+end
+
 -- argmax and argmin return 1-based flat indices when axis is nil, matching
 -- luatorch.  Both delegate the reduction kernel to luatorch.
 function numlua.median(t, axis, keepdims)
@@ -921,6 +958,134 @@ end
 -- NumPy kept np.trapz as the historical spelling; expose the same behavior.
 function numlua.trapz(t, x, dx, axis)
   return trapezoid_impl(t, x, dx, axis, "trapz")
+end
+
+-- unwrap removes phase jumps larger than `discont` along one axis by adding a
+-- multiple of `period`, following np.unwrap.  Integer input is promoted to
+-- float64; the default period is 2*pi and the default discont is period/2.
+function numlua.unwrap(t, discont, axis_value, period)
+  check_tensor(t, "unwrap")
+  check_axis(axis_value, "unwrap")
+  period = period == nil and (2 * math.pi) or period
+  if type(period) ~= "number" or period ~= period or
+      period == math.huge or period == -math.huge or period <= 0 then
+    error("numlua.unwrap: period must be a positive finite number", 2)
+  end
+  discont = discont == nil and (period / 2) or discont
+  if type(discont) ~= "number" or discont ~= discont or
+      discont == math.huge or discont == -math.huge or discont < 0 then
+    error("numlua.unwrap: discont must be a finite non-negative number", 2)
+  end
+
+  if not t:is_floating_point() then
+    t = t:to("float64")
+  end
+  local ndim = t:dim()
+  if ndim == 0 then
+    error("numlua.unwrap expects at least a 1-D tensor", 2)
+  end
+  local axis = axis_value == nil and ndim
+    or (axis_value > 0 and axis_value or ndim + axis_value + 1)
+  if axis < 1 or axis > ndim then
+    error(string.format(
+      "numlua.unwrap: axis %d is out of range for a %d-D tensor",
+      axis_value, ndim), 2)
+  end
+  local size = t:size(axis)
+  if size <= 1 then
+    return t:clone()
+  end
+
+  local difference = numlua.diff(t, 1, axis)
+  local half = period / 2
+  local wrapped = difference:add(half):remainder(period):sub(half)
+  -- NumPy keeps positive jumps that land exactly on the half-period boundary.
+  local boundary = wrapped:eq(-half):logical_and(difference:gt(0))
+  wrapped = wrapped:masked_fill(boundary, 0)
+  local correction = wrapped:sub(difference)
+  correction = correction:masked_fill(difference:abs():lt(discont), 0)
+
+  local cumulative = numlua.cumsum(correction, axis)
+  local result = t:clone()
+  result:narrow(axis, 2, size - 1):add_(cumulative)
+  return result
+end
+
+local function interp_vector(value, name, label)
+  local result
+  if torch.is_tensor(value) then
+    result = value:to("float64")
+  elseif type(value) == "table" then
+    result = torch.tensor(value, { dtype = "float64" })
+  else
+    error(string.format(
+      "numlua.interp: %s must be a 1-D tensor or table, got %s",
+      label, type(value)), 2)
+  end
+  if result:dim() ~= 1 then
+    error("numlua.interp: " .. label .. " must be 1-D", 2)
+  end
+  return result
+end
+
+-- interp performs linear interpolation of fp(x) over the increasing xp grid.
+-- x may be a scalar or any-rank tensor/table; the result is float64 and keeps
+-- x's shape.  Out-of-range values use `left`/`right`, defaulting to fp[1] and
+-- fp[-1].
+function numlua.interp(x, xp, fp, left, right)
+  xp = interp_vector(xp, "interp", "xp")
+  fp = interp_vector(fp, "interp", "fp")
+  local count = xp:size(1)
+  if count < 2 then
+    error("numlua.interp: xp must contain at least two points", 2)
+  end
+  if fp:size(1) ~= count then
+    error(string.format(
+      "numlua.interp: xp has %d points but fp has %d",
+      count, fp:size(1)), 2)
+  end
+  if not numlua.diff(xp):gt(0):all():item() then
+    error("numlua.interp: xp must be strictly increasing", 2)
+  end
+  if left ~= nil and type(left) ~= "number" then
+    error("numlua.interp: left must be a number or nil", 2)
+  end
+  if right ~= nil and type(right) ~= "number" then
+    error("numlua.interp: right must be a number or nil", 2)
+  end
+
+  local original_shape
+  local flat_x
+  if torch.is_tensor(x) then
+    original_shape = x:sizes()
+    flat_x = x:to("float64"):reshape(-1)
+  elseif type(x) == "table" then
+    local tensor = torch.tensor(x, { dtype = "float64" })
+    original_shape = tensor:sizes()
+    flat_x = tensor:reshape(-1)
+  elseif type(x) == "number" then
+    original_shape = {}
+    flat_x = torch.tensor(x, { dtype = "float64" }):reshape(-1)
+  else
+    error("numlua.interp: x must be a number, tensor, or table, got " ..
+      type(x), 2)
+  end
+
+  local indices = numlua.searchsorted(xp, flat_x, "left")
+  local lower = indices:clamp(2, count):sub(1)
+  local upper = lower:add(1)
+  local x0 = xp:index_select(1, lower)
+  local x1 = xp:index_select(1, upper)
+  local f0 = fp:index_select(1, lower)
+  local f1 = fp:index_select(1, upper)
+  local ratio = flat_x:sub(x0):div(x1:sub(x0))
+  local values = f0:add(ratio:mul(f1:sub(f0)))
+  values = values:masked_fill(flat_x:lt(xp:get(1)),
+    left == nil and fp:get(1) or left)
+  values = values:masked_fill(flat_x:gt(xp:get(count)),
+    right == nil and fp:get(count) or right)
+  values = values:masked_fill(flat_x:ne(flat_x), 0 / 0)
+  return values:reshape(original_shape)
 end
 
 function numlua.flatnonzero(t)

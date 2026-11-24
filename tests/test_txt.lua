@@ -174,14 +174,15 @@ test("loadtxt reports malformed rows and invalid numbers", function()
   os.remove(bad_csv)
 end)
 
-test("text I/O rejects unsupported dtypes and invalid arguments", function()
+test("text I/O supports boolean tensors", function()
   local bool_path = tmp_path("bool")
   local bools = numlua.array({ true, false })
-  assert_error(function() numlua.savetxt(bool_path, bools) end,
-    "unsupported dtype 'bool'")
-  assert_error(function()
-    numlua.loadtxt(bool_path, { dtype = "bool" })
-  end, "unsupported dtype 'bool'")
+  assert_true(numlua.savetxt(bool_path, bools))
+  assert_eq(read_text(bool_path), "True False\n")
+  local loaded = numlua.loadtxt(bool_path, { dtype = "bool" })
+  assert_dtype(loaded, "bool")
+  assert_tensor(loaded, { true, false })
+  os.remove(bool_path)
 
   local path = write_text(tmp_path("dtype-errors"), "1 2\n")
   assert_error(function()
@@ -346,7 +347,7 @@ test("savetxt writes special values, vector shapes, and bad formats",
   os.remove(invalid)
 end)
 
-test("loadtxt accepts every numeric dtype id and validates comments",
+test("loadtxt accepts every supported dtype id and validates comments",
     function()
   local path = write_text(tmp_path("dtype-ids"), "1.5 2.5\n")
   local dtypes = {
@@ -357,6 +358,7 @@ test("loadtxt accepts every numeric dtype id and validates comments",
     { 4, "int16" },
     { 5, "int8" },
     { 6, "uint8" },
+    { 7, "bool" },
     { 8, "float16" },
   }
   for _, case in ipairs(dtypes) do
@@ -364,9 +366,6 @@ test("loadtxt accepts every numeric dtype id and validates comments",
     assert_dtype(loaded, case[2])
     assert_shape(loaded, { 2 })
   end
-  assert_error(function()
-    numlua.loadtxt(path, { dtype = 7 })
-  end, "unsupported dtype 'bool'")
   os.remove(path)
 
   -- Comment marker tables reject empty entries and non-strings, and scalar

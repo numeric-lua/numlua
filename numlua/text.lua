@@ -48,6 +48,7 @@ local SUPPORTED_DTYPES = {
   int32 = true,
   int64 = true,
   uint8 = true,
+  bool = true,
 }
 
 local FLOAT_FORMATS = {
@@ -252,8 +253,9 @@ local function check_load_dtype(dtype, name)
   local dtype_name = probe:dtype()
   if not SUPPORTED_DTYPES[dtype_name] then
     error(string.format(
-      "numlua.%s: unsupported dtype '%s' (text I/O supports numeric " ..
-      "dtypes, not bool)", name, dtype_name), 3)
+      "numlua.%s: unsupported dtype '%s' (text I/O supports float16/" ..
+      "float32/float64, int8/int16/int32/int64, uint8, and bool)",
+      name, dtype_name), 3)
   end
   return dtype_name
 end
@@ -262,8 +264,9 @@ local function check_save_dtype(tensor)
   local name = tensor:dtype()
   if not SUPPORTED_DTYPES[name] then
     error(string.format(
-      "numlua.savetxt: unsupported dtype '%s' (text I/O supports numeric " ..
-      "dtypes, not bool)", name), 3)
+      "numlua.savetxt: unsupported dtype '%s' (text I/O supports " ..
+      "float16/float32/float64, int8/int16/int32/int64, uint8, and bool)",
+      name), 3)
   end
   return name
 end
@@ -460,6 +463,28 @@ local function parse_number(field)
   return nil
 end
 
+-- Boolean text accepts NumPy's True/False spelling and 0/1 (or any numeric
+-- field via truth testing).
+local function parse_bool(field)
+  local lower = field:lower()
+  if lower == "true" then return 1 end
+  if lower == "false" then return 0 end
+  local value = parse_number(field)
+  if value == nil then return nil end
+  return value ~= 0 and 1 or 0
+end
+
+-- luatorch's bool constructor treats every numeric table entry as truthy, so
+-- convert parsed 0/1 values to Lua booleans before building a bool tensor.
+local function bool_rows(rows)
+  for i = 1, #rows do
+    local row = rows[i]
+    for j = 1, #row do
+      row[j] = row[j] ~= 0
+    end
+  end
+end
+
 -- Normalize the converters option.  A single function applies to every input
 -- column; a table maps 1-based physical column numbers to functions.  Unlike
 -- NumPy's 0-based dictionary keys, numlua keeps the facade's 1-based column
@@ -575,6 +600,7 @@ function text.loadtxt(path, options)
     local converter = converters ~= nil and
       (converters.all or (converters.map and converters.map[column])) or nil
     if converter == nil then
+      if dtype == "bool" then return parse_bool(field) end
       return parse_number(field)
     end
     local ok, value = pcall(converter, field)
@@ -661,6 +687,7 @@ function text.loadtxt(path, options)
     end
     return empty
   end
+  if dtype == "bool" then bool_rows(rows) end
   local output_columns = selected ~= nil and #selected or columns
   -- ndmin=2 keeps the physical row/column shape, so a one-row file stays
   -- (1, N) and a one-column file stays (N, 1).  The default (ndmin=0) and
@@ -920,7 +947,7 @@ function text.genfromtxt(path, options)
     if is_missing(field, column) then
       return filling_by_column[column]
     end
-    local value = parse_number(field)
+    local value = dtype == "bool" and parse_bool(field) or parse_number(field)
     if value == nil then
       error(string.format(
         "numlua.genfromtxt: line %d: invalid number '%s' in column %d",
@@ -969,6 +996,7 @@ function text.genfromtxt(path, options)
     end
     return empty
   end
+  if dtype == "bool" then bool_rows(rows) end
   local output_columns = selected ~= nil and #selected or columns
   local result
   if ndmin < 2 and (output_columns == 1 or #rows == 1) then
@@ -989,6 +1017,13 @@ function text.genfromtxt(path, options)
 end
 
 local function format_value(value, dtype, fmt)
+  if dtype == "bool" then
+    local numeric = value and 1 or 0
+    if fmt == nil then
+      return value and "True" or "False"
+    end
+    value = numeric
+  end
   if fmt ~= nil then
     local result
     if type(fmt) == "function" then

@@ -70,7 +70,13 @@ test("new public API and format support are documented", function()
       "numlua.genfromtxt", "numlua.prod", "numlua.nanprod", "numlua.ptp",
       "numlua.logspace", "numlua.geomspace", "numlua.identity", "numlua.tri",
       "numlua.vander", "numlua.compress", "numlua.inner", "numlua.outer",
-      "numlua.cross", "numlua.trapezoid", "numlua.trapz" }) do
+      "numlua.cross", "numlua.trapezoid", "numlua.trapz", "numlua.interp",
+      "numlua.unwrap", "numlua.nan_to_num", "numlua.nancumsum",
+      "numlua.nancumprod", "numlua.isinf", "numlua.isfinite",
+      "numlua.sign", "numlua.floor", "numlua.ceil", "numlua.trunc",
+      "numlua.round", "numlua.reciprocal", "numlua.log1p",
+      "numlua.logical_and", "numlua.logical_or", "numlua.logical_xor",
+      "numlua.logical_not" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -227,6 +233,19 @@ test("new public API and format support are documented", function()
   assert_true(readme:find("numlua.trapezoid", 1, true) ~= nil and
       readme:find("numlua.trapz", 1, true) ~= nil,
     "README.md does not document trapezoid/trapz")
+  assert_true(readme:find("numlua.interp", 1, true) ~= nil and
+      readme:find("numlua.unwrap", 1, true) ~= nil,
+    "README.md does not document interp/unwrap")
+  assert_true(readme:find("numlua.nan_to_num", 1, true) ~= nil and
+      readme:find("numlua.nancumsum", 1, true) ~= nil and
+      readme:find("numlua.nancumprod", 1, true) ~= nil,
+    "README.md does not document NaN helpers")
+  assert_true(readme:find("numlua.isinf", 1, true) ~= nil and
+      readme:find("numlua.logical_and", 1, true) ~= nil and
+      readme:find("numlua.round", 1, true) ~= nil,
+    "README.md does not document the new elementwise ufuncs")
+  assert_true(readme:find("Bool tensors", 1, true) ~= nil,
+    "README.md does not document bool text output")
   for _, option in ipairs({ "usecols", "ndmin", "header", "newline",
       "missing_values", "filling_values", "quotechar" }) do
     assert_true(readme:find(option, 1, true) ~= nil,

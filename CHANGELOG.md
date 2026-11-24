@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.26.0 — 2026-11-24
+
+### Added
+
+- Elementwise ufuncs `isinf`, `isfinite`, `sign`, `floor`, `ceil`, `trunc`,
+  `round`, `reciprocal`, `log1p`, `logical_and`, `logical_or`, `logical_xor`,
+  and `logical_not`. Logical ufuncs accept booleans, numbers, or tensors and
+  return `bool` tensors.
+- NaN helpers `nan_to_num`, `nancumsum`, and `nancumprod`; cumulative variants
+  treat NaN as the sum/product identity and preserve floating dtypes.
+- `numlua.unwrap(t[, discont[, axis[, period]]])` removes phase jumps along a
+  1-based axis with configurable period and discontinuity threshold.
+- `numlua.interp(x, xp, fp[, left[, right]])` provides linear interpolation
+  over a strictly increasing 1-D grid and preserves the shape of `x`.
+- Boolean text I/O: `savetxt` writes `True`/`False` (or `1`/`0` through a
+  custom `fmt`), while `loadtxt` and `genfromtxt` accept `dtype = "bool"`,
+  boolean spellings, numeric truth values, converters, and missing/filling
+  values.
+
+### Changed
+
+- Text dtype validation now accepts `bool` for all three text functions;
+  missing bool fields default to false.
+- `numlua.round` follows ATen's round-half-to-even behavior and is documented
+  with the other rounding ufuncs.
+
+### Tests
+
+- 421 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_ufunc_extras.lua` covers predicates, rounding, reciprocal/log1p, and
+  logical broadcasting; `test_nan_utils.lua` covers replacement values,
+  cumulative NaN behavior, axes, and dtypes; `test_unwrap.lua` covers jumps,
+  custom periods/discontinuities, axes, promotion, and errors;
+  `test_interp.lua` covers scalar/vector/shape handling, out-of-range values,
+  NaN coordinates, float64 output, and grid validation; `test_bool_text.lua`
+  covers True/False and numeric spellings, custom formats, converters,
+  `genfromtxt` fills, and invalid fields.
+
 ## 0.25.0 — 2026-11-24
 
 ### Added
