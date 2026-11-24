@@ -27,6 +27,7 @@ package.path = table.concat({
 
 local torch = require("torch")
 local numlua = require("numlua")
+local unpack = table.unpack or unpack
 
 local function heading(text)
   print("\n== " .. text .. " ==")
@@ -45,6 +46,10 @@ print("transpose:\n" .. numlua.transpose(a):format())
 print("column sums:\n" .. numlua.sum(a, 1):format())
 print("mean (integer input promotes to float64): " ..
   tostring(numlua.mean(a):item()) .. " (" .. numlua.dtype(numlua.mean(a)) .. ")")
+print("population std: " .. tostring(numlua.std(a):item()) ..
+  " (" .. numlua.dtype(numlua.std(a)) .. ")")
+print("NaN-aware mean: " ..
+  tostring(numlua.nanmean(numlua.array({ 1.0, 0 / 0, 3.0 })):item()))
 print("flat argmax is 1-based: " .. tostring(numlua.argmax(a):item()))
 print("per-row argmax:\n" .. numlua.argmax(a, 2):format())
 print("stacked rows shape: " ..
@@ -69,6 +74,17 @@ print("trace = " .. tostring(numlua.trace(a):item()))
 assert(numlua.trace(a):item() == 6)
 local like = numlua.zeros_like(a, { dtype = "float64" })
 assert(numlua.dtype(like) == "float64" and like:sum():item() == 0)
+
+local grid_x, grid_y = unpack(numlua.meshgrid(
+  numlua.array({ 1, 2 }), numlua.array({ 10, 20 }), { indexing = "ij" }))
+print("meshgrid ij shapes: " .. table.concat(numlua.shape(grid_x), " x ") ..
+  " and " .. table.concat(numlua.shape(grid_y), " x "))
+assert(grid_x:get(2, 1) == 2 and grid_y:get(2, 1) == 10)
+
+local gradient = numlua.gradient(numlua.array({ 1, 4, 9, 16 },
+  { dtype = "float64" }))
+print("gradient: " .. table.concat(gradient:totable(), ", "))
+assert(gradient:get(1) == 3 and gradient:get(4) == 7)
 
 heading("Matrix multiply")
 local weights = numlua.array({
@@ -199,5 +215,18 @@ assert(text_restored:equal(product))
 print("restored " .. tostring(text_restored:numel()) ..
   " values from " .. text_path)
 os.remove(text_path)
+
+local genfromtxt_path = root .. "/examples/.basic-demo-missing.csv"
+local missing_handle = assert(io.open(genfromtxt_path, "w"))
+assert(missing_handle:write("1,NA\n2,3\n"))
+missing_handle:close()
+local filled = numlua.genfromtxt(genfromtxt_path, {
+  delimiter = ",",
+  missing_values = "NA",
+  filling_values = -1,
+})
+print("genfromtxt filled missing value: " .. tostring(filled:get(1, 2)))
+assert(filled:get(1, 2) == -1 and filled:get(2, 2) == 3)
+os.remove(genfromtxt_path)
 
 print("\nnumlua example finished successfully.")

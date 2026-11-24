@@ -64,7 +64,10 @@ test("new public API and format support are documented", function()
       "numlua.fromfile", "numlua.tofile", "numlua.rot90", "numlua.fliplr",
       "numlua.flipud", "numlua.diagonal", "numlua.trace",
       "numlua.zeros_like", "numlua.ones_like", "numlua.empty_like",
-      "numlua.full_like" }) do
+      "numlua.full_like", "numlua.var", "numlua.std", "numlua.nansum",
+      "numlua.nanmean", "numlua.nanmin", "numlua.nanmax", "numlua.nanvar",
+      "numlua.nanstd", "numlua.meshgrid", "numlua.gradient",
+      "numlua.genfromtxt" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -122,6 +125,17 @@ test("new public API and format support are documented", function()
   end
   assert_true(api:find("per-column formats", 1, true) ~= nil,
     "docs/api.md does not document per-column fmt tables")
+  for _, option in ipairs({ "missing_values", "filling_values",
+      "skip_header", "skip_footer" }) do
+    assert_true(api:find("`" .. option .. "`", 1, true) ~= nil,
+      "docs/api.md does not document the genfromtxt option " .. option)
+  end
+  assert_true(api:find("NaN-aware", 1, true) ~= nil,
+    "docs/api.md does not document NaN-aware reductions")
+  assert_true(api:find("first-order edge", 1, true) ~= nil,
+    "docs/api.md does not document gradient edge behavior")
+  assert_true(api:find('indexing = "xy"', 1, true) ~= nil,
+    "docs/api.md does not document meshgrid indexing")
 
   local readme = read_file(root .. "/README.md")
   assert_true(readme:find("Status: " .. numlua.VERSION, 1, true) ~= nil,
@@ -173,7 +187,18 @@ test("new public API and format support are documented", function()
   assert_true(readme:find("numlua.isclose", 1, true) ~= nil and
       readme:find("numlua.array_equiv", 1, true) ~= nil,
     "README.md does not document closeness predicates")
-  for _, option in ipairs({ "usecols", "ndmin", "header", "newline" }) do
+  assert_true(readme:find("numlua.var", 1, true) ~= nil and
+      readme:find("numlua.std", 1, true) ~= nil and
+      readme:find("nanmean", 1, true) ~= nil,
+    "README.md does not document variance/NaN reductions")
+  assert_true(readme:find("numlua.meshgrid", 1, true) ~= nil,
+    "README.md does not document meshgrid")
+  assert_true(readme:find("numlua.gradient", 1, true) ~= nil,
+    "README.md does not document gradient")
+  assert_true(readme:find("numlua.genfromtxt", 1, true) ~= nil,
+    "README.md does not document genfromtxt")
+  for _, option in ipairs({ "usecols", "ndmin", "header", "newline",
+      "missing_values", "filling_values" }) do
     assert_true(readme:find(option, 1, true) ~= nil,
       "README.md does not mention the text option " .. option)
   end

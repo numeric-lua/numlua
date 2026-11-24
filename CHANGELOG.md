@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.23.0 — 2026-11-24
+
+### Added
+
+- `numlua.var(t[, axis[, keepdims[, ddof]]])` and `numlua.std(...)` implement
+  NumPy's population variance/standard deviation default (`ddof = 0`), accept
+  any finite `ddof`, and preserve floating dtypes while promoting integer/bool
+  input to `float64`.
+- NaN-aware reductions `numlua.nansum`, `numlua.nanmean`, `numlua.nanmin`,
+  `numlua.nanmax`, `numlua.nanvar`, and `numlua.nanstd` ignore NaNs along an
+  optional 1-based axis, treat NaN as zero for `nansum`, and return NaN for
+  slices with no valid values.
+- `numlua.meshgrid(x1, x2, ...[, opts])` builds coordinate grids from 1-D
+  tensors or Lua tables with NumPy's `indexing = "xy"`/`"ij"`, `sparse`, and
+  `copy` options; each grid keeps its input dtype and materializes independent
+  storage by default.
+- `numlua.gradient(t[, spacing[, axis]])` computes NumPy-style first-order edge
+  and central interior differences with uniform, coordinate, or per-axis
+  spacing, returning one tensor per selected axis.
+- `numlua.genfromtxt(path_or_file[, options])` extends the numeric text reader
+  with `skip_header`/`skip_footer`, `missing_values`, `filling_values`, and
+  `max_rows`, while keeping `usecols`, converters, `unpack`, `ndmin`, handle
+  ownership, and the existing squeeze rules. Missing floats default to NaN and
+  missing integers to zero; converters take precedence over missing markers.
+
+### Changed
+
+- Shared text-reader validation helpers now carry the calling function name, so
+  `genfromtxt` errors consistently use a `numlua.genfromtxt:` prefix instead of
+  inheriting `loadtxt` messages. Existing `loadtxt` behavior is unchanged.
+- Release metadata, the README, API reference, and runnable example cover the
+  new statistics, meshgrid, gradient, and missing-value text features.
+- No runtime dependency was added; all new work delegates to luatorch or uses
+  only the Lua standard library.
+
+### Tests
+
+- 346 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_statistics.lua` covers ddof, axis/keepdims, and dtype promotion;
+  `test_nan_reductions.lua` covers all-NaN slices, axis reductions, and integer
+  aliases; `test_meshgrid.lua` covers `xy`/`ij`, sparse/copy, three-input
+  ordering, and errors; `test_gradient.lua` covers edges, uniform/coordinate
+  spacing, axis tables, promotion, and errors; `test_genfromtxt.lua` covers
+  headers/footers, missing/filling forms, converters, usecols, handles, empty
+  input, and error paths.
+
 ## 0.22.0 — 2026-11-23
 
 ### Added

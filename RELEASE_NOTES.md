@@ -1,20 +1,22 @@
-# numlua 0.22.0
+# numlua 0.23.0
 
 NumPy-shaped arrays for LuaJIT, backed by luatorch.
 
 ## Highlights
 
-- `numlua.rot90`, `numlua.fliplr`, and `numlua.flipud` add NumPy's quarter-turn
-  and axis-specific flip helpers, including explicit 1-based axis planes.
-- `numlua.diagonal` and `numlua.trace` extract and sum diagonals over any two
-  axes, keeping batch dimensions and preserving dtypes (including `bool`).
-- `numlua.zeros_like`, `numlua.ones_like`, `numlua.empty_like`, and
-  `numlua.full_like` inherit shape/dtype and accept `dtype` and `shape`
-  overrides.
-- `.npz` I/O accepts open Lua file handles for `savez`, `savez_compressed`,
-  and `loadz`; caller-owned handles stay open.
-- `numlua.fromfile`/`numlua.tofile` gain NumPy-style text mode via a non-empty
-  `sep`, with `tofile` format strings and float/integer/bool parsing.
+- `numlua.var` and `numlua.std` add NumPy's population variance/standard
+  deviation default (`ddof = 0`), arbitrary finite `ddof`, axis/`keepdims`
+  reductions, and `float64` promotion for integer/bool input.
+- `numlua.nansum`, `numlua.nanmean`, `numlua.nanmin`, `numlua.nanmax`,
+  `numlua.nanvar`, and `numlua.nanstd` ignore NaNs, with all-NaN slices
+  returning NaN and `nansum` treating NaN as zero.
+- `numlua.meshgrid` builds coordinate grids with NumPy's `indexing = "xy"` or
+  `"ij"`, `sparse`, and `copy` options, from tensors or Lua tables.
+- `numlua.gradient` computes first-order edge and central interior differences
+  with uniform spacing, coordinate arrays, or per-axis spacing.
+- `numlua.genfromtxt` extends the numeric text reader with `skip_header`,
+  `skip_footer`, `missing_values`, and `filling_values`; missing floats default
+  to NaN and missing integers to zero. Existing `loadtxt` behavior is unchanged.
 - All new features are documented in `README.md` and `docs/api.md`; no runtime
   dependency was added.
 
@@ -26,9 +28,9 @@ without it.
 
 ## Verification
 
-- 315 tests passed with system zlib
-- 315 tests passed with `NUMLUA_DISABLE_ZLIB=1`
+- 346 tests passed with system zlib
+- 346 tests passed with `NUMLUA_DISABLE_ZLIB=1`
 - `examples/basic.lua` runs
-- LuaRocks builtin install smoke-tested from `numlua-0.22.0-1.rockspec`
+- LuaRocks builtin install smoke-tested from `numlua-0.23.0-1.rockspec`
 
-Tag and GitHub release: `v0.22.0`.
+Tag and GitHub release: `v0.23.0`.

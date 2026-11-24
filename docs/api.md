@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.22.0"
+print(numlua.VERSION) -- "0.23.0"
 ```
 
 ## Conventions
@@ -91,7 +91,9 @@ numlua.linspace(0, 1, { dtype = "float64" })
 ### `numlua.meshgrid(x1, x2, ...[, opts])`
 
 Builds coordinate grids from 1-D tensors or Lua numeric tables and returns a
-table with one tensor per input. The optional trailing options table accepts:
+table with one tensor per input. With the default `indexing = "xy"` the first
+two output axes are swapped; use `indexing = "ij"` to keep input order. The
+optional trailing options table accepts:
 
 | option | default | meaning |
 | --- | --- | --- |
@@ -105,7 +107,7 @@ with that input's shape. At least one 1-D input is required, and
 
 ```lua
 local x, y = numlua.array({ 1, 2, 3 }), numlua.array({ 10, 20 })
-local gx, gy = table.unpack(numlua.meshgrid(x, y, { indexing = "ij" }))
+local gx, gy = unpack(numlua.meshgrid(x, y, { indexing = "ij" }))
 -- gx: 3x2, gy: 3x2
 ```
 
@@ -1608,6 +1610,19 @@ dtype, or backend constraints are forwarded as-is.
   result must keep the input rank or drop exactly one dimension (which is
   restored at the same position); NumPy's scalar and table return spellings
   are not accepted by `np.apply_over_axes`, which expects an ndarray.
+- `var`/`std` and the `nan*` reductions accept one axis at a time, like the
+  other reductions. `ddof` must be finite (NumPy permits any value); variance
+  denominators are not rounded, and NaN slices return NaN without emitting
+  NumPy's runtime warning. Integer/bool `var`/`std` and the NaN statistics
+  promote to `float64`, while floating input keeps its dtype.
+- `meshgrid` requires 1-D inputs and does not apply NumPy's mixed-dtype result
+  promotion: each output keeps its own input dtype. `copy = false` returns
+  expanded views instead of independent writable arrays, and the options table
+  is a Lua extension rather than NumPy keyword arguments.
+- `gradient` implements NumPy's default `edge_order = 1` only; there is no
+  `edge_order = 2` option. Spacing may be uniform, a coordinate vector for one
+  selected axis, or one entry per selected axis. Integer/bool input promotes
+  to `float64`, and selected axes require at least two elements.
 - Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
   or parsed header metadata. `loadtxt`/`savetxt` accept caller-owned file
   handles at their current position and never close them. `savetxt`
@@ -1619,6 +1634,13 @@ dtype, or backend constraints are forwarded as-is.
   is not supported by either text function. Unknown option keys are rejected,
   and `int64` text output can round values beyond the exactly representable
   double range; use `.npy` when exact large integers matter.
+- `genfromtxt` keeps the numeric-only text scope: no structured dtypes,
+  `names`, string columns, masked-array output, `usemask`, `loose`,
+  `invalid_raise`, or `skiprows` alias. Missing/filling/converters use 1-based
+  physical column numbers (NumPy uses 0-based keys), default dtype is `float32`,
+  and a malformed field that is neither converted nor missing is an error
+  rather than a default-filled value. `max_rows` and `skip_footer` cannot be
+  combined.
 - `argsort` and `sort` accept a `descending` flag that is a numlua extension;
   NumPy has no descending argument. The flag must be a boolean or `nil`.
   `sort` defaults to the last axis and rejects 0-D input, like `argsort`.

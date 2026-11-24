@@ -11,7 +11,7 @@ a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.22.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.23.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`/raw binary and text, and CSV I/O.  It is packaged on LuaRocks
 > and tested against luatorch 0.25.x.
@@ -549,20 +549,21 @@ The suite is dependency-free and covers constructors, shape operations,
 elementwise ufuncs, reductions, predicates and conditional selection, linear
 algebra, dtype conversion, `.npy` round-trips for all supported dtypes and
 1-D/2-D/3-D/empty/0-D shapes, file-handle `.npy` I/O, non-contiguous tensors,
-whitespace/CSV text round-trips and `loadtxt` converters, `sort`/`unique`/
-`nonzero`/`argwhere`, generated stored and deflate `.npy`/`.npz` fixtures, ZIP
-corruption paths, ZIP32 writer limits, native-endian `.npy` headers, NPY v2.0
-and v3.0 readers and writers, byte-level writer conformance, `.npz` members and
-member versions, conditional `select`, empty and pre-suffixed `.npz` members,
-layout view/copy semantics,
+whitespace/CSV text round-trips, `loadtxt` converters, and `genfromtxt`
+missing-value forms, `sort`/`unique`/`nonzero`/`argwhere`, generated stored and
+deflate `.npy`/`.npz` fixtures, ZIP corruption paths, ZIP32 writer limits,
+native-endian `.npy` headers, NPY v2.0 and v3.0 readers and writers, byte-level
+writer conformance, `.npz` members and member versions, conditional `select`,
+empty and pre-suffixed `.npz` members, layout view/copy semantics,
 broadcast/take/take_along_axis/put edge shapes, split/diagonal/triangular
-helpers, closeness predicates, raw binary I/O, text file handles, deflate
-expansion guardrails, release metadata, and error paths. The pad tests compare
+helpers, variance/NaN reductions, meshgrid, gradients, closeness predicates,
+raw binary I/O, text file handles, deflate expansion guardrails, release
+metadata, and error paths. The pad tests compare
 wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 292 tests.
+It currently contains 346 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -598,10 +599,17 @@ This is an MVP, not a complete NumPy replacement:
 
 - reductions, including `any`, `all`, and `count_nonzero`, accept one axis at a
   time (no tuple axes);
-- there is no general dtype-promotion system; only `mean` promotes integer/bool
-  input, and it always promotes to `float64`; scalar `where`/`select` branches
-  are materialized as 0-D `float32` (or `bool`) tensors before ATen
-  broadcasting;
+- there is no general dtype-promotion system; `mean`, `var`, `std`, and the
+  NaN statistics promote integer/bool input to `float64`, while scalar
+  `where`/`select` branches are materialized as 0-D `float32` (or `bool`)
+  tensors before ATen broadcasting;
+- `var`/`std` and the `nan*` reductions accept one axis at a time; `ddof` must
+  be finite, and all-NaN slices return NaN without NumPy's runtime warning;
+- `meshgrid` requires 1-D inputs, keeps each input's dtype instead of applying
+  NumPy result-type promotion, and `copy = false` returns expanded views;
+- `gradient` implements edge order 1 only (no `edge_order = 2`), promotes
+  integer/bool input to `float64`, and requires at least two elements on each
+  selected axis;
 - `dot` is the 1-D inner product only; use `matmul` for matrix and batched
   products;
 - elementwise ufuncs delegate dtype promotion to ATen, not NumPy's promotion
@@ -653,9 +661,14 @@ This is an MVP, not a complete NumPy replacement:
   1-D unless `ndmin = 2`.
   LF, CRLF, and CR line endings load, unknown option keys are rejected, and
   `int64` text output can round values beyond the exact double range (use
-  `.npy` for those). Both text functions accept caller-owned file handles at
-  their current position and leave them open;
-- LuaRocks packaging is provided by `numlua-0.22.0-1.rockspec`; the native
+  `.npy` for those). All three text functions accept caller-owned file handles
+  at their current position and leave them open;
+- `genfromtxt` stays numeric-only: it has no structured dtypes, `names`, string
+  columns, masked output, `usemask`, `loose`, `invalid_raise`, or `skiprows`
+  alias. Missing/filling/converters use 1-based physical columns, default dtype
+  is `float32`, a malformed non-missing field is an error, and `max_rows`
+  cannot be combined with `skip_footer`;
+- LuaRocks packaging is provided by `numlua-0.23.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License
