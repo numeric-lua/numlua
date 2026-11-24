@@ -99,6 +99,25 @@ local compressed = numlua.compress({ true, false, true }, a, 2)
 print("compress columns:\n" .. compressed:format())
 assert(compressed:size(2) == 2 and compressed:get(1, 2) == 3)
 
+print("trapezoid: " .. tostring(numlua.trapezoid(
+  numlua.array({ 1, 2, 3 })):item()))
+local dot_product = numlua.dot(a,
+  numlua.array({ 1, 1, 1 }, { dtype = "int64" }))
+print("dot with a vector: " .. table.concat(dot_product:totable(), ", "))
+assert(dot_product:get(1) == 6 and dot_product:get(2) == 15)
+local inner_product = numlua.inner(a, a)
+print("inner product shape: " ..
+  table.concat(numlua.shape(inner_product), " x "))
+assert(inner_product:get(1, 1) == 14 and inner_product:get(2, 2) == 77)
+local outer_product = numlua.outer(numlua.array({ 1, 2 }),
+  numlua.array({ 3, 4 }))
+print("outer product:\n" .. outer_product:format())
+assert(outer_product:get(2, 1) == 6)
+local cross_product = numlua.cross(numlua.array({ 1, 2, 3 }),
+  numlua.array({ 4, 5, 6 }))
+print("cross product: " .. table.concat(cross_product:totable(), ", "))
+assert(cross_product:get(1) == -3 and cross_product:get(3) == -3)
+
 heading("Matrix multiply")
 local weights = numlua.array({
   { 1.0, -1.0 },
@@ -228,6 +247,18 @@ assert(text_restored:equal(product))
 print("restored " .. tostring(text_restored:numel()) ..
   " values from " .. text_path)
 os.remove(text_path)
+
+local quoted_path = root .. "/examples/.basic-demo-quoted.csv"
+local quoted_handle = assert(io.open(quoted_path, "w"))
+assert(quoted_handle:write("\"1.5\",\"2.5\"\n\"3.5\",\"4.5\"\n"))
+quoted_handle:close()
+local quoted = numlua.loadtxt(quoted_path, {
+  delimiter = ",",
+  quotechar = "\"",
+})
+print("quoted CSV:\n" .. quoted:format())
+assert(quoted:get(1, 1) == 1.5 and quoted:get(2, 2) == 4.5)
+os.remove(quoted_path)
 
 local genfromtxt_path = root .. "/examples/.basic-demo-missing.csv"
 local missing_handle = assert(io.open(genfromtxt_path, "w"))

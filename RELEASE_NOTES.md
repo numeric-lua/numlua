@@ -1,22 +1,19 @@
-# numlua 0.24.0
+# numlua 0.25.0
 
 NumPy-shaped arrays for LuaJIT, backed by luatorch.
 
 ## Highlights
 
-- `numlua.prod` and `numlua.nanprod` add product reductions with the usual
-  axis/`keepdims` rules; `nanprod` treats NaN as the multiplicative identity.
-- `numlua.ptp` returns the peak-to-peak `max - min` range, with bool input
-  promoted to `int64`.
-- `numlua.logspace` and `numlua.geomspace` build logarithmically spaced
-  sequences, including `base`, `endpoint`, `dtype`, and signed `geomspace`
-  support.
-- `numlua.identity`, `numlua.tri`, and `numlua.vander` round out the common
-  NumPy constructors.
-- `numlua.compress` supports axis-aligned selection and NumPy's
-  short-condition prefix rule in both flat and axis modes.
-- `numlua.loadz` now reads ZIP64 archives, including ZIP64 extra fields and
-  the ZIP64 end-of-central-directory record; writing remains ZIP32-only.
+- `numlua.dot` now follows NumPy's shape rules for vector, matrix, and batched
+  products.
+- `numlua.inner` sums over the last axes, `numlua.outer` flattens both
+  operands, and `numlua.cross` computes 3-vector cross products over a
+  1-based axis with ATen batch broadcasting.
+- `numlua.trapezoid` and the `numlua.trapz` alias integrate along one axis
+  with uniform spacing or coordinate arrays.
+- `numlua.loadtxt` and `numlua.genfromtxt` accept a single-character
+  `quotechar`, so quoted numeric CSV fields can contain delimiters and spaces.
+  A doubled quote character escapes itself.
 - All new features are documented in `README.md` and `docs/api.md`; no runtime
   dependency was added.
 
@@ -28,9 +25,9 @@ features work without it.
 
 ## Verification
 
-- 373 tests passed with system zlib
-- 373 tests passed with `NUMLUA_DISABLE_ZLIB=1`
+- 397 tests passed with system zlib
+- 397 tests passed with `NUMLUA_DISABLE_ZLIB=1`
 - `examples/basic.lua` runs
-- LuaRocks builtin install smoke-tested from `numlua-0.24.0-1.rockspec`
+- LuaRocks builtin install smoke-tested from `numlua-0.25.0-1.rockspec`
 
-Tag and GitHub release: `v0.24.0`.
+Tag and GitHub release: `v0.25.0`.

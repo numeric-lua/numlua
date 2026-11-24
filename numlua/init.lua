@@ -26,7 +26,7 @@ local unpack = table.unpack or unpack
 
 local numlua = {}
 
-numlua.VERSION = "0.24.0"
+numlua.VERSION = "0.25.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
@@ -841,6 +841,88 @@ function numlua.bincount(input, weights, minlength)
   return torch.bincount(input, weights, minlength)
 end
 
+-- trapezoid integrates along one axis with the trapezoidal rule, following
+-- np.trapezoid (formerly np.trapz).  `x` may be a 1-D coordinate vector for
+-- the selected axis or an array with the input's shape; when it is omitted,
+-- `dx` supplies the uniform spacing.  The default axis is the last one.
+local function trapezoid_impl(t, x, dx, axis_value, name)
+  check_tensor(t, name)
+  check_axis(axis_value, name)
+  local ndim = t:dim()
+  if ndim == 0 then
+    error(string.format("numlua.%s expects at least a 1-D tensor", name), 3)
+  end
+  local axis = axis_value == nil and ndim
+    or (axis_value > 0 and axis_value or ndim + axis_value + 1)
+  if axis < 1 or axis > ndim then
+    error(string.format(
+      "numlua.%s: axis %d is out of range for a %d-D tensor",
+      name, axis_value, ndim), 3)
+  end
+  local size = t:size(axis)
+  if size <= 1 then
+    -- An empty or single-point integration interval has zero area.
+    return t:sum(axis):mul(0)
+  end
+
+  local left = t:narrow(axis, 1, size - 1)
+  local right = t:narrow(axis, 2, size - 1)
+  local average = left:add(right):mul(0.5)
+
+  if x == nil then
+    dx = dx == nil and 1 or dx
+    if type(dx) ~= "number" then
+      error(string.format(
+        "numlua.%s: dx must be a number or nil", name), 3)
+    end
+    return average:mul(dx):sum(axis)
+  end
+
+  if not torch.is_tensor(x) then
+    if type(x) == "table" then
+      x = torch.tensor(x)
+    else
+      error(string.format(
+        "numlua.%s: x must be a tensor, table, or nil", name), 3)
+    end
+  end
+  if x:dim() == 1 then
+    if x:size(1) ~= size then
+      error(string.format(
+        "numlua.%s: x has %d elements but axis %d has size %d",
+        name, x:size(1), axis, size), 3)
+    end
+    local shape = {}
+    for i = 1, ndim do shape[i] = 1 end
+    shape[axis] = size
+    x = x:reshape(shape):expand(t:sizes())
+  else
+    if x:dim() ~= ndim then
+      error(string.format(
+        "numlua.%s: x must be 1-D or match the input rank", name), 3)
+    end
+    for i = 1, ndim do
+      if x:size(i) ~= t:size(i) then
+        error(string.format(
+          "numlua.%s: x shape does not match the input", name), 3)
+      end
+    end
+  end
+
+  local widths = x:narrow(axis, 2, size - 1):sub(
+    x:narrow(axis, 1, size - 1))
+  return average:mul(widths):sum(axis)
+end
+
+function numlua.trapezoid(t, x, dx, axis)
+  return trapezoid_impl(t, x, dx, axis, "trapezoid")
+end
+
+-- NumPy kept np.trapz as the historical spelling; expose the same behavior.
+function numlua.trapz(t, x, dx, axis)
+  return trapezoid_impl(t, x, dx, axis, "trapz")
+end
+
 function numlua.flatnonzero(t)
   check_tensor(t, "flatnonzero")
   local coords = t:reshape(-1):nonzero()
@@ -1341,15 +1423,86 @@ end
 -- linear algebra
 -- ---------------------------------------------------------------------------
 
--- dot is the 1-D inner product.  Matrix/batched products live in matmul().
+-- dot follows NumPy's dot semantics: a 1-D inner product for two vectors and
+-- the usual last-axis/second-to-last-axis sum-product otherwise.  ATen's
+-- matmul already implements exactly those shape rules, including batches.
 function numlua.dot(a, b)
   check_tensor(a, "dot")
   check_tensor(b, "dot")
-  if a:dim() ~= 1 or b:dim() ~= 1 then
-    error("numlua.dot expects two 1-D tensors; use numlua.matmul for " ..
-      "matrix and batched products", 2)
+  if a:dim() == 0 or b:dim() == 0 then
+    error("numlua.dot expects at least 1-D tensors", 2)
   end
-  return a:dot(b)
+  return a:matmul(b)
+end
+
+-- inner sums the product over the last axis of each operand and keeps the
+-- leading dimensions, matching np.inner.  The reshape/mul/sum path delegates
+-- the arithmetic to ATen and has no separate broadcast layer.
+function numlua.inner(a, b)
+  check_tensor(a, "inner")
+  check_tensor(b, "inner")
+  if a:dim() == 0 or b:dim() == 0 then
+    error("numlua.inner expects at least 1-D tensors", 2)
+  end
+  local length = a:size(a:dim())
+  if b:size(b:dim()) ~= length then
+    error(string.format(
+      "numlua.inner: last-axis sizes differ (%d and %d)",
+      length, b:size(b:dim())), 2)
+  end
+  local a_rows, b_rows = 1, 1
+  for i = 1, a:dim() - 1 do a_rows = a_rows * a:size(i) end
+  for i = 1, b:dim() - 1 do b_rows = b_rows * b:size(i) end
+  local left = a:reshape(a_rows, length)
+  local right = b:reshape(b_rows, length)
+  local products = left:unsqueeze(2):mul(right:unsqueeze(1)):sum(3)
+  local shape = {}
+  for i = 1, a:dim() - 1 do
+    shape[#shape + 1] = a:size(i)
+  end
+  for i = 1, b:dim() - 1 do
+    shape[#shape + 1] = b:size(i)
+  end
+  if #shape == 0 then
+    return products:reshape({})
+  end
+  return products:reshape(shape)
+end
+
+-- outer flattens both operands in C order and returns their outer product,
+-- following np.outer.  luatorch's outer kernel supplies the multiplication.
+function numlua.outer(a, b)
+  check_tensor(a, "outer")
+  check_tensor(b, "outer")
+  return a:reshape(-1):outer(b:reshape(-1))
+end
+
+-- cross computes the 3-vector cross product over a 1-based axis, defaulting to
+-- the last axis like np.cross.  ATen broadcasts batch dimensions; both inputs
+-- must have the same rank and the selected axis must have length 3.
+function numlua.cross(a, b, axis)
+  check_tensor(a, "cross")
+  check_tensor(b, "cross")
+  local ndim = a:dim()
+  if ndim == 0 or b:dim() ~= ndim then
+    error("numlua.cross expects tensors with the same non-zero rank", 2)
+  end
+  local normalized
+  if axis == nil then
+    normalized = ndim
+  else
+    check_axis(axis, "cross")
+    normalized = axis > 0 and axis or ndim + axis + 1
+    if normalized < 1 or normalized > ndim then
+      error(string.format(
+        "numlua.cross: axis %d is out of range for a %d-D tensor",
+        axis, ndim), 2)
+    end
+  end
+  if a:size(normalized) ~= 3 or b:size(normalized) ~= 3 then
+    error("numlua.cross expects the selected axis to have length 3", 2)
+  end
+  return torch.cross(a, b, normalized)
 end
 
 -- matmul delegates to luatorch/ATen, including batched and broadcasted forms.

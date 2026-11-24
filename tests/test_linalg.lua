@@ -63,8 +63,8 @@ test("matmul preserves floating dtypes", function()
 end)
 
 test("linalg rejects invalid shapes", function()
-  assert_error(function() numlua.dot(numlua.zeros(2, 2), numlua.zeros(2, 2)) end,
-    "expects two 1-D tensors")
+  assert_error(function() numlua.dot(numlua.array(1), numlua.array(1)) end,
+    "at least 1-D")
   assert_error(function() numlua.dot(numlua.zeros(2), numlua.zeros(3)) end)
   assert_error(function() numlua.matmul(numlua.zeros(2, 3), numlua.zeros(2, 3)) end)
   assert_error(function() numlua.matmul(nil, numlua.zeros(2)) end,

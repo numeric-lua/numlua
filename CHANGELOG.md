@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.25.0 — 2026-11-24
+
+### Added
+
+- `numlua.dot` now follows NumPy's shape rules for vector, matrix, and batched
+  products instead of requiring two 1-D operands.
+- `numlua.inner` sums over the last axis of both operands, `numlua.outer`
+  flattens both operands before forming the product, and `numlua.cross`
+  computes 3-vector cross products over a 1-based axis with ATen batch
+  broadcasting.
+- `numlua.trapezoid` and its `numlua.trapz` alias integrate along one axis
+  with uniform `dx` or coordinate arrays, matching `np.trapezoid`.
+- `numlua.loadtxt` and `numlua.genfromtxt` accept a single-character
+  `quotechar`; quoted fields may contain delimiters and whitespace, and a
+  doubled quote character escapes itself.
+
+### Changed
+
+- `numlua.dot` now delegates to ATen matmul for all supported ranks, so mixed
+  integer/floating operands follow ATen's matmul dtype checks.
+- `numlua.cross` rejects operands with different ranks and supports only
+  3-component vectors, matching the ATen kernel.
+
+### Tests
+
+- 397 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_dot.lua` covers vector/matrix/N-D shapes, dtypes, non-contiguous
+  inputs, and errors; `test_inner_outer.lua` covers last-axis sums, empty axes,
+  flattening, dtypes, and errors; `test_cross.lua` covers axes, batches,
+  broadcasting, dtypes, and errors; `test_trapezoid.lua` covers uniform and
+  coordinate spacing, axes, empty intervals, dtypes, and errors;
+  `test_quotechar.lua` covers quoted CSV/whitespace fields, escaped quotes,
+  embedded delimiters, `genfromtxt`, and malformed input.
+
 ## 0.24.0 — 2026-11-24
 
 ### Added

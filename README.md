@@ -11,7 +11,7 @@ a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.24.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.25.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`/raw binary and text, and CSV I/O.  It is packaged on LuaRocks
 > and tested against luatorch 0.25.x.
@@ -278,9 +278,9 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `gradient`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
-| Reductions | `sum`, `prod`, `mean`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd` |
+| Reductions | `sum`, `prod`, `mean`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `trapezoid`, `trapz` |
 | Predicates/selection | `where`, `select`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
-| Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
+| Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt`, `genfromtxt` |
@@ -308,6 +308,14 @@ and the other `nan*` reductions ignore NaNs, returning NaN for slices with no
 valid values; `nansum` treats NaN as zero and `numlua.nanprod` treats NaN as
 one. `numlua.prod` delegates the product reduction to ATen, and `numlua.ptp`
 returns `max - min` over the same axis (bool input becomes `int64`).
+`numlua.trapezoid` (with `numlua.trapz` as its historical alias) integrates
+along one axis with uniform `dx` or coordinate arrays; the default axis is the
+last one.
+
+`numlua.dot` now follows NumPy's shape rules for vectors, matrices, and batched
+inputs. `numlua.inner` sums over the last axis of both operands, `numlua.outer`
+flattens both operands before forming the product, and `numlua.cross` computes
+3-vector cross products over a 1-based axis (ATen batch broadcasting).
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
@@ -517,7 +525,10 @@ assert(b:equal(a))
 same number of fields, and reports malformed rows or invalid numbers with the
 line number. A `converters` function (or a table of 1-based physical column
 numbers to functions) can transform raw fields before the numeric parser, which
-handles sentinels such as `"NA"`. `skiprows` skips physical lines (including comments and blanks),
+handles sentinels such as `"NA"`. Pass a single-character `quotechar` to treat
+quoted fields as atomic: delimiters and whitespace inside the quotes are kept,
+and a doubled quote character escapes itself. `genfromtxt` accepts the same
+option. `skiprows` skips physical lines (including comments and blanks),
 while `max_rows` limits the number of data rows read after that skip; `max_rows`
 does not count blank or comment lines. `usecols` selects 1-based columns (with
 `-1` for the last column and a table preserving order), `unpack = true`
@@ -574,7 +585,9 @@ writer conformance, `.npz` members and member versions, conditional `select`,
 empty and pre-suffixed `.npz` members, layout view/copy semantics,
 broadcast/take/take_along_axis/put edge shapes, split/diagonal/triangular
 helpers, variance/NaN reductions, product/`ptp` reductions, logarithmic and
-Vandermonde/triangular constructors, meshgrid, gradients, closeness predicates,
+Vandermonde/triangular constructors, dot/inner/outer/cross products,
+trapezoidal integration, quoted text fields, meshgrid, gradients, closeness
+predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
 fixtures, release
 metadata, and error paths. The pad tests compare
@@ -582,7 +595,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 373 tests.
+It currently contains 397 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -629,8 +642,15 @@ This is an MVP, not a complete NumPy replacement:
 - `gradient` implements edge order 1 only (no `edge_order = 2`), promotes
   integer/bool input to `float64`, and requires at least two elements on each
   selected axis;
-- `dot` is the 1-D inner product only; use `matmul` for matrix and batched
-  products;
+- `dot` follows NumPy's vector/matrix/batched shape rules but delegates the
+  multiply to ATen, so mixed integer/floating operands follow ATen's matmul
+  dtype checks rather than NumPy's promotion;
+- `cross` supports 3-component vectors only (not NumPy's 2-component form),
+  requires the same rank for both operands, and broadcasts batch axes through
+  ATen;
+- `trapezoid`/`trapz` default to the last axis, accept a 1-D coordinate vector
+  or full-shape coordinates, and use ATen's arithmetic promotion (integer
+  input becomes `float32`);
 - elementwise ufuncs delegate dtype promotion to ATen, not NumPy's promotion
   rules or `numlua.promote_types`; integral input to transcendental functions
   becomes `float32`, and integer division becomes `float32`;
@@ -673,10 +693,12 @@ This is an MVP, not a complete NumPy replacement:
   is ZIP32-only and rejects entry counts above
   65535, names above 65535 bytes, or member/archive sizes that do not fit
   32-bit fields; ZIP64 writing is not supported.
-- text I/O is intentionally simple: it does not store shape/dtype metadata,
-  quote strings, or parse header metadata (`savetxt` header/footer lines are
-  comments to `loadtxt`), and it rejects `bool` rather than guessing a textual
-  boolean spelling. `loadtxt` `usecols` and `converters` use 1-based physical
+- text I/O is intentionally simple: it does not store shape/dtype metadata or
+  write quoted fields, or parse header metadata (`savetxt` header/footer lines
+  are comments to `loadtxt`), and it rejects `bool` rather than guessing a
+  textual boolean spelling. `loadtxt`/`genfromtxt` can read quoted fields with
+  a single-character `quotechar`, but quoted text is still parsed as a number.
+  `loadtxt` `usecols` and `converters` use 1-based physical
   columns (NumPy uses 0-based keys), and one-row/one-column input is squeezed to
   1-D unless `ndmin = 2`.
   LF, CRLF, and CR line endings load, unknown option keys are rejected, and
@@ -688,7 +710,7 @@ This is an MVP, not a complete NumPy replacement:
   alias. Missing/filling/converters use 1-based physical columns, default dtype
   is `float32`, a malformed non-missing field is an error, and `max_rows`
   cannot be combined with `skip_footer`;
-- LuaRocks packaging is provided by `numlua-0.24.0-1.rockspec`; the native
+- LuaRocks packaging is provided by `numlua-0.25.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License

@@ -66,6 +66,7 @@ local LOAD_OPTIONS = {
   converters = true,
   unpack = true,
   ndmin = true,
+  quotechar = true,
 }
 
 local GENFROMTXT_OPTIONS = {
@@ -81,6 +82,7 @@ local GENFROMTXT_OPTIONS = {
   ndmin = true,
   missing_values = true,
   filling_values = true,
+  quotechar = true,
 }
 
 local SAVE_OPTIONS = {
@@ -112,6 +114,17 @@ local function check_delimiter(delimiter, name)
       "numlua.%s: delimiter must be a non-empty string or nil", name), 3)
   end
   return delimiter
+end
+
+local function check_quotechar(quotechar, name)
+  if quotechar == nil then
+    return nil
+  end
+  if type(quotechar) ~= "string" or #quotechar ~= 1 then
+    error(string.format(
+      "numlua.%s: quotechar must be a single character or nil", name), 3)
+  end
+  return quotechar
 end
 
 local function check_nonnegative_integer(value, option, name)
@@ -316,24 +329,116 @@ local function strip_comments(line, markers)
   return line:sub(1, first - 1)
 end
 
-local function split_fields(line, delimiter)
+local function split_fields(line, delimiter, quotechar, name)
   local fields = {}
-  if delimiter == nil then
-    for field in line:gmatch("%S+") do
-      fields[#fields + 1] = field
-    end
-    return fields
-  end
-  local start = 1
-  while true do
-    local index = line:find(delimiter, start, true)
-    if index == nil then
-      fields[#fields + 1] = trim(line:sub(start))
+  if quotechar == nil then
+    if delimiter == nil then
+      for field in line:gmatch("%S+") do
+        fields[#fields + 1] = field
+      end
       return fields
     end
-    fields[#fields + 1] = trim(line:sub(start, index - 1))
-    start = index + #delimiter
+    local start = 1
+    while true do
+      local index = line:find(delimiter, start, true)
+      if index == nil then
+        fields[#fields + 1] = trim(line:sub(start))
+        return fields
+      end
+      fields[#fields + 1] = trim(line:sub(start, index - 1))
+      start = index + #delimiter
+    end
   end
+
+  local length = #line
+  local position = 1
+  local function is_space(at)
+    return line:sub(at, at):match("%s") ~= nil
+  end
+
+  while true do
+    while position <= length and is_space(position) do
+      position = position + 1
+    end
+    if position > length then
+      if delimiter ~= nil and #fields > 0 then
+        fields[#fields + 1] = ""
+      end
+      break
+    end
+
+    if line:sub(position, position) == quotechar then
+      position = position + 1
+      local parts = {}
+      local closed = false
+      while position <= length do
+        local char = line:sub(position, position)
+        if char == quotechar then
+          if line:sub(position + 1, position + 1) == quotechar then
+            parts[#parts + 1] = quotechar
+            position = position + 2
+          else
+            position = position + 1
+            closed = true
+            break
+          end
+        else
+          parts[#parts + 1] = char
+          position = position + 1
+        end
+      end
+      if not closed then
+        error(string.format(
+          "numlua.%s: unterminated quoted field", name), 3)
+      end
+      fields[#fields + 1] = table.concat(parts)
+
+      if delimiter == nil then
+        if position <= length and not is_space(position) then
+          error(string.format(
+            "numlua.%s: unexpected characters after a closing quote", name), 3)
+        end
+        while position <= length and is_space(position) do
+          position = position + 1
+        end
+        if position > length then break end
+      else
+        while position <= length and is_space(position) do
+          position = position + 1
+        end
+        if position > length then break end
+        if line:sub(position, position + #delimiter - 1) ~= delimiter then
+          error(string.format(
+            "numlua.%s: unexpected characters after a closing quote", name), 3)
+        end
+        position = position + #delimiter
+        if position > length then
+          fields[#fields + 1] = ""
+          break
+        end
+      end
+    elseif delimiter == nil then
+      local start = position
+      while position <= length and not is_space(position) do
+        position = position + 1
+      end
+      fields[#fields + 1] = line:sub(start, position - 1)
+      if position > length then break end
+    else
+      local index = line:find(delimiter, position, true)
+      if index == nil then
+        fields[#fields + 1] = trim(line:sub(position))
+        break
+      end
+      fields[#fields + 1] = trim(line:sub(position, index - 1))
+      position = index + #delimiter
+      if position > length then
+        fields[#fields + 1] = ""
+        break
+      end
+    end
+  end
+  return fields
 end
 
 local function parse_number(field)
@@ -411,6 +516,7 @@ function text.loadtxt(path, options)
   end
   options = check_options(options, "loadtxt", LOAD_OPTIONS)
   local delimiter = check_delimiter(options.delimiter, "loadtxt")
+  local quotechar = check_quotechar(options.quotechar, "loadtxt")
   local markers = comment_markers(options.comments, "loadtxt")
   local dtype = check_load_dtype(options.dtype, "loadtxt")
   local skiprows = check_nonnegative_integer(
@@ -503,7 +609,7 @@ function text.loadtxt(path, options)
       if line_number > (skiprows or 0) then
         local line = strip_comments(raw, markers)
         if trim(line) ~= "" then
-          local fields = split_fields(line, delimiter)
+          local fields = split_fields(line, delimiter, quotechar, "loadtxt")
           if columns == nil then
             columns = #fields
             resolve_usecols()
@@ -723,6 +829,7 @@ function text.genfromtxt(path, options)
   end
   options = check_options(options, "genfromtxt", GENFROMTXT_OPTIONS)
   local delimiter = check_delimiter(options.delimiter, "genfromtxt")
+  local quotechar = check_quotechar(options.quotechar, "genfromtxt")
   local markers = comment_markers(options.comments, "genfromtxt")
   local dtype = check_load_dtype(options.dtype, "genfromtxt")
   local skip_header = check_nonnegative_integer(
@@ -828,7 +935,7 @@ function text.genfromtxt(path, options)
     if max_rows == 0 then break end
     local line = strip_comments(lines[line_number], markers)
     if trim(line) ~= "" then
-      local fields = split_fields(line, delimiter)
+      local fields = split_fields(line, delimiter, quotechar, "genfromtxt")
       if columns == nil then
         columns = #fields
         resolve_columns()

@@ -69,7 +69,8 @@ test("new public API and format support are documented", function()
       "numlua.nanstd", "numlua.meshgrid", "numlua.gradient",
       "numlua.genfromtxt", "numlua.prod", "numlua.nanprod", "numlua.ptp",
       "numlua.logspace", "numlua.geomspace", "numlua.identity", "numlua.tri",
-      "numlua.vander", "numlua.compress" }) do
+      "numlua.vander", "numlua.compress", "numlua.inner", "numlua.outer",
+      "numlua.cross", "numlua.trapezoid", "numlua.trapz" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -121,7 +122,8 @@ test("new public API and format support are documented", function()
     "docs/api.md version example does not match numlua.VERSION")
 
   for _, option in ipairs({ "skiprows", "max_rows", "usecols", "converters",
-      "unpack", "ndmin", "header", "footer", "comments", "newline" }) do
+      "unpack", "ndmin", "header", "footer", "comments", "newline",
+      "quotechar" }) do
     assert_true(api:find("`" .. option .. "`", 1, true) ~= nil,
       "docs/api.md does not document the text option " .. option)
   end
@@ -218,8 +220,15 @@ test("new public API and format support are documented", function()
     "README.md does not document compress")
   assert_true(readme:find("ZIP64 archives are read", 1, true) ~= nil,
     "README.md does not document ZIP64 reading")
+  assert_true(readme:find("numlua.inner", 1, true) ~= nil and
+      readme:find("numlua.outer", 1, true) ~= nil and
+      readme:find("numlua.cross", 1, true) ~= nil,
+    "README.md does not document inner/outer/cross")
+  assert_true(readme:find("numlua.trapezoid", 1, true) ~= nil and
+      readme:find("numlua.trapz", 1, true) ~= nil,
+    "README.md does not document trapezoid/trapz")
   for _, option in ipairs({ "usecols", "ndmin", "header", "newline",
-      "missing_values", "filling_values" }) do
+      "missing_values", "filling_values", "quotechar" }) do
     assert_true(readme:find(option, 1, true) ~= nil,
       "README.md does not mention the text option " .. option)
   end

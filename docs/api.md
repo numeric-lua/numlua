@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.24.0"
+print(numlua.VERSION) -- "0.25.0"
 ```
 
 ## Conventions
@@ -455,6 +455,22 @@ same `axis`/`keepdims` rules as `max`/`min`. The dtype follows the subtraction,
 so it matches the input for numeric dtypes; bool input is cast to `int64`.
 NaN values propagate through the extrema.
 
+### `numlua.trapezoid(t[, x[, dx[, axis]]])`, `numlua.trapz`
+
+Integrates `t` along `axis` with the trapezoidal rule, following
+`np.trapezoid` (and its historical `np.trapz` spelling). The axis defaults to
+the last one and is 1-based. With `x` omitted, `dx` is the uniform spacing
+(default `1`). With `x`, the coordinate array may be 1-D and match the selected
+axis (it is expanded across the other dimensions) or have the input's full
+shape. Empty and single-point intervals return zero. Integer input follows
+ATen's arithmetic promotion (`float32`), while floating input keeps its dtype.
+
+```lua
+numlua.trapezoid(numlua.array({ 1, 2, 3 }))          -- 4
+numlua.trapezoid(numlua.array({ 1, 2, 3 }), nil, 2)  -- 8
+numlua.trapezoid(numlua.array({ 1, 2, 3 }), { 0, 1, 3 }) -- 6.5
+```
+
 ### `numlua.argmax(t[, axis[, keepdims]])`
 
 Returns an `int64` tensor of 1-based indices. If `axis` is omitted, the result
@@ -736,8 +752,38 @@ separate ufunc objects. Use `numlua.astype` for an explicit result dtype.
 
 ### `numlua.dot(a, b)`
 
-1-D inner product. Both operands must be 1-D; the result is a 0-D tensor. Use
-`matmul` for matrix or batched products.
+Follows NumPy's `dot` shape rules: two vectors produce the 0-D inner product,
+matrix/vector and matrix/matrix products behave like `matmul`, and N-D
+operands sum over the last axis of `a` and the second-to-last axis of `b`.
+ATen's `matmul` performs the multiplication, so mixed integer/floating dtypes
+follow ATen's matmul checks rather than NumPy promotion.
+
+### `numlua.inner(a, b)`
+
+Sums the product over the last axis of both operands and returns the leading
+dimensions concatenated, matching `np.inner`. A 1-D pair produces a 0-D tensor;
+an empty last axis produces zeros with the concatenated leading shape.
+
+```lua
+numlua.inner(numlua.array({ 1, 2 }), numlua.array({ 3, 4 })) -- 11
+```
+
+### `numlua.outer(a, b)`
+
+Flattens both operands in C order and returns their outer product, matching
+`np.outer`. Scalars become length-1 vectors, so `outer(2, 3)` is a 1x1 matrix.
+
+### `numlua.cross(a, b[, axis])`
+
+Computes the 3-vector cross product over a 1-based `axis`, defaulting to the
+last axis. Both operands must have the same non-zero rank and length 3 on the
+selected axis; batch dimensions broadcast through ATen. The result keeps the
+input dtype. NumPy's 2-component cross product is not supported.
+
+```lua
+numlua.cross(numlua.array({ 1, 2, 3 }), numlua.array({ 4, 5, 6 }))
+-- {-3, 6, -3}
+```
 
 ### `numlua.matmul(a, b)`
 
@@ -1424,6 +1470,7 @@ Options:
 | `converters` | none | function or 1-based column-to-function table applied to raw fields |
 | `unpack` | `false` | transpose a 2-D result so columns become rows |
 | `ndmin` | `0` | minimum result rank: `0`, `1`, or `2` |
+| `quotechar` | none | single-character quote for fields containing delimiters or spaces |
 
 Blank lines and comments are ignored. Comment text starts at the first occurrence
 of any configured marker on a line, so both full-line and trailing comments work.
@@ -1433,6 +1480,14 @@ load as 1-D tensors, following NumPy's default squeeze behavior; a file with no
 data rows returns an empty 1-D tensor. Numeric fields accept decimal, scientific,
 `nan`, `inf`, and `-inf` spellings. Unknown option keys raise a
 `numlua.loadtxt: unknown option ...` error instead of being ignored.
+
+With `quotechar` set to one character, a field beginning with that character is
+read atomically: delimiters and whitespace inside the quotes are preserved, and
+a doubled quote character represents one literal quote. The quotes are removed
+before the numeric parser or a configured converter sees the field. Unterminated
+quotes and extra characters after a closing quote raise a `numlua.loadtxt:`
+error. Combining `quotechar` with a converter is useful for fields containing
+the delimiter.
 
 `skiprows` counts physical lines, including comments and blank lines, exactly
 like NumPy. `max_rows` is applied after that skip and counts data rows only:
@@ -1538,6 +1593,7 @@ position and is never closed. Options:
 | `filling_values` | NaN/0 | number, per-column list, or per-column map |
 | `unpack` | `false` | transpose a 2-D result |
 | `ndmin` | `0` | minimum result rank: `0`, `1`, or `2` |
+| `quotechar` | none | single-character quote for fields containing delimiters or spaces |
 
 `missing_values` may be a string (commas split multiple markers), a number, a
 list of markers applied to every column, or a table mapping **1-based physical
@@ -1547,6 +1603,8 @@ default), or a per-column map. Missing floating fields default to NaN and
 missing integer fields default to zero. Integer filling values must be finite.
 Blank lines, comments, row-width checks, `usecols` order and negative indices,
 `unpack`, `ndmin`, and the one-row/one-column squeeze follow `loadtxt`.
+`quotechar` also follows `loadtxt`, with quoting applied before converters and
+missing-value handling.
 
 Converters run before missing-value handling, matching NumPy: a converter can
 map a sentinel itself, and a configured missing marker is only consulted when
@@ -1658,7 +1716,15 @@ dtype, or backend constraints are forwarded as-is.
   `mean` promotes integer/bool input to `float64`; elementwise ufuncs delegate
   promotion to ATen. Scalar `where` branches are materialized as 0-D `float32`
   (or `bool`) tensors before ATen broadcasting.
-- `dot` is vector-only; NumPy's `dot` also performs matrix products.
+- `dot` follows NumPy's vector/matrix/batched shape rules but delegates the
+  multiplication to ATen, so mixed integer/floating operands follow ATen's
+  matmul checks rather than NumPy promotion.
+- `inner`, `outer`, and `cross` delegate their arithmetic to ATen. `cross`
+  supports 3-component vectors only (not NumPy's 2-component form), requires
+  the same rank for both operands, and broadcasts batch axes through ATen.
+- `trapezoid`/`trapz` integrate along one 1-based axis. A coordinate array may
+  be 1-D for the selected axis or have the full input shape; integer input
+  follows ATen's promotion to `float32`.
 - Elementwise ufuncs delegate dtype promotion to ATen rather than to NumPy's
   promotion rules or `numlua.promote_types`. In particular, `int64` + `float32`
   stays `float32`, integer/integer division produces `float32` (not `float64`),
@@ -1716,8 +1782,10 @@ dtype, or backend constraints are forwarded as-is.
   `edge_order = 2` option. Spacing may be uniform, a coordinate vector for one
   selected axis, or one entry per selected axis. Integer/bool input promotes
   to `float64`, and selected axes require at least two elements.
-- Text I/O stores only numeric fields: no shape/dtype metadata, quoted strings,
-  or parsed header metadata. `loadtxt`/`savetxt` accept caller-owned file
+- Text I/O stores only numeric fields: no shape/dtype metadata, quoted string
+  columns, or parsed header metadata. `quotechar` makes quoted numeric fields
+  atomic during reading, but `savetxt` never writes quotes. `loadtxt`/`savetxt`
+  accept caller-owned file
   handles at their current position and never close them. `savetxt`
   header/footer text is written as comments, so `loadtxt` ignores it rather
   than interpreting it. `loadtxt`
