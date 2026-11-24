@@ -164,6 +164,7 @@ local files = {
   "test_diagonal.lua",
   "test_reductions.lua",
   "test_statistics.lua",
+  "test_nan_reductions.lua",
   "test_predicates.lua",
   "test_close.lua",
   "test_select.lua",

@@ -348,6 +348,15 @@ luatorch's unbiased default; any finite number is accepted, and denominators
 to `float64`, while floating input keeps its dtype. `keepdims` follows the
 other reductions. `std` is the square root of `var`.
 
+### `numlua.nansum`, `numlua.nanmean`, `numlua.nanmin`, `numlua.nanmax`, `numlua.nanvar`, `numlua.nanstd`
+
+NaN-aware counterparts of `sum`, `mean`, `min`, `max`, `var`, and `std`. They
+accept the same `axis`/`keepdims` arguments; the variance pair also accepts
+`ddof`. `nansum` treats NaN as zero, while the other reductions ignore NaN
+values and return NaN when a slice has no valid values. Integer input follows
+the ordinary reduction aliases (no promotion for `nansum`/`nanmin`/`nanmax`,
+`float64` for `nanmean`/`nanvar`/`nanstd`); floating input keeps its dtype.
+
 ### `numlua.max(t[, axis[, keepdims]])`
 
 ### `numlua.min(t[, axis[, keepdims]])`

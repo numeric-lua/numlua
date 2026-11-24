@@ -278,7 +278,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
-| Reductions | `sum`, `mean`, `var`, `std`, `max`, `min`, `argmax`, `argmin` |
+| Reductions | `sum`, `mean`, `var`, `std`, `max`, `min`, `argmax`, `argmin`, `nansum`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd` |
 | Predicates/selection | `where`, `select`, `clip`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
@@ -289,6 +289,11 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 `numlua.full_like` inherit the prototype's shape and dtype by default and
 accept `{ dtype = ..., shape = ... }` overrides. `empty_like` leaves storage uninitialized; `full_like` takes a
 numeric fill value.
+
+`numlua.var` and `numlua.std` default to population variance (`ddof = 0`), as
+NumPy does, and accept any finite `ddof`. Their `nanvar`/`nanstd` counterparts
+and the other `nan*` reductions ignore NaNs, returning NaN for slices with no
+valid values; `nansum` treats NaN as zero.
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,

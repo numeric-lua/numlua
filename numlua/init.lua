@@ -475,6 +475,94 @@ function numlua.std(t, axis, keepdims, ddof)
   return variance(t, axis, keepdims, ddof, "std"):sqrt()
 end
 
+-- NaN-aware reductions.  IEEE NaN is the only value not equal to itself, so
+-- the comparison kernel supplies the mask without a native predicate.  These
+-- follow NumPy's ignore-NaN semantics: nansum treats NaN as zero, the other
+-- reductions count only valid values, and an all-NaN slice yields NaN.
+local function nan_mask(t)
+  return t:ne(t)
+end
+
+local function valid_nan_count(t, axis, keepdims)
+  return nan_mask(t):logical_not():to("float64"):sum(axis, keepdims)
+end
+
+function numlua.nansum(t, axis, keepdims)
+  check_tensor(t, "nansum")
+  check_axis(axis, "nansum")
+  check_keepdims(keepdims, "nansum")
+  if not t:is_floating_point() then
+    return numlua.sum(t, axis, keepdims)
+  end
+  return t:masked_fill(nan_mask(t), 0):sum(axis, keepdims)
+end
+
+function numlua.nanmean(t, axis, keepdims)
+  check_tensor(t, "nanmean")
+  check_axis(axis, "nanmean")
+  check_keepdims(keepdims, "nanmean")
+  if not t:is_floating_point() then
+    return numlua.mean(t, axis, keepdims)
+  end
+  local total = t:masked_fill(nan_mask(t), 0):sum(axis, keepdims)
+  local count = valid_nan_count(t, axis, keepdims):to(t:dtype())
+  return total:div(count)
+end
+
+local function nan_extremum(t, axis, keepdims, minimum, name)
+  check_tensor(t, name)
+  check_axis(axis, name)
+  check_keepdims(keepdims, name)
+  if not t:is_floating_point() then
+    return minimum and numlua.min(t, axis, keepdims)
+      or numlua.max(t, axis, keepdims)
+  end
+  local fill = minimum and math.huge or -math.huge
+  local cleaned = t:masked_fill(nan_mask(t), fill)
+  local result = minimum and cleaned:min(axis, keepdims)
+    or cleaned:max(axis, keepdims)
+  local empty = valid_nan_count(t, axis, keepdims):eq(0)
+  return result:masked_fill(empty, 0 / 0)
+end
+
+function numlua.nanmin(t, axis, keepdims)
+  return nan_extremum(t, axis, keepdims, true, "nanmin")
+end
+
+function numlua.nanmax(t, axis, keepdims)
+  return nan_extremum(t, axis, keepdims, false, "nanmax")
+end
+
+local function nan_variance(t, axis, keepdims, ddof, name)
+  ddof = check_ddof(ddof, name)
+  if not t:is_floating_point() then
+    t = t:to("float64")
+  end
+  local missing = nan_mask(t)
+  local valid = missing:logical_not()
+  local mean = numlua.nanmean(t, axis, true)
+  local difference = t:sub(mean)
+  local total = difference:mul(difference):masked_fill(missing, 0)
+    :sum(axis, keepdims)
+  local count = valid:to("float64"):sum(axis, keepdims):to(t:dtype())
+  local result = total:div(count:sub(ddof))
+  return result:masked_fill(count:eq(0), 0 / 0)
+end
+
+function numlua.nanvar(t, axis, keepdims, ddof)
+  check_tensor(t, "nanvar")
+  check_axis(axis, "nanvar")
+  check_keepdims(keepdims, "nanvar")
+  return nan_variance(t, axis, keepdims, ddof, "nanvar")
+end
+
+function numlua.nanstd(t, axis, keepdims, ddof)
+  check_tensor(t, "nanstd")
+  check_axis(axis, "nanstd")
+  check_keepdims(keepdims, "nanstd")
+  return nan_variance(t, axis, keepdims, ddof, "nanstd"):sqrt()
+end
+
 -- argmax and argmin return 1-based flat indices when axis is nil, matching
 -- luatorch.  Both delegate the reduction kernel to luatorch.
 function numlua.median(t, axis, keepdims)
