@@ -186,15 +186,16 @@ test("selection edges cover compress, flatnonzero, and 0-D argsort",
   assert_shape(empty, { 0 })
   assert_eq(empty:numel(), 0)
 
+  -- Numeric conditions are truth-tested, and a shorter condition is a prefix,
+  -- following np.compress.
+  assert_tensor(numlua.compress(numlua.array({ 1, 0, 1 }), values),
+    { 10, 30 })
+  assert_tensor(numlua.compress(numlua.array({ true }), values), { 10 })
+  assert_tensor(numlua.compress(numlua.array({ true }), values, 2),
+    { { 10 }, { 30 } })
   assert_error(function()
-    numlua.compress(numlua.array({ 1, 0, 1 }), values)
-  end, "boolean condition")
-  assert_error(function()
-    numlua.compress(numlua.array({ true }), values)
-  end, "match the input size")
-  assert_error(function()
-    numlua.compress(mask, values, 1)
-  end, "axis")
+    numlua.compress(numlua.array({ true, false, true }), values, 1)
+  end, "condition has 3 elements but axis 1 has size 2")
 
   -- flatnonzero accepts 0-D input: a nonzero scalar has flat index 1, and a
   -- zero scalar has no indices at all.

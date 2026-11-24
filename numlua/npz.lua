@@ -55,6 +55,119 @@ local function read_u32(data, offset, what)
     bytes:byte(3) * 65536 + bytes:byte(4) * 16777216
 end
 
+-- ZIP64 fields are 64-bit little-endian.  Lua numbers are IEEE doubles, so
+-- values above 2^53 cannot be represented exactly; such archives are far
+-- beyond any practical in-memory load and are rejected instead of silently
+-- truncating an offset or size.
+local MAX_EXACT = 9007199254740992
+
+local function read_u64(data, offset, what)
+  local low = read_u32(data, offset, what)
+  local high = read_u32(data, offset + 4, what)
+  local value = high * 4294967296 + low
+  if value > MAX_EXACT then
+    error("numlua.loadz: ZIP64 value exceeds Lua's exact integer range", 3)
+  end
+  return value
+end
+
+-- Find a ZIP extra field by id.  Returns the 1-based start and end offsets of
+-- the field payload, or nil when the id is absent.
+local function find_extra(data, start, length, wanted, what)
+  local position = start
+  local finish = start + length
+  while position + 4 <= finish do
+    local id = read_u16(data, position, what)
+    local size = read_u16(data, position + 2, what)
+    if position + 4 + size > finish then
+      error("numlua.loadz: malformed ZIP extra field in " .. what, 3)
+    end
+    if id == wanted then
+      return position + 4, position + 4 + size
+    end
+    position = position + 4 + size
+  end
+  return nil
+end
+
+-- Resolve the ZIP64 central-directory extra field (id 0x0001).  The payload
+-- contains only the fields whose 32-bit header slot is saturated, in the fixed
+-- order: uncompressed size, compressed size, local-header offset, disk start.
+local function central_zip64_values(data, extra_start, extra_length,
+    compressed_size, uncompressed_size, local_offset, start_disk, name)
+  local needed = compressed_size == 0xffffffff or
+    uncompressed_size == 0xffffffff or local_offset == 0xffffffff or
+    start_disk == 0xffff
+  if not needed then
+    return compressed_size, uncompressed_size, local_offset, start_disk
+  end
+  local position, finish = find_extra(data, extra_start, extra_length, 0x0001,
+    "central directory for '" .. name .. "'")
+  if position == nil then
+    error("numlua.loadz: ZIP64 central-directory entry '" .. name ..
+      "' is missing its ZIP64 extra field", 2)
+  end
+  local what = "ZIP64 extra field for '" .. name .. "'"
+  local function take64(label)
+    if position + 8 > finish then
+      error("numlua.loadz: truncated " .. what .. " (" .. label .. ")", 2)
+    end
+    local value = read_u64(data, position, what)
+    position = position + 8
+    return value
+  end
+  local function take32(label)
+    if position + 4 > finish then
+      error("numlua.loadz: truncated " .. what .. " (" .. label .. ")", 2)
+    end
+    local value = read_u32(data, position, what)
+    position = position + 4
+    return value
+  end
+  if uncompressed_size == 0xffffffff then
+    uncompressed_size = take64("uncompressed size")
+  end
+  if compressed_size == 0xffffffff then
+    compressed_size = take64("compressed size")
+  end
+  if local_offset == 0xffffffff then
+    local_offset = take64("local-header offset")
+  end
+  if start_disk == 0xffff then
+    start_disk = take32("disk start")
+  end
+  return compressed_size, uncompressed_size, local_offset, start_disk
+end
+
+-- Resolve saturated sizes in a local header from its ZIP64 extra field.  Only
+-- the uncompressed and compressed sizes appear there, in that order.
+local function local_zip64_sizes(data, extra_start, extra_length,
+    compressed_size, uncompressed_size, name)
+  if compressed_size ~= 0xffffffff and uncompressed_size ~= 0xffffffff then
+    return compressed_size, uncompressed_size
+  end
+  local position, finish = find_extra(data, extra_start, extra_length, 0x0001,
+    "local header for '" .. name .. "'")
+  if position == nil then
+    error("numlua.loadz: ZIP64 local header for '" .. name ..
+      "' is missing its ZIP64 extra field", 3)
+  end
+  local what = "ZIP64 local extra field for '" .. name .. "'"
+  if position + (uncompressed_size == 0xffffffff and 8 or 0) +
+      (compressed_size == 0xffffffff and 8 or 0) > finish then
+    error("numlua.loadz: truncated " .. what, 3)
+  end
+  if uncompressed_size == 0xffffffff then
+    uncompressed_size = read_u64(data, position, what)
+    position = position + 8
+  end
+  if compressed_size == 0xffffffff then
+    compressed_size = read_u64(data, position, what)
+    position = position + 8
+  end
+  return compressed_size, uncompressed_size
+end
+
 local crc_table
 local function make_crc_table()
   crc_table = {}
@@ -568,6 +681,11 @@ local function member_bytes(data, name, central_start, method, flags,
       name .. "')", 3)
   end
 
+  local local_extra_start = local_header + 30 + local_name_length
+  local_compressed_size, local_uncompressed_size =
+    local_zip64_sizes(data, local_extra_start, local_extra_length,
+      local_compressed_size, local_uncompressed_size, name)
+
   local descriptor = bit.band(flags, 8) ~= 0
   if not descriptor then
     if local_crc ~= crc then
@@ -638,17 +756,54 @@ function M.loadz(path)
   if eocd + 21 + comment_length > #data then
     error("numlua.loadz: truncated ZIP archive (incomplete EOCD comment)", 2)
   end
-  if entries == 0xffff or entries_on_disk == 0xffff or
+
+  -- ZIP64 archives put a locator immediately before the classic EOCD and a
+  -- 64-bit EOCD record before that.  The classic fields hold 0xffff/0xffffffff
+  -- sentinels; the real values live in the ZIP64 record.
+  local zip64_start = nil
+  if eocd >= 21 and data:sub(eocd - 20, eocd - 17) == "PK\006\007" then
+    local locator = eocd - 20
+    local locator_disk = read_u32(data, locator + 4, "ZIP64 EOCD locator")
+    local record_offset = read_u64(data, locator + 8, "ZIP64 EOCD locator")
+    local total_disks = read_u32(data, locator + 16, "ZIP64 EOCD locator")
+    if locator_disk ~= 0 or total_disks ~= 1 then
+      error("numlua.loadz: multi-disk ZIP archives are not supported", 2)
+    end
+
+    local record = record_offset + 1
+    if record < 1 or record + 4 > locator or
+        data:sub(record, record + 3) ~= "PK\006\006" then
+      error("numlua.loadz: corrupt ZIP64 end-of-central-directory record", 2)
+    end
+    local record_size = read_u64(data, record + 4, "ZIP64 EOCD")
+    if record_size < 44 or record + 12 + record_size > locator then
+      error("numlua.loadz: corrupt ZIP64 end-of-central-directory record", 2)
+    end
+    local zip_disk = read_u32(data, record + 16, "ZIP64 EOCD")
+    local zip_central_disk = read_u32(data, record + 20, "ZIP64 EOCD")
+    local zip_entries_on_disk = read_u64(data, record + 24, "ZIP64 EOCD")
+    local zip_entries = read_u64(data, record + 32, "ZIP64 EOCD")
+    local zip_central_size = read_u64(data, record + 40, "ZIP64 EOCD")
+    local zip_central_offset = read_u64(data, record + 48, "ZIP64 EOCD")
+    if zip_disk ~= 0 or zip_central_disk ~= 0 or
+        zip_entries_on_disk ~= zip_entries then
+      error("numlua.loadz: multi-disk ZIP archives are not supported", 2)
+    end
+    entries = zip_entries
+    central_size = zip_central_size
+    central_offset = zip_central_offset
+    zip64_start = record
+  elseif entries == 0xffff or entries_on_disk == 0xffff or
       central_size == 0xffffffff or central_offset == 0xffffffff then
-    error("numlua.loadz: ZIP64 archives are not supported", 2)
-  end
-  if disk_number ~= 0 or central_disk ~= 0 or
+    error("numlua.loadz: ZIP64 archive is missing its locator", 2)
+  elseif disk_number ~= 0 or central_disk ~= 0 or
       entries_on_disk ~= entries then
     error("numlua.loadz: multi-disk ZIP archives are not supported", 2)
   end
 
   local central_end = central_offset + central_size
-  if central_end > #data or central_end >= eocd then
+  local directory_limit = zip64_start and (zip64_start - 1) or (eocd - 1)
+  if central_end > #data or central_end > directory_limit then
     error("numlua.loadz: corrupt central directory", 2)
   end
 
@@ -686,6 +841,9 @@ function M.loadz(path)
     if name == "" then
       error("numlua.loadz: corrupt central directory (empty name)", 2)
     end
+    compressed_size, uncompressed_size, local_offset, start_disk =
+      central_zip64_values(data, position + 46 + name_length, extra_length,
+        compressed_size, uncompressed_size, local_offset, start_disk, name)
     if bit.band(flags, 1) ~= 0 then
       error("numlua.loadz: encrypted ZIP entries are not supported ('" ..
         name .. "')", 2)

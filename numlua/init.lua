@@ -26,7 +26,7 @@ local unpack = table.unpack or unpack
 
 local numlua = {}
 
-numlua.VERSION = "0.23.0"
+numlua.VERSION = "0.24.0"
 
 -- ---------------------------------------------------------------------------
 -- validation helpers
@@ -141,6 +141,15 @@ function numlua.eye(n, opts)
   return torch.eye(n, opts)
 end
 
+-- identity(n[, opts]) is NumPy's alias for a square eye().  Validate the
+-- dimension so a typo cannot silently create an empty or fractional matrix.
+function numlua.identity(n, opts)
+  if type(n) ~= "number" or n % 1 ~= 0 or n < 0 then
+    error("numlua.identity: n must be a non-negative integer", 2)
+  end
+  return torch.eye(n, opts)
+end
+
 -- arange([start,] stop[, step][, opts]) follows luatorch: integer bounds infer
 -- int64, while non-integer bounds infer float32.
 function numlua.arange(...)
@@ -161,6 +170,140 @@ function numlua.linspace(start, stop, num, opts)
     return torch.linspace(start, stop, num, opts)
   end
   return torch.linspace(start, stop, num)
+end
+
+-- Shared validation for the logarithmic constructors.  The options table is
+-- deliberately small: `endpoint` (default true) and `dtype` (default
+-- float32), matching the rest of numlua's constructors.  NumPy's `axis`
+-- argument is not meaningful for a fresh 1-D array and is not accepted.
+local SPACE_OPTIONS = { dtype = true, endpoint = true }
+
+local function check_finite_number(value, name, label)
+  if type(value) ~= "number" or value ~= value or
+      value == math.huge or value == -math.huge then
+    error(string.format(
+      "numlua.%s: %s must be a finite number, got %s",
+      name, label, tostring(value)), 3)
+  end
+end
+
+local function space_options(opts, name)
+  if opts == nil then return true, "float32" end
+  if type(opts) ~= "table" then
+    error(string.format(
+      "numlua.%s: options must be a table or nil", name), 3)
+  end
+  for key in pairs(opts) do
+    if not SPACE_OPTIONS[key] then
+      error(string.format(
+        "numlua.%s: unknown option '%s'", name, tostring(key)), 3)
+    end
+  end
+  if opts.endpoint ~= nil and type(opts.endpoint) ~= "boolean" then
+    error(string.format(
+      "numlua.%s: endpoint must be a boolean or nil", name), 3)
+  end
+  local dtype = opts.dtype or "float32"
+  if type(dtype) ~= "string" and type(dtype) ~= "number" then
+    error(string.format(
+      "numlua.%s: dtype must be a name, dtype id, or nil", name), 3)
+  end
+  local ok, probe = pcall(torch.zeros, 0, { dtype = dtype })
+  if not ok then
+    error(string.format(
+      "numlua.%s: invalid dtype: %s", name, tostring(probe)), 3)
+  end
+  if probe:dtype() == "bool" then
+    error(string.format(
+      "numlua.%s: bool is not a supported output dtype", name), 3)
+  end
+  return opts.endpoint ~= false, probe:dtype()
+end
+
+local function space_count(num, name)
+  num = num == nil and 50 or num
+  if type(num) ~= "number" or num % 1 ~= 0 or num < 0 then
+    error(string.format(
+      "numlua.%s: num must be a non-negative integer, got %s",
+      name, tostring(num)), 3)
+  end
+  return num
+end
+
+-- Both logspace and geomspace work on base-10 exponents.  Computing the
+-- exponents in float64 keeps a float32 result as accurate as NumPy's
+-- compute-in-double-then-cast behavior.  `endpoint = false` takes the first
+-- `num` points of a `num + 1`-point double-precision interval.
+local function space_exponents(start, stop, num, endpoint)
+  local count = endpoint and num or (num + 1)
+  local exponents = torch.linspace(start, stop, count, { dtype = "float64" })
+  if not endpoint then
+    exponents = exponents:narrow(1, 1, num)
+  end
+  return exponents
+end
+
+-- logspace(start, stop[, num[, base[, opts]]]); opts accepts endpoint/dtype.
+function numlua.logspace(start, stop, num, base, opts)
+  if type(num) == "table" and base == nil and opts == nil then
+    opts, num = num, nil
+  end
+  if type(base) == "table" and opts == nil then
+    opts, base = base, nil
+  end
+  if opts ~= nil and type(opts) ~= "table" then
+    error("numlua.logspace: options must be a table or nil", 2)
+  end
+  local endpoint, dtype = space_options(opts, "logspace")
+  num = space_count(num, "logspace")
+  check_finite_number(start, "logspace", "start")
+  check_finite_number(stop, "logspace", "stop")
+  base = base == nil and 10 or base
+  check_finite_number(base, "logspace", "base")
+  if base <= 0 then
+    error("numlua.logspace: base must be positive", 2)
+  end
+  if num == 0 then
+    return torch.zeros(0, { dtype = dtype })
+  end
+  local exponents = space_exponents(start, stop, num, endpoint)
+  local base_tensor = torch.tensor(base, { dtype = "float64" })
+  return base_tensor:pow(exponents):to(dtype)
+end
+
+-- geomspace(start, stop[, num[, opts]]); negative endpoints keep their common
+-- sign, matching NumPy.  Zero endpoints are invalid because a geometric
+-- sequence cannot include zero.
+function numlua.geomspace(start, stop, num, opts)
+  if type(num) == "table" and opts == nil then
+    opts, num = num, nil
+  end
+  if opts ~= nil and type(opts) ~= "table" then
+    error("numlua.geomspace: options must be a table or nil", 2)
+  end
+  local endpoint, dtype = space_options(opts, "geomspace")
+  num = space_count(num, "geomspace")
+  check_finite_number(start, "geomspace", "start")
+  check_finite_number(stop, "geomspace", "stop")
+  if start == 0 or stop == 0 then
+    error("numlua.geomspace: start and stop must be non-zero", 2)
+  end
+  if (start < 0) ~= (stop < 0) then
+    error("numlua.geomspace: start and stop must have the same sign", 2)
+  end
+  if num == 0 then
+    return torch.zeros(0, { dtype = dtype })
+  end
+  local sign = start < 0 and -1 or 1
+  local log = math.log(10)
+  local exponents = space_exponents(math.log(math.abs(start)) / log,
+    math.log(math.abs(stop)) / log, num, endpoint)
+  local base_tensor = torch.tensor(10, { dtype = "float64" })
+  local values = base_tensor:pow(exponents):to(dtype)
+  if sign < 0 then
+    values = values:mul(-1)
+  end
+  return values
 end
 
 -- ---------------------------------------------------------------------------
@@ -398,6 +541,15 @@ function numlua.mean(t, axis, keepdims)
   return t:mean(axis, keepdims)
 end
 
+-- prod follows the same axis/keepdims rules as sum.  luatorch/ATen performs
+-- the reduction, including the empty-reduction identity of 1.
+function numlua.prod(t, axis, keepdims)
+  check_tensor(t, "prod")
+  check_axis(axis, "prod")
+  check_keepdims(keepdims, "prod")
+  return t:prod(axis, keepdims)
+end
+
 function numlua.max(t, axis, keepdims)
   check_tensor(t, "max")
   check_axis(axis, "max")
@@ -412,6 +564,19 @@ function numlua.min(t, axis, keepdims)
   check_axis(axis, "min")
   check_keepdims(keepdims, "min")
   return (t:min(axis, keepdims))
+end
+
+-- NumPy's peak-to-peak range is max - min over the same axis.  bool input is
+-- cast to int64 first because ATen (like NumPy's subtraction ufunc) does not
+-- define bool subtraction; the result is an int64 tensor.
+function numlua.ptp(t, axis, keepdims)
+  check_tensor(t, "ptp")
+  check_axis(axis, "ptp")
+  check_keepdims(keepdims, "ptp")
+  if t:dtype() == "bool" then
+    t = t:to("int64")
+  end
+  return numlua.max(t, axis, keepdims):sub(numlua.min(t, axis, keepdims))
 end
 
 -- Number of elements reduced along one axis.  ddof denominators need this;
@@ -495,6 +660,18 @@ function numlua.nansum(t, axis, keepdims)
     return numlua.sum(t, axis, keepdims)
   end
   return t:masked_fill(nan_mask(t), 0):sum(axis, keepdims)
+end
+
+-- nanprod treats every NaN as the multiplicative identity, so all-NaN slices
+-- produce 1, matching NumPy.  Non-floating input has no NaNs and uses prod.
+function numlua.nanprod(t, axis, keepdims)
+  check_tensor(t, "nanprod")
+  check_axis(axis, "nanprod")
+  check_keepdims(keepdims, "nanprod")
+  if not t:is_floating_point() then
+    return numlua.prod(t, axis, keepdims)
+  end
+  return t:masked_fill(nan_mask(t), 1):prod(axis, keepdims)
 end
 
 function numlua.nanmean(t, axis, keepdims)
@@ -780,19 +957,63 @@ function numlua.percentile(t, q, axis, keepdims)
   return numlua.quantile(t, q / 100, axis, keepdims)
 end
 
+local function compress_condition(value)
+  if torch.is_tensor(value) then
+    if value:dtype() == "bool" then return value end
+    return value:ne(0)
+  end
+  if type(value) == "table" then
+    local condition = torch.tensor(value)
+    if condition:dtype() == "bool" then return condition end
+    return condition:ne(0)
+  end
+  error("numlua.compress expects a boolean tensor or table, got " ..
+    type(value), 2)
+end
+
+-- compress(condition, t[, axis]) follows np.compress.  With an axis, the
+-- 1-D condition selects slices along that axis; without one it selects from
+-- the flattened input.  As in NumPy, a condition shorter than the selected
+-- axis is used as a prefix, while a longer one is an error.  The result owns
+-- independent storage.
 function numlua.compress(condition, t, axis)
-  check_tensor(condition, "compress condition")
+  condition = compress_condition(condition)
   check_tensor(t, "compress")
-  if condition:dtype() ~= "bool" then
-    error("numlua.compress expects a boolean condition tensor", 2)
+  if axis == nil then
+    local flat_condition = condition:reshape(-1)
+    local flat_input = t:reshape(-1)
+    if flat_condition:numel() > flat_input:numel() then
+      error(string.format(
+        "numlua.compress: condition has %d elements but the input has " ..
+        "only %d", flat_condition:numel(), flat_input:numel()), 2)
+    end
+    if flat_condition:numel() < flat_input:numel() then
+      flat_input = flat_input:narrow(1, 1, flat_condition:numel())
+    end
+    return flat_input:masked_select(flat_condition)
   end
-  if axis ~= nil then
-    error("numlua.compress with an axis is not implemented yet", 2)
+
+  check_axis(axis, "compress")
+  if condition:dim() ~= 1 then
+    error("numlua.compress with an axis expects a 1-D condition", 2)
   end
-  if condition:numel() ~= t:numel() then
-    error("numlua.compress condition must match the input size", 2)
+  local ndim = t:dim()
+  local normalized = axis > 0 and axis or ndim + axis + 1
+  if normalized < 1 or normalized > ndim then
+    error(string.format(
+      "numlua.compress: axis %d is out of range for a %d-D tensor",
+      axis, ndim), 2)
   end
-  return t:reshape(-1):masked_select(condition:reshape(-1))
+  local size = t:size(normalized)
+  if condition:numel() > size then
+    error(string.format(
+      "numlua.compress: condition has %d elements but axis %d has size %d",
+      condition:numel(), normalized, size), 2)
+  end
+  local positions = torch.arange(1, condition:numel() + 1,
+    { dtype = "int64" })
+  local selected = positions:masked_select(condition)
+  return t:index_select(normalized, selected)
 end
 
 function numlua.argmax(t, axis, keepdims)

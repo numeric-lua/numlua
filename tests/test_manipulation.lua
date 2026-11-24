@@ -148,7 +148,7 @@ test("compress selects elements with a boolean mask", function()
   local mask = numlua.array({ true, false, true, false }, { dtype = "bool" })
   local selected = numlua.compress(mask, t)
   assert_tensor(selected, { 10, 30 })
-  assert_error(function() numlua.compress(mask, t, 1) end, "axis")
+  assert_tensor(numlua.compress(mask, t, 1), { 10, 30 })
 end)
 
 test("take selects flat and axis-aligned values", function()

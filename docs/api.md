@@ -9,7 +9,7 @@ Load it with:
 
 ```lua
 local numlua = require("numlua")
-print(numlua.VERSION) -- "0.23.0"
+print(numlua.VERSION) -- "0.24.0"
 ```
 
 ## Conventions
@@ -67,6 +67,34 @@ numlua.full(4, 1.5)
 
 `n` by `n` identity matrix. Default dtype is `float32`.
 
+### `numlua.identity(n[, opts])`
+
+NumPy's square identity alias for `eye`. `n` must be a non-negative integer.
+
+### `numlua.tri(N[, M[, k[, opts]]])`
+
+Builds an `N` by `M` float array with ones on and below the `k`-th diagonal and
+zeros above it, following `np.tri`. `M` defaults to `N`, `k` defaults to `0`,
+and `opts` accepts `dtype`. Zero dimensions are allowed.
+
+```lua
+numlua.tri(3)
+-- {{1, 0, 0}, {1, 1, 0}, {1, 1, 1}}
+numlua.tri(2, 4, 1, { dtype = "int64" })
+-- {{1, 1, 0, 0}, {1, 1, 1, 0}}
+```
+
+### `numlua.vander(x[, N[, increasing]])`
+
+Builds the Vandermonde matrix from a 1-D tensor or Lua numeric table. `N`
+defaults to `length(x)` and must be a non-negative integer; `increasing` is an
+optional boolean. The result keeps the input dtype and is materialized.
+
+```lua
+numlua.vander(numlua.array({ 1, 2, 3 }), 4)
+-- columns are x^3, x^2, x, 1
+```
+
 ### `numlua.arange([start,] stop[, step][, opts])`
 
 Stop-exclusive, like NumPy. Integer bounds infer `int64`; non-integer bounds
@@ -86,6 +114,31 @@ numlua.arange(0, 1.5, 0.5)
 ```lua
 numlua.linspace(0, 1, 5)
 numlua.linspace(0, 1, { dtype = "float64" })
+```
+
+### `numlua.logspace(start, stop[, num[, base[, opts]]])`
+
+Builds `num` values spaced evenly on a log scale, with `num = 50` and
+`base = 10` by default. The result defaults to `float32`; `opts` accepts
+`dtype` and `endpoint` (default `true`). Exponents are computed in `float64`
+before the requested dtype cast. `num = 0` returns an empty 1-D tensor.
+
+```lua
+numlua.logspace(0, 2, 3)                    -- {1, 10, 100}
+numlua.logspace(0, 3, 4, 2)                 -- {1, 2, 4, 8}
+numlua.logspace(0, 2, 3, 10, { endpoint = false })
+```
+
+### `numlua.geomspace(start, stop[, num[, opts]])`
+
+Builds `num` values spaced evenly in log space, with `num = 50`. Both endpoints
+must be finite and non-zero and must share a sign; negative endpoints produce a
+negative geometric sequence, as in NumPy. `opts` accepts `dtype` and
+`endpoint`.
+
+```lua
+numlua.geomspace(1, 1000, 4)  -- {1, 10, 100, 1000}
+numlua.geomspace(-1, -100, 3) -- {-1, -10, -100}
 ```
 
 ### `numlua.meshgrid(x1, x2, ...[, opts])`
@@ -362,6 +415,12 @@ removed unless `keepdims` is true. `keepdims` must be a boolean when provided.
 Because ATen refuses to infer a dtype for integer/bool `mean`, numlua promotes
 non-floating input to `float64` first.
 
+### `numlua.prod(t[, axis[, keepdims]])`
+
+Multiplies elements over the selected axis, with the same `axis`/`keepdims`
+rules as `sum`. An empty reduction returns the multiplicative identity `1`.
+The dtype follows ATen's product reduction; bool input produces `int64`.
+
 ### `numlua.var(t[, axis[, keepdims[, ddof]]])`, `numlua.std`
 
 Return the variance or standard deviation as a tensor, including a 0-D tensor
@@ -371,14 +430,16 @@ luatorch's unbiased default; any finite number is accepted, and denominators
 to `float64`, while floating input keeps its dtype. `keepdims` follows the
 other reductions. `std` is the square root of `var`.
 
-### `numlua.nansum`, `numlua.nanmean`, `numlua.nanmin`, `numlua.nanmax`, `numlua.nanvar`, `numlua.nanstd`
+### `numlua.nansum`, `numlua.nanprod`, `numlua.nanmean`, `numlua.nanmin`, `numlua.nanmax`, `numlua.nanvar`, `numlua.nanstd`
 
-NaN-aware counterparts of `sum`, `mean`, `min`, `max`, `var`, and `std`. They
-accept the same `axis`/`keepdims` arguments; the variance pair also accepts
-`ddof`. `nansum` treats NaN as zero, while the other reductions ignore NaN
-values and return NaN when a slice has no valid values. Integer input follows
-the ordinary reduction aliases (no promotion for `nansum`/`nanmin`/`nanmax`,
-`float64` for `nanmean`/`nanvar`/`nanstd`); floating input keeps its dtype.
+NaN-aware counterparts of `sum`, `prod`, `mean`, `min`, `max`, `var`, and
+`std`. They accept the same `axis`/`keepdims` arguments; the variance pair also
+accepts `ddof`. `nansum` treats NaN as zero and `nanprod` treats NaN as one, so
+an all-NaN product reduces to `1`; the other reductions ignore NaN values and
+return NaN when a slice has no valid values. Integer input follows
+the ordinary reduction aliases (no promotion for `nansum`/`nanprod`/`nanmin`/
+`nanmax`, `float64` for `nanmean`/`nanvar`/`nanstd`); floating input keeps its
+dtype.
 
 ### `numlua.max(t[, axis[, keepdims]])`
 
@@ -386,6 +447,13 @@ the ordinary reduction aliases (no promotion for `nansum`/`nanmin`/`nanmax`,
 
 Return values only. With `axis`, luatorch also computes indices, but `numlua`
 discards them.
+
+### `numlua.ptp(t[, axis[, keepdims]])`
+
+Returns the peak-to-peak range `max - min` over the selected axis, using the
+same `axis`/`keepdims` rules as `max`/`min`. The dtype follows the subtraction,
+so it matches the input for numeric dtypes; bool input is cast to `int64`.
+NaN values propagate through the extrema.
 
 ### `numlua.argmax(t[, axis[, keepdims]])`
 
@@ -424,8 +492,20 @@ be a table of percentages.
 
 ### `numlua.compress(condition, t[, axis])`
 
-Selects the flattened elements where the boolean `condition` is true. An
-explicit `axis` is not implemented yet.
+Selects elements where `condition` is true, following `np.compress`.
+`condition` may be a boolean tensor/table or a numeric tensor/table, in which
+case nonzero values are true. With no `axis`, the input is flattened in C order
+and a short condition selects a prefix of it. With a 1-based `axis`, the
+condition must be 1-D and selects slices along that axis; a condition shorter
+than the axis is used as a prefix, while a longer condition raises a
+`numlua.compress:` error. The result owns independent storage and keeps the
+input dtype.
+
+```lua
+local t = numlua.array({ { 10, 20, 30 }, { 40, 50, 60 } })
+numlua.compress({ true, false }, t)          -- {10} (flat prefix)
+numlua.compress({ true, false, true }, t, 2) -- {{10, 30}, {40, 60}}
+```
 
 ### `numlua.argmin(t[, axis[, keepdims]])`
 
@@ -1029,7 +1109,8 @@ contiguous `reshape`, and contiguous `ravel`.
 
 `split`, `array_split`, `hsplit`, `vsplit`, and `dsplit` return views created
 with `narrow`. These allocate independent storage: `resize`, `diag`,
-`diagflat`, `tril`, `triu`, `pad`, `tile`, `repeat_`, `flip`, `fliplr`,
+`diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
+`repeat_`, `flip`, `fliplr`,
 `flipud`, `rot90`, `roll`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`,
 `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, and
 `apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
@@ -1311,7 +1392,10 @@ zlib-unavailable error names that variable when it is the cause.
 The reader validates member CRCs against the uncompressed payload, checks
 local and central-directory headers and sizes before copying, and reports
 corrupt central directories, CRC mismatches, truncation, encryption, multi-disk
-archives, ZIP64 archives, and unsupported compression methods as Lua errors.
+archives, and unsupported compression methods as Lua errors. ZIP64 archives are
+read through the ZIP64 end-of-central-directory record, locator, and
+central/local extra fields; ZIP64 writing remains unsupported. ZIP64 values
+above Lua's exact 2^53 integer range are rejected rather than truncated.
 Before allocating a deflate output buffer, it also rejects a declared
 uncompressed size beyond DEFLATE's 1032:1 expansion bound (plus a small framing
 allowance), so a tiny corrupt archive cannot force a multi-gigabyte
@@ -1559,6 +1643,15 @@ dtype, or backend constraints are forwarded as-is.
 - Axes/indices are 1-based; NumPy examples must shift axes by one.
 - Default dtypes differ: `float32` is the luatorch default for constructors and
   Lua numeric tables; NumPy usually defaults to `float64`.
+- `logspace` and `geomspace` are 1-D only (NumPy's `axis` keyword is not
+  accepted), require finite endpoints, and default to `float32`. `geomspace`
+  rejects zero endpoints and requires both endpoints to share a sign.
+- `tri`, `vander`, and `identity` keep the facade's `float32` default unless a
+  `dtype` is supplied; `vander` accepts a 1-D tensor or Lua table.
+- `ptp` is `max - min`; bool input is cast to `int64` so the subtraction is
+  defined, and NaN values propagate.
+- `compress` uses 1-based axes; with an axis its condition must be 1-D, and a
+  condition longer than the selected axis is an error.
 - Reductions, including `any`, `all`, and `count_nonzero`, take a single axis
   only, not a tuple of axes.
 - The facade has no NumPy-style general dtype-promotion system of its own.
@@ -1650,7 +1743,8 @@ dtype, or backend constraints are forwarded as-is.
   0-D input; use `flatnonzero` for flat indices or a 0-D scalar.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.
 - `.npz` writing is stored by default and deflate through
-  `savez_compressed`; reading supports stored and deflate entries. Deflate
+  `savez_compressed`; reading supports stored and deflate entries plus ZIP64
+  archives. Deflate
   needs a system zlib library through LuaJIT FFI, while stored archives and
   writing remain dependency-free. Writer output is ZIP32-only; archives above
   the 16-bit entry/name limits or 32-bit size/offset limits fail explicitly,

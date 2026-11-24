@@ -11,7 +11,7 @@ a tensor engine of its own.
 Array-producing functions return `luatorch` tensors, and luatorch/ATen performs
 the actual computation.
 
-> **Status: 0.23.0 MVP.** The public API is small but usable: construction,
+> **Status: 0.24.0 MVP.** The public API is small but usable: construction,
 > shape/layout helpers, elementwise ufuncs, reductions, predicates, linalg,
 > `.npy`/`.npz`/raw binary and text, and CSV I/O.  It is packaged on LuaRocks
 > and tested against luatorch 0.25.x.
@@ -272,14 +272,14 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 
 | Group | Functions |
 | --- | --- |
-| Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
+| Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `gradient`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
-| Reductions | `sum`, `mean`, `var`, `std`, `max`, `min`, `argmax`, `argmin`, `nansum`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd` |
-| Predicates/selection | `where`, `select`, `clip`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
+| Reductions | `sum`, `prod`, `mean`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd` |
+| Predicates/selection | `where`, `select`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
@@ -295,14 +295,24 @@ accepts NumPy's `indexing = "xy"`/`"ij"`, `sparse`, and `copy` options. It
 materializes independent storage by default, and each grid keeps its input
 dtype.
 
+The constructor family also includes `numlua.identity(n)`, `numlua.tri(N[, M[,
+k]])`, and `numlua.vander(x[, N[, increasing]])`, plus the logarithmic
+spacings `numlua.logspace(start, stop[, num[, base[, opts]]])` and
+`numlua.geomspace(start, stop[, num[, opts]])`. `logspace` defaults to base 10
+and `geomspace` keeps a common negative sign, as in NumPy; both accept
+`{ endpoint = ..., dtype = ... }` as their trailing options table.
+
 `numlua.var` and `numlua.std` default to population variance (`ddof = 0`), as
 NumPy does, and accept any finite `ddof`. Their `nanvar`/`nanstd` counterparts
 and the other `nan*` reductions ignore NaNs, returning NaN for slices with no
-valid values; `nansum` treats NaN as zero.
+valid values; `nansum` treats NaN as zero and `numlua.nanprod` treats NaN as
+one. `numlua.prod` delegates the product reduction to ATen, and `numlua.ptp`
+returns `max - min` over the same axis (bool input becomes `int64`).
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
-`diagflat`, `tril`, `triu`, `pad`, `tile`, `repeat_`, `flip`, `fliplr`,
+`diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
+`repeat_`, `flip`, `fliplr`,
 `flipud`, `rot90`, `roll`, `diff`, `gradient`,
 `cumsum`, `cumprod`, `argsort`,
 `sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
@@ -323,6 +333,11 @@ it. `pad` supports `constant`, `edge`, `linear_ramp`, `maximum`, `mean`,
 may be a number, a `{before, after}` pair broadcast over every axis, or a table
 with one entry per axis (each a number or pair), matching NumPy's
 `constant_values`, `end_values`, and `stat_length` forms.
+
+`numlua.compress(condition, t[, axis])` now supports axis-aligned selection in
+addition to flattened selection. A short condition is used as a prefix and a
+longer one is an error, matching `np.compress`; numeric conditions are
+truth-tested, and axis conditions must be 1-D.
 
 `numlua` arrays are ordinary luatorch tensors, so luaplotlib can plot them
 directly through its tensor adapter. See `examples/plot.lua`.
@@ -364,8 +379,10 @@ streams, so its archives are ordinary ZIP files readable by NumPy and other
 tools. If zlib is absent, `savez_compressed` fails before creating a file (or
 falls back to stored when requested), and a deflate entry encountered by
 `loadz` fails with an error naming the entry and explaining that zlib is
-required. Encrypted, multi-disk, ZIP64, and other compression methods are
-rejected explicitly. A declared deflate output size beyond DEFLATE's 1032:1
+required. Encrypted, multi-disk, and other compression methods are rejected
+explicitly. ZIP64 archives are read, including ZIP64 extra fields and the
+ZIP64 end-of-central-directory record; writing remains ZIP32-only. A declared
+deflate output size beyond DEFLATE's 1032:1
 expansion bound is rejected before allocating a buffer, so a tiny corrupt
 archive cannot request a multi-gigabyte allocation. Stored archives continue to
 work without zlib.
@@ -556,14 +573,16 @@ native-endian `.npy` headers, NPY v2.0 and v3.0 readers and writers, byte-level
 writer conformance, `.npz` members and member versions, conditional `select`,
 empty and pre-suffixed `.npz` members, layout view/copy semantics,
 broadcast/take/take_along_axis/put edge shapes, split/diagonal/triangular
-helpers, variance/NaN reductions, meshgrid, gradients, closeness predicates,
-raw binary I/O, text file handles, deflate expansion guardrails, release
+helpers, variance/NaN reductions, product/`ptp` reductions, logarithmic and
+Vandermonde/triangular constructors, meshgrid, gradients, closeness predicates,
+raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
+fixtures, release
 metadata, and error paths. The pad tests compare
 wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 346 tests.
+It currently contains 373 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -645,7 +664,8 @@ This is an MVP, not a complete NumPy replacement:
   `loadtxt`/`savetxt` accept open Lua file handles and leave them open;
   `loadz` reads from the current position to EOF;
 - `.npz` writing is stored by default and deflate through `savez_compressed`;
-  reading supports stored and deflate entries. Deflate needs a system zlib
+  reading supports stored and deflate entries plus ZIP64 archives. Deflate
+  needs a system zlib
   library loaded through FFI, while stored archives remain dependency-free.
   Deflate writing without zlib raises a clear error unless the stored fallback
   is requested. Both writers choose the member NPY header version with
@@ -668,7 +688,7 @@ This is an MVP, not a complete NumPy replacement:
   alias. Missing/filling/converters use 1-based physical columns, default dtype
   is `float32`, a malformed non-missing field is an error, and `max_rows`
   cannot be combined with `skip_footer`;
-- LuaRocks packaging is provided by `numlua-0.23.0-1.rockspec`; the native
+- LuaRocks packaging is provided by `numlua-0.24.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 
 ## License

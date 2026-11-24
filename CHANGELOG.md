@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.24.0 — 2026-11-24
+
+### Added
+
+- `numlua.prod(t[, axis[, keepdims]])` delegates the product reduction to
+  luatorch/ATen, including the empty-reduction identity of `1`, and
+  `numlua.nanprod` treats NaN as the multiplicative identity so all-NaN slices
+  return `1`.
+- `numlua.ptp(t[, axis[, keepdims]])` returns `max - min` over the selected
+  axis; bool input is cast to `int64` so the subtraction is defined.
+- `numlua.logspace(start, stop[, num[, base[, opts]]])` and
+  `numlua.geomspace(start, stop[, num[, opts]])` build logarithmically spaced
+  sequences, with `endpoint`/`dtype` options and NumPy-compatible negative-sign
+  handling for `geomspace`.
+- `numlua.identity(n[, opts])`, `numlua.tri(N[, M[, k[, opts]]])`, and
+  `numlua.vander(x[, N[, increasing]])` cover the remaining common NumPy
+  constructors; `tri` and `vander` preserve dtype and materialize their result.
+- `numlua.compress(condition, t[, axis])` now supports axis-aligned selection,
+  numeric condition truth testing, and NumPy's short-condition prefix rule in
+  both flattened and axis modes.
+- `numlua.loadz` now reads ZIP64 archives, including ZIP64 central/local extra
+  fields and the ZIP64 end-of-central-directory record and locator. Writer
+  output remains ZIP32-only.
+
+### Changed
+
+- `numlua.compress` accepts Lua tables and numeric conditions and rejects a
+  condition longer than the selected input/axis with a clear error. Axis
+  conditions must be 1-D.
+
+### Tests
+
+- 373 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_product_ptp.lua` covers axis/keepdims, dtype, empty, and NaN cases;
+  `test_logspace.lua` covers base/endpoint/dtype, signed `geomspace`, and
+  validation; `test_vander_tri.lua` covers constructor overloads and errors;
+  `test_compress_axis.lua` covers flat/axis selection, prefixes, empty
+  conditions, and ownership; `test_zip64.lua` builds ZIP64 fixtures in Lua and
+  covers extra fields, large members, and corrupt/missing records.
+
 ## 0.23.0 — 2026-11-24
 
 ### Added

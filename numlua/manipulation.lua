@@ -609,6 +609,78 @@ end
 function M.tril(t, k) return triangular(t, k, false, "tril") end
 function M.triu(t, k) return triangular(t, k, true, "triu") end
 
+local function non_negative_integer(value, name, label)
+  if type(value) ~= "number" or value % 1 ~= 0 or value < 0 then
+    error(string.format(
+      "numlua.%s: %s must be a non-negative integer, got %s",
+      name, label, tostring(value)), 3)
+  end
+  return value
+end
+
+-- tri(N[, M[, k[, opts]]]) builds an array with ones on and below the k-th
+-- diagonal and zeros above it, following np.tri.  The default dtype is
+-- float32; only the `dtype` option is accepted.
+function M.tri(N, columns, k, opts)
+  if type(columns) == "table" then
+    if k ~= nil or opts ~= nil then
+      error("numlua.tri: options must be the last argument", 2)
+    end
+    opts, columns = columns, nil
+  elseif type(k) == "table" then
+    if opts ~= nil then
+      error("numlua.tri: options must be the last argument", 2)
+    end
+    opts, k = k, nil
+  end
+  non_negative_integer(N, "tri", "N")
+  columns = columns == nil and N
+    or non_negative_integer(columns, "tri", "M")
+  k = k == nil and 0 or k
+  if type(k) ~= "number" or k % 1 ~= 0 then
+    error("numlua.tri: k must be an integer", 2)
+  end
+  if opts ~= nil then
+    if type(opts) ~= "table" then
+      error("numlua.tri: options must be a table or nil", 2)
+    end
+    for key in pairs(opts) do
+      if key ~= "dtype" then
+        error(string.format(
+          "numlua.tri: unknown option '%s'", tostring(key)), 2)
+      end
+    end
+  end
+  local base = opts ~= nil and torch.ones(N, columns, opts)
+    or torch.ones(N, columns)
+  return M.tril(base, k)
+end
+
+-- vander(x[, N[, increasing]]) delegates to luatorch's Vandermonde constructor.
+-- `x` may be a 1-D tensor or a Lua numeric table; N defaults to len(x).
+function M.vander(x, N, increasing)
+  if not torch.is_tensor(x) then
+    if type(x) == "table" then
+      x = torch.tensor(x)
+    else
+      error("numlua.vander expects a 1-D tensor or table, got " ..
+        type(x), 2)
+    end
+  end
+  if x:dim() ~= 1 then
+    error("numlua.vander expects a 1-D tensor or table", 2)
+  end
+  if N == nil then
+    N = x:size(1)
+  else
+    non_negative_integer(N, "vander", "N")
+  end
+  if increasing ~= nil and type(increasing) ~= "boolean" then
+    error("numlua.vander: increasing must be a boolean or nil", 2)
+  end
+  return torch.vander(x, N, increasing)
+end
+
 -- resize returns a new tensor with the requested shape.  It follows NumPy's
 -- ndarray.resize data rule: keep the C-order elements that fit, zero-fill any
 -- new space, and drop surplus elements.  Unlike np.resize, it never tiles the

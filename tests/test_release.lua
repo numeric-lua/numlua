@@ -67,7 +67,9 @@ test("new public API and format support are documented", function()
       "numlua.full_like", "numlua.var", "numlua.std", "numlua.nansum",
       "numlua.nanmean", "numlua.nanmin", "numlua.nanmax", "numlua.nanvar",
       "numlua.nanstd", "numlua.meshgrid", "numlua.gradient",
-      "numlua.genfromtxt" }) do
+      "numlua.genfromtxt", "numlua.prod", "numlua.nanprod", "numlua.ptp",
+      "numlua.logspace", "numlua.geomspace", "numlua.identity", "numlua.tri",
+      "numlua.vander", "numlua.compress" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -136,6 +138,10 @@ test("new public API and format support are documented", function()
     "docs/api.md does not document gradient edge behavior")
   assert_true(api:find('indexing = "xy"', 1, true) ~= nil,
     "docs/api.md does not document meshgrid indexing")
+  assert_true(api:find("ZIP64 archives are\nread", 1, true) ~= nil or
+      api:find("ZIP64 archives are read", 1, true) ~= nil or
+      api:find("ZIP64 end-of-central-directory", 1, true) ~= nil,
+    "docs/api.md does not document ZIP64 reading")
 
   local readme = read_file(root .. "/README.md")
   assert_true(readme:find("Status: " .. numlua.VERSION, 1, true) ~= nil,
@@ -197,6 +203,21 @@ test("new public API and format support are documented", function()
     "README.md does not document gradient")
   assert_true(readme:find("numlua.genfromtxt", 1, true) ~= nil,
     "README.md does not document genfromtxt")
+  assert_true(readme:find("numlua.prod", 1, true) ~= nil and
+      readme:find("numlua.ptp", 1, true) ~= nil and
+      readme:find("numlua.nanprod", 1, true) ~= nil,
+    "README.md does not document product/ptp reductions")
+  assert_true(readme:find("numlua.logspace", 1, true) ~= nil and
+      readme:find("numlua.geomspace", 1, true) ~= nil,
+    "README.md does not document logarithmic constructors")
+  assert_true(readme:find("numlua.tri", 1, true) ~= nil and
+      readme:find("numlua.vander", 1, true) ~= nil and
+      readme:find("numlua.identity", 1, true) ~= nil,
+    "README.md does not document the new constructors")
+  assert_true(readme:find("numlua.compress", 1, true) ~= nil,
+    "README.md does not document compress")
+  assert_true(readme:find("ZIP64 archives are read", 1, true) ~= nil,
+    "README.md does not document ZIP64 reading")
   for _, option in ipairs({ "usecols", "ndmin", "header", "newline",
       "missing_values", "filling_values" }) do
     assert_true(readme:find(option, 1, true) ~= nil,

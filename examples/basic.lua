@@ -86,6 +86,19 @@ local gradient = numlua.gradient(numlua.array({ 1, 4, 9, 16 },
 print("gradient: " .. table.concat(gradient:totable(), ", "))
 assert(gradient:get(1) == 3 and gradient:get(4) == 7)
 
+print("product reduction: " .. tostring(numlua.prod(a):item()))
+print("peak-to-peak: " .. tostring(numlua.ptp(a):item()))
+assert(numlua.prod(a):item() == 720 and numlua.ptp(a):item() == 5)
+print("logspace: " .. table.concat(numlua.logspace(0, 2, 3):totable(), ", "))
+print("geomspace: " ..
+  table.concat(numlua.geomspace(1, 1000, 4):totable(), ", "))
+print("tri:\n" .. numlua.tri(3):format())
+print("Vandermonde:\n" .. numlua.vander(numlua.array({ 1, 2, 3 })):format())
+assert(numlua.identity(2):equal(numlua.eye(2)))
+local compressed = numlua.compress({ true, false, true }, a, 2)
+print("compress columns:\n" .. compressed:format())
+assert(compressed:size(2) == 2 and compressed:get(1, 2) == 3)
+
 heading("Matrix multiply")
 local weights = numlua.array({
   { 1.0, -1.0 },
