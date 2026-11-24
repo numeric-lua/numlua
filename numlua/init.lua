@@ -1235,6 +1235,7 @@ numlua.loadz = npz.loadz
 
 numlua.loadtxt = text.loadtxt
 numlua.savetxt = text.savetxt
+numlua.genfromtxt = text.genfromtxt
 
 local function export(module)
   for name, fn in pairs(module) do

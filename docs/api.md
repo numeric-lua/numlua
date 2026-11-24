@@ -1431,6 +1431,71 @@ Supported result dtypes are the numeric luatorch dtypes: `float16`, `float32`,
 `float64`, `int8`, `int16`, `int32`, `int64`, and `uint8`. `bool` is rejected;
 write `0`/`1` with an integral dtype instead.
 
+### `numlua.genfromtxt(path_or_file[, options])`
+
+Reads the same numeric text shape as `loadtxt` but treats configured missing
+fields as values instead of errors. The source may be a path or an
+already-open Lua file handle; a caller-owned handle is read from its current
+position and is never closed. Options:
+
+| option | default | meaning |
+| --- | --- | --- |
+| `delimiter` | whitespace runs | field separator |
+| `comments` | `"#"` | comment marker, a table of markers, or `false`/`""` to disable |
+| `dtype` | `"float32"` | result dtype (numeric dtypes only) |
+| `skip_header` | `0` | number of physical lines to skip at the start |
+| `skip_footer` | `0` | number of physical lines to skip at the end |
+| `max_rows` | all | maximum data rows to read; cannot be combined with `skip_footer` |
+| `usecols` | all | 1-based column number or table of columns to read |
+| `converters` | none | function or 1-based physical-column-to-function table |
+| `missing_values` | empty | string/number, list of markers, or per-column map |
+| `filling_values` | NaN/0 | number, per-column list, or per-column map |
+| `unpack` | `false` | transpose a 2-D result |
+| `ndmin` | `0` | minimum result rank: `0`, `1`, or `2` |
+
+`missing_values` may be a string (commas split multiple markers), a number, a
+list of markers applied to every column, or a table mapping **1-based physical
+column numbers** to a marker or marker list. `filling_values` may be one number
+for every column, a list with one value per column (remaining columns use the
+default), or a per-column map. Missing floating fields default to NaN and
+missing integer fields default to zero. Integer filling values must be finite.
+Blank lines, comments, row-width checks, `usecols` order and negative indices,
+`unpack`, `ndmin`, and the one-row/one-column squeeze follow `loadtxt`.
+
+Converters run before missing-value handling, matching NumPy: a converter can
+map a sentinel itself, and a configured missing marker is only consulted when
+no converter handles that physical column. `usecols` is applied for output,
+but `converters`, `missing_values`, and `filling_values` refer to physical input
+columns. A field that is neither converted nor missing must still parse as a
+number; `genfromtxt` does not silently replace unrelated malformed fields.
+Structured dtypes, names, string columns, and masked-array output are not
+supported; text I/O remains numeric-only. `max_rows = 0` returns an empty
+tensor, and `max_rows` together with `skip_footer` is rejected.
+
+```lua
+-- data.csv:
+--   1,NA
+--   2,3
+local values = numlua.genfromtxt("data.csv", {
+  delimiter = ",",
+  missing_values = "NA",
+  filling_values = -1,
+})
+-- values = {{1, -1}, {2, 3}}
+```
+
+Per-column filling uses physical 1-based columns, so it remains aligned with
+`usecols`:
+
+```lua
+local values = numlua.genfromtxt("data.csv", {
+  delimiter = ",",
+  usecols = { 1, 3 },
+  missing_values = { [3] = "N/A" },
+  filling_values = { [3] = 0 },
+})
+```
+
 ### `numlua.savetxt(path_or_file, tensor[, options])`
 
 Writes a 1-D or 2-D tensor as numeric text and returns `true`. The target may

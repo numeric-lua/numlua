@@ -283,7 +283,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Linear algebra | `dot`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
-| Text/CSV I/O | `loadtxt`, `savetxt` |
+| Text/CSV I/O | `loadtxt`, `savetxt`, `genfromtxt` |
 
 `numlua.zeros_like`, `numlua.ones_like`, `numlua.empty_like`, and
 `numlua.full_like` inherit the prototype's shape and dtype by default and
@@ -511,6 +511,14 @@ tensors (NumPy's default squeeze behavior), and an all-comment/empty file loads
 as an empty 1-D tensor. The default load dtype is `float32`; pass `dtype` to load
 integers or wider floats exactly. Text files do not store shape or dtype, so a
 1xN or Nx1 matrix cannot be distinguished from a vector after loading.
+
+`numlua.genfromtxt(path_or_file[, options])` extends the same numeric parser
+with missing-value handling. `missing_values` accepts a marker string, a marker
+list, or a table keyed by 1-based physical column; `filling_values` accepts one
+number, a per-column list, or a per-column map. Missing floats default to NaN
+and missing integers to zero, converters run before missing-value handling, and
+`skip_header`/`skip_footer` replace `loadtxt`'s `skiprows`. Numeric-only scope,
+`usecols`, `unpack`, `ndmin`, and the squeeze rules are unchanged.
 
 `savetxt` writes sufficient digits for `float16`/`float32`/`float64`
 round-trips, writes `nan`/`inf` explicitly, and supports a `fmt` format string,

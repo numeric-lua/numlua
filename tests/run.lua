@@ -194,6 +194,7 @@ local files = {
   "test_generated_fixtures.lua",
   "test_txt.lua",
   "test_txt_handles.lua",
+  "test_genfromtxt.lua",
   "test_errors.lua",
   "test_release.lua",
 }

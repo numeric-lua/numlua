@@ -68,6 +68,21 @@ local LOAD_OPTIONS = {
   ndmin = true,
 }
 
+local GENFROMTXT_OPTIONS = {
+  delimiter = true,
+  comments = true,
+  dtype = true,
+  skip_header = true,
+  skip_footer = true,
+  max_rows = true,
+  usecols = true,
+  converters = true,
+  unpack = true,
+  ndmin = true,
+  missing_values = true,
+  filling_values = true,
+}
+
 local SAVE_OPTIONS = {
   delimiter = true,
   fmt = true,
@@ -113,7 +128,7 @@ end
 
 -- Normalize usecols to a list of 1-based column numbers.  The upper bound is
 -- checked once the first data row establishes the total column count.
-local function parse_usecols(value)
+local function parse_usecols(value, name)
   if value == nil then
     return nil
   end
@@ -122,34 +137,39 @@ local function parse_usecols(value)
     columns = { value }
   elseif type(value) == "table" then
     if #value == 0 then
-      error("numlua.loadtxt: usecols must be a column number or a " ..
-        "non-empty table of column numbers", 3)
+      error(string.format(
+        "numlua.%s: usecols must be a column number or a non-empty table " ..
+        "of column numbers", name), 3)
     end
     columns = value
   else
-    error("numlua.loadtxt: usecols must be a column number or a table of " ..
-      "column numbers, got " .. type(value), 3)
+    error(string.format(
+      "numlua.%s: usecols must be a column number or a table of column " ..
+      "numbers, got %s", name, type(value)), 3)
   end
   local normalized = {}
   for i = 1, #columns do
     local column = columns[i]
     if type(column) ~= "number" or column % 1 ~= 0 then
-      error("numlua.loadtxt: usecols entries must be integers, got " ..
-        tostring(column), 3)
+      error(string.format(
+        "numlua.%s: usecols entries must be integers, got %s",
+        name, tostring(column)), 3)
     end
     if column == 0 then
-      error("numlua.loadtxt: usecols columns are 1-based; column 0 is " ..
-        "invalid (use 1 for the first column)", 3)
+      error(string.format(
+        "numlua.%s: usecols columns are 1-based; column 0 is invalid " ..
+        "(use 1 for the first column)", name), 3)
     end
     normalized[i] = column
   end
   return normalized
 end
 
-local function check_unpack(value)
+local function check_unpack(value, name)
   if value ~= nil and type(value) ~= "boolean" then
-    error("numlua.loadtxt: unpack must be a boolean or nil, got " ..
-      tostring(value), 3)
+    error(string.format(
+      "numlua.%s: unpack must be a boolean or nil, got %s",
+      name, tostring(value)), 3)
   end
   return value == true
 end
@@ -163,19 +183,20 @@ local function check_string(value, option, name)
   return value
 end
 
-local function check_ndmin(value)
+local function check_ndmin(value, name)
   if value == nil then
     return 0
   end
   if type(value) ~= "number" or value % 1 ~= 0 or
       (value ~= 0 and value ~= 1 and value ~= 2) then
-    error("numlua.loadtxt: ndmin must be 0, 1, or 2, got " ..
-      tostring(value), 3)
+    error(string.format(
+      "numlua.%s: ndmin must be 0, 1, or 2, got %s",
+      name, tostring(value)), 3)
   end
   return value
 end
 
-local function comment_markers(comments)
+local function comment_markers(comments, name)
   if comments == nil then
     return { DEFAULT_COMMENT }
   end
@@ -190,35 +211,38 @@ local function comment_markers(comments)
     for i = 1, #comments do
       local marker = comments[i]
       if type(marker) ~= "string" or marker == "" then
-        error("numlua.loadtxt: comments must contain non-empty strings", 3)
+        error(string.format(
+          "numlua.%s: comments must contain non-empty strings", name), 3)
       end
       markers[#markers + 1] = marker
     end
     return markers
   end
-  error("numlua.loadtxt: comments must be a string, a table of strings, " ..
-    "false, or nil", 3)
+  error(string.format(
+    "numlua.%s: comments must be a string, a table of strings, false, " ..
+    "or nil", name), 3)
 end
 
-local function check_load_dtype(dtype)
+local function check_load_dtype(dtype, name)
   if dtype == nil then
     return DEFAULT_LOAD_DTYPE
   end
   if type(dtype) ~= "string" and type(dtype) ~= "number" then
-    error("numlua.loadtxt: dtype must be a luatorch dtype name or id", 3)
+    error(string.format(
+      "numlua.%s: dtype must be a luatorch dtype name or id", name), 3)
   end
   local ok, probe = pcall(torch.empty, { 0 }, { dtype = dtype })
   if not ok then
-    error(string.format("numlua.loadtxt: unsupported dtype %s",
+    error(string.format("numlua.%s: unsupported dtype %s", name,
       type(dtype) == "string" and ("'" .. dtype .. "'") or tostring(dtype)), 3)
   end
-  local name = probe:dtype()
-  if not SUPPORTED_DTYPES[name] then
+  local dtype_name = probe:dtype()
+  if not SUPPORTED_DTYPES[dtype_name] then
     error(string.format(
-      "numlua.loadtxt: unsupported dtype '%s' (text I/O supports numeric " ..
-      "dtypes, not bool)", name), 3)
+      "numlua.%s: unsupported dtype '%s' (text I/O supports numeric " ..
+      "dtypes, not bool)", name, dtype_name), 3)
   end
-  return name
+  return dtype_name
 end
 
 local function check_save_dtype(tensor)
@@ -237,37 +261,43 @@ end
 
 -- Read text from a path or an already-open Lua file handle.  Caller-owned
 -- handles are read from their current position and are never closed.
-local function read_input(source)
+local function read_input(source, name)
   local kind = io.type(source)
   if kind == "file" then
     local data, read_error = source:read("*a")
     if data == nil then
-      error("numlua.loadtxt: failed reading file handle: " ..
-        tostring(read_error), 3)
+      error(string.format(
+        "numlua.%s: failed reading file handle: %s",
+        name, tostring(read_error)), 3)
     end
     return data
   end
   if kind == "closed file" then
-    error("numlua.loadtxt: cannot read from a closed file handle", 3)
+    error(string.format(
+      "numlua.%s: cannot read from a closed file handle", name), 3)
   end
   if type(source) ~= "string" or source == "" then
-    error("numlua.loadtxt expects a non-empty file path or open file " ..
-      "handle", 3)
+    error(string.format(
+      "numlua.%s expects a non-empty file path or open file handle",
+      name), 3)
   end
   local handle, open_error = io.open(source, "r")
   if handle == nil then
-    error("numlua.loadtxt: cannot open '" .. source ..
-      "' for reading: " .. tostring(open_error), 3)
+    error(string.format(
+      "numlua.%s: cannot open '%s' for reading: %s",
+      name, source, tostring(open_error)), 3)
   end
   local data, read_error = handle:read("*a")
   local close_ok, close_error = handle:close()
   if data == nil then
-    error("numlua.loadtxt: failed reading '" .. source .. "': " ..
-      tostring(read_error), 3)
+    error(string.format(
+      "numlua.%s: failed reading '%s': %s",
+      name, source, tostring(read_error)), 3)
   end
   if not close_ok then
-    error("numlua.loadtxt: failed closing '" .. source .. "': " ..
-      tostring(close_error), 3)
+    error(string.format(
+      "numlua.%s: failed closing '%s': %s",
+      name, source, tostring(close_error)), 3)
   end
   return data
 end
@@ -330,7 +360,7 @@ end
 -- NumPy's 0-based dictionary keys, numlua keeps the facade's 1-based column
 -- convention.  Bounds are checked once the first data row establishes the
 -- file width.
-local function parse_converters(value)
+local function parse_converters(value, name)
   if value == nil then
     return nil
   end
@@ -338,26 +368,30 @@ local function parse_converters(value)
     return { all = value }
   end
   if type(value) ~= "table" then
-    error("numlua.loadtxt: converters must be a function, a table, or nil", 3)
+    error(string.format(
+      "numlua.%s: converters must be a function, a table, or nil", name), 3)
   end
   local mapping = {}
   for column, converter in pairs(value) do
     if type(column) ~= "number" or column % 1 ~= 0 then
-      error("numlua.loadtxt: converter columns must be integers, got " ..
-        tostring(column), 3)
+      error(string.format(
+        "numlua.%s: converter columns must be integers, got %s",
+        name, tostring(column)), 3)
     end
     if column == 0 then
-      error("numlua.loadtxt: converter columns are 1-based; column 0 is " ..
-        "invalid (use 1 for the first column)", 3)
+      error(string.format(
+        "numlua.%s: converter columns are 1-based; column 0 is invalid " ..
+        "(use 1 for the first column)", name), 3)
     end
     if column < 0 then
-      error("numlua.loadtxt: converter columns must be positive 1-based " ..
-        "column numbers, got " .. tostring(column), 3)
+      error(string.format(
+        "numlua.%s: converter columns must be positive 1-based column " ..
+        "numbers, got %s", name, tostring(column)), 3)
     end
     if type(converter) ~= "function" then
       error(string.format(
-        "numlua.loadtxt: converter for column %d must be a function, got %s",
-        column, type(converter)), 3)
+        "numlua.%s: converter for column %d must be a function, got %s",
+        name, column, type(converter)), 3)
     end
     mapping[column] = converter
   end
@@ -377,18 +411,18 @@ function text.loadtxt(path, options)
   end
   options = check_options(options, "loadtxt", LOAD_OPTIONS)
   local delimiter = check_delimiter(options.delimiter, "loadtxt")
-  local markers = comment_markers(options.comments)
-  local dtype = check_load_dtype(options.dtype)
+  local markers = comment_markers(options.comments, "loadtxt")
+  local dtype = check_load_dtype(options.dtype, "loadtxt")
   local skiprows = check_nonnegative_integer(
     options.skiprows, "skiprows", "loadtxt")
   local max_rows = check_nonnegative_integer(
     options.max_rows, "max_rows", "loadtxt")
-  local usecols = parse_usecols(options.usecols)
-  local converters = parse_converters(options.converters)
-  local unpack = check_unpack(options.unpack)
-  local ndmin = check_ndmin(options.ndmin)
+  local usecols = parse_usecols(options.usecols, "loadtxt")
+  local converters = parse_converters(options.converters, "loadtxt")
+  local unpack = check_unpack(options.unpack, "loadtxt")
+  local ndmin = check_ndmin(options.ndmin, "loadtxt")
 
-  local data = read_input(path)
+  local data = read_input(path, "loadtxt")
   local rows = {}
   local columns = nil
   local selected = nil
@@ -525,6 +559,310 @@ function text.loadtxt(path, options)
   -- ndmin=2 keeps the physical row/column shape, so a one-row file stays
   -- (1, N) and a one-column file stays (N, 1).  The default (ndmin=0) and
   -- ndmin=1 keep NumPy's squeeze behavior for a single row or column.
+  local result
+  if ndmin < 2 and (output_columns == 1 or #rows == 1) then
+    local values = {}
+    for i = 1, #rows do
+      for j = 1, output_columns do
+        values[#values + 1] = rows[i][j]
+      end
+    end
+    result = torch.tensor(values, { dtype = dtype })
+  else
+    result = torch.tensor(rows, { dtype = dtype })
+  end
+  if unpack and result:dim() == 2 then
+    result = result:transpose(1, 2)
+  end
+  return result
+end
+
+-- A numeric table with contiguous 1-based integer keys is an array; anything
+-- else is a column map.  This distinguishes a global missing-value list from
+-- a per-column table such as { [2] = "NA" }.
+local function is_array_table(value)
+  local count = 0
+  for key in pairs(value) do
+    if type(key) ~= "number" or key % 1 ~= 0 or key < 1 then
+      return false
+    end
+    count = count + 1
+  end
+  return count == 0 or #value == count
+end
+
+local function marker_list(value, name, label)
+  local markers = {}
+  local function add(entry)
+    if type(entry) == "number" then entry = tostring(entry) end
+    if type(entry) ~= "string" then
+      error(string.format(
+        "numlua.%s: %s must contain strings or numbers, got %s",
+        name, label, type(entry)), 3)
+    end
+    if entry ~= "" then markers[#markers + 1] = entry end
+  end
+  if type(value) == "string" then
+    for entry in value:gmatch("[^,]+") do add(trim(entry)) end
+  elseif type(value) == "number" then
+    add(value)
+  elseif type(value) == "table" then
+    for index = 1, #value do add(value[index]) end
+  else
+    error(string.format(
+      "numlua.%s: %s must be a string, number, or table, got %s",
+      name, label, type(value)), 3)
+  end
+  return markers
+end
+
+local function default_fill(dtype)
+  if dtype:match("float") then return 0 / 0 end
+  return 0
+end
+
+local function normalize_missing_values(value, columns, name)
+  local per_column = {}
+  for column = 1, columns do per_column[column] = {} end
+  if value == nil then
+    return per_column
+  end
+  if type(value) == "string" or type(value) == "number" then
+    local markers = marker_list(value, name, "missing_values")
+    for column = 1, columns do per_column[column] = markers end
+    return per_column
+  end
+  if type(value) ~= "table" then
+    error(string.format(
+      "numlua.%s: missing_values must be a string, number, table, or nil",
+      name), 3)
+  end
+  if is_array_table(value) then
+    local markers = marker_list(value, name, "missing_values")
+    for column = 1, columns do per_column[column] = markers end
+    return per_column
+  end
+  for column, entry in pairs(value) do
+    if type(column) ~= "number" or column % 1 ~= 0 or column < 1 then
+      error(string.format(
+        "numlua.%s: missing_values column keys must be positive integers, " ..
+        "got %s", name, tostring(column)), 3)
+    end
+    if column > columns then
+      error(string.format(
+        "numlua.%s: missing_values column %d is out of range for %d " ..
+        "column(s)", name, column, columns), 3)
+    end
+    per_column[column] = marker_list(entry, name,
+      "missing_values for column " .. column)
+  end
+  return per_column
+end
+
+local function normalize_filling_values(value, columns, dtype, name)
+  local per_column = {}
+  for column = 1, columns do per_column[column] = default_fill(dtype) end
+  local function assign(column, entry)
+    if type(entry) ~= "number" then
+      error(string.format(
+        "numlua.%s: filling_values must be numbers, got %s for column %d",
+        name, type(entry), column), 3)
+    end
+    if not dtype:match("float") and (entry ~= entry or
+        entry == math.huge or entry == -math.huge) then
+      error(string.format(
+        "numlua.%s: filling_values for integer dtype '%s' must be finite",
+        name, dtype), 3)
+    end
+    per_column[column] = entry
+  end
+  if value == nil then
+    return per_column
+  end
+  if type(value) == "number" then
+    for column = 1, columns do assign(column, value) end
+    return per_column
+  end
+  if type(value) ~= "table" then
+    error(string.format(
+      "numlua.%s: filling_values must be a number, table, or nil", name), 3)
+  end
+  if is_array_table(value) then
+    for column = 1, math.min(columns, #value) do
+      assign(column, value[column])
+    end
+    return per_column
+  end
+  for column, entry in pairs(value) do
+    if type(column) ~= "number" or column % 1 ~= 0 or column < 1 then
+      error(string.format(
+        "numlua.%s: filling_values column keys must be positive integers, " ..
+        "got %s", name, tostring(column)), 3)
+    end
+    if column > columns then
+      error(string.format(
+        "numlua.%s: filling_values column %d is out of range for %d " ..
+        "column(s)", name, column, columns), 3)
+    end
+    assign(column, entry)
+  end
+  return per_column
+end
+
+-- genfromtxt(path_or_file[, options]) is loadtxt with missing-value handling.
+-- It deliberately keeps the numeric-only scope of the rest of text.lua: no
+-- structured dtypes, names, or string columns.
+function text.genfromtxt(path, options)
+  local target_kind = io.type(path)
+  if target_kind == "closed file" then
+    error("numlua.genfromtxt: cannot read from a closed file handle", 2)
+  end
+  if target_kind ~= "file" and (type(path) ~= "string" or path == "") then
+    error("numlua.genfromtxt expects a non-empty file path or open file " ..
+      "handle", 2)
+  end
+  options = check_options(options, "genfromtxt", GENFROMTXT_OPTIONS)
+  local delimiter = check_delimiter(options.delimiter, "genfromtxt")
+  local markers = comment_markers(options.comments, "genfromtxt")
+  local dtype = check_load_dtype(options.dtype, "genfromtxt")
+  local skip_header = check_nonnegative_integer(
+    options.skip_header, "skip_header", "genfromtxt") or 0
+  local skip_footer = check_nonnegative_integer(
+    options.skip_footer, "skip_footer", "genfromtxt") or 0
+  local max_rows = check_nonnegative_integer(
+    options.max_rows, "max_rows", "genfromtxt")
+  if max_rows ~= nil and options.skip_footer ~= nil then
+    error("numlua.genfromtxt: max_rows and skip_footer cannot be combined", 2)
+  end
+  local usecols = parse_usecols(options.usecols, "genfromtxt")
+  local converters = parse_converters(options.converters, "genfromtxt")
+  local unpack = check_unpack(options.unpack, "genfromtxt")
+  local ndmin = check_ndmin(options.ndmin, "genfromtxt")
+
+  local data = read_input(path, "genfromtxt")
+  data = data:gsub("\r\n", "\n"):gsub("\r", "\n")
+  if data ~= "" and data:sub(-1) ~= "\n" then
+    data = data .. "\n"
+  end
+  local lines = {}
+  for line in data:gmatch("([^\n]*)\n") do
+    lines[#lines + 1] = line
+  end
+
+  local rows = {}
+  local columns = nil
+  local selected = nil
+  local missing_by_column = nil
+  local filling_by_column = nil
+
+  local function resolve_columns()
+    selected = nil
+    if usecols ~= nil then
+      selected = {}
+      for index = 1, #usecols do
+        local requested = usecols[index]
+        local column = requested < 0 and requested + columns + 1 or requested
+        if column < 1 or column > columns then
+          error(string.format(
+            "numlua.genfromtxt: usecols index %d is out of range for %d " ..
+            "column(s)", requested, columns), 3)
+        end
+        selected[index] = column
+      end
+    end
+    missing_by_column = normalize_missing_values(
+      options.missing_values, columns, "genfromtxt")
+    filling_by_column = normalize_filling_values(
+      options.filling_values, columns, dtype, "genfromtxt")
+    if converters ~= nil and converters.map ~= nil then
+      for column in pairs(converters.map) do
+        if column > columns then
+          error(string.format(
+            "numlua.genfromtxt: converter column %d is out of range for " ..
+            "%d column(s)", column, columns), 3)
+        end
+      end
+    end
+  end
+
+  local function is_missing(field, column)
+    local list = missing_by_column[column]
+    for index = 1, #list do
+      if field == list[index] then return true end
+    end
+    return false
+  end
+
+  local function parse_field(field, line_number, column)
+    local converter = converters ~= nil and
+      (converters.all or (converters.map and converters.map[column])) or nil
+    if converter ~= nil then
+      local ok, value = pcall(converter, field)
+      if not ok then
+        error(string.format(
+          "numlua.genfromtxt: line %d: converter for column %d failed: %s",
+          line_number, column, tostring(value)), 3)
+      end
+      if type(value) ~= "number" then
+        error(string.format(
+          "numlua.genfromtxt: line %d: converter for column %d must return " ..
+          "a number, got %s", line_number, column, type(value)), 3)
+      end
+      return value
+    end
+    if is_missing(field, column) then
+      return filling_by_column[column]
+    end
+    local value = parse_number(field)
+    if value == nil then
+      error(string.format(
+        "numlua.genfromtxt: line %d: invalid number '%s' in column %d",
+        line_number, field, column), 2)
+    end
+    return value
+  end
+
+  local first_line = skip_header + 1
+  local last_line = #lines - skip_footer
+  for line_number = first_line, last_line do
+    if max_rows == 0 then break end
+    local line = strip_comments(lines[line_number], markers)
+    if trim(line) ~= "" then
+      local fields = split_fields(line, delimiter)
+      if columns == nil then
+        columns = #fields
+        resolve_columns()
+      elseif #fields ~= columns then
+        error(string.format(
+          "numlua.genfromtxt: line %d has %d column(s), expected %d",
+          line_number, #fields, columns), 2)
+      end
+      local row = {}
+      if selected ~= nil then
+        for output_column = 1, #selected do
+          local source_column = selected[output_column]
+          row[output_column] = parse_field(
+            fields[source_column], line_number, source_column)
+        end
+      else
+        for column = 1, #fields do
+          row[column] = parse_field(fields[column], line_number, column)
+        end
+      end
+      rows[#rows + 1] = row
+      if max_rows ~= nil and #rows >= max_rows then break end
+    end
+  end
+
+  if #rows == 0 then
+    local empty = ndmin == 2 and torch.empty({ 0, 1 }, { dtype = dtype })
+      or torch.empty({ 0 }, { dtype = dtype })
+    if unpack and empty:dim() == 2 then
+      empty = empty:transpose(1, 2)
+    end
+    return empty
+  end
+  local output_columns = selected ~= nil and #selected or columns
   local result
   if ndmin < 2 and (output_columns == 1 or #rows == 1) then
     local values = {}
