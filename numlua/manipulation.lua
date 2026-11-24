@@ -1258,6 +1258,199 @@ function M.diff(t, n, axis_value)
   return result
 end
 
+local function gradient_coordinates(value, size, label)
+  local coordinates
+  if torch.is_tensor(value) then
+    coordinates = value
+  elseif type(value) == "table" then
+    local ok, converted = pcall(torch.tensor, value)
+    if not ok then
+      error(string.format(
+        "numlua.gradient: %s coordinates are not numeric: %s",
+        label, tostring(converted)), 3)
+    end
+    coordinates = converted
+  else
+    error(string.format(
+      "numlua.gradient: %s spacing must be a number, table, or tensor",
+      label), 3)
+  end
+  if coordinates:dim() ~= 1 then
+    error(string.format(
+      "numlua.gradient: %s coordinates must be 1-D", label), 3)
+  end
+  if coordinates:numel() ~= size then
+    error(string.format(
+      "numlua.gradient: %s coordinates have %d value(s), expected %d",
+      label, coordinates:numel(), size), 3)
+  end
+  if not coordinates:is_floating_point() then
+    coordinates = coordinates:to("float64")
+  end
+  if coordinates:numel() > 1 then
+    local gaps = coordinates:narrow(1, 2, coordinates:numel() - 1):sub(
+      coordinates:narrow(1, 1, coordinates:numel() - 1))
+    if gaps:abs():min():item() == 0 then
+      error(string.format(
+        "numlua.gradient: %s coordinates must not repeat a position", label), 3)
+    end
+  end
+  return coordinates
+end
+
+-- Normalize spacing to one spec per selected axis.  A number means uniform
+-- spacing; a 1-D table/tensor is either coordinates for a single axis or one
+-- scalar spacing per axis; a table may also contain per-axis coordinates.
+local function gradient_spacings(spacing, axes, t)
+  local specs = {}
+  local function uniform(value)
+    if type(value) ~= "number" or value ~= value or
+        value == math.huge or value == -math.huge or value == 0 then
+      error("numlua.gradient: spacing values must be finite and non-zero", 3)
+    end
+    return { kind = "uniform", value = value }
+  end
+  local function coordinates(value, axis)
+    return {
+      kind = "coordinates",
+      value = gradient_coordinates(value, t:size(axis), "axis " .. axis),
+    }
+  end
+  local function all_uniform(value)
+    local spec = uniform(value)
+    for index = 1, #axes do specs[index] = spec end
+  end
+
+  if spacing == nil then
+    all_uniform(1)
+  elseif type(spacing) == "number" then
+    all_uniform(spacing)
+  elseif torch.is_tensor(spacing) then
+    if spacing:dim() == 0 then
+      all_uniform(spacing:item())
+    elseif spacing:dim() ~= 1 then
+      error("numlua.gradient: spacing tensor must be 0-D or 1-D", 2)
+    elseif #axes == 1 and spacing:numel() == t:size(axes[1]) then
+      specs[1] = coordinates(spacing, axes[1])
+    elseif spacing:numel() == #axes then
+      local values = spacing:totable()
+      for index = 1, #axes do specs[index] = uniform(values[index]) end
+    else
+      error(string.format(
+        "numlua.gradient: spacing has %d value(s), expected %d coordinate " ..
+        "value(s) or one spacing per axis", spacing:numel(),
+        #axes == 1 and t:size(axes[1]) or #axes), 2)
+    end
+  elseif type(spacing) == "table" then
+    if #axes == 1 and #spacing == t:size(axes[1]) then
+      specs[1] = coordinates(spacing, axes[1])
+    elseif #spacing == #axes then
+      for index = 1, #axes do
+        local value = spacing[index]
+        if type(value) == "number" then
+          specs[index] = uniform(value)
+        elseif torch.is_tensor(value) or type(value) == "table" then
+          specs[index] = coordinates(value, axes[index])
+        else
+          error(string.format(
+            "numlua.gradient: spacing %d must be a number, table, or tensor",
+            index), 2)
+        end
+      end
+    else
+      error("numlua.gradient: spacing length must match the selected axes " ..
+        "or the size of a single axis", 2)
+    end
+  else
+    error("numlua.gradient: spacing must be a number, table, tensor, or nil", 2)
+  end
+
+  return specs
+end
+
+local function gradient_axis(source, axis_value, spec)
+  local size = source:size(axis_value)
+  if size < 2 then
+    error(string.format(
+      "numlua.gradient: axis %d needs at least 2 elements", axis_value), 3)
+  end
+  local function interval(index)
+    if spec.kind == "uniform" then return spec.value end
+    return spec.value:get(index + 1) - spec.value:get(index)
+  end
+
+  local first = source:narrow(axis_value, 2, 1):sub(
+    source:narrow(axis_value, 1, 1)):div(interval(1))
+  local last = source:narrow(axis_value, size, 1):sub(
+    source:narrow(axis_value, size - 1, 1)):div(interval(size - 1))
+  if size == 2 then
+    return torch.cat({ first, last }, axis_value)
+  end
+
+  local width = size - 2
+  local left = source:narrow(axis_value, 1, width)
+  local right = source:narrow(axis_value, 3, width)
+  local delta
+  if spec.kind == "uniform" then
+    delta = 2 * spec.value
+  else
+    local shape = {}
+    for dimension = 1, source:dim() do shape[dimension] = 1 end
+    shape[axis_value] = width
+    delta = spec.value:narrow(1, 3, width):sub(
+      spec.value:narrow(1, 1, width)):reshape(shape)
+  end
+  local interior = right:sub(left):div(delta)
+  return torch.cat({ first, interior, last }, axis_value)
+end
+
+-- gradient(t[, spacing[, axis]]) follows np.gradient's first-order edge
+-- differences and central interior differences.  axis defaults to every axis
+-- in order; a numeric axis returns one tensor, while a table of axes returns a
+-- table in the requested order.
+function M.gradient(t, spacing, axis_value)
+  tensor(t, "gradient")
+  local rank = t:dim()
+  if rank == 0 then
+    error("numlua.gradient expects at least a 1-D tensor", 2)
+  end
+
+  local axes = {}
+  local multiple
+  if axis_value == nil then
+    for index = 1, rank do axes[index] = index end
+    multiple = rank > 1
+  elseif type(axis_value) == "number" then
+    axes[1] = axis(axis_value, rank, "gradient")
+    multiple = false
+  elseif type(axis_value) == "table" then
+    if #axis_value == 0 then
+      error("numlua.gradient: axis table must not be empty", 2)
+    end
+    local seen = {}
+    for index = 1, #axis_value do
+      local normalized = axis(axis_value[index], rank, "gradient")
+      if seen[normalized] then
+        error("numlua.gradient: axes must be unique", 2)
+      end
+      seen[normalized] = true
+      axes[index] = normalized
+    end
+    multiple = true
+  else
+    error("numlua.gradient: axis must be an integer, table, or nil", 2)
+  end
+
+  local specs = gradient_spacings(spacing, axes, t)
+  local source = t:is_floating_point() and t or t:to("float64")
+  local results = {}
+  for index = 1, #axes do
+    results[index] = gradient_axis(source, axes[index], specs[index])
+  end
+  if multiple then return results end
+  return results[1]
+end
+
 function M.cumsum(t, axis_value)
   tensor(t, "cumsum")
   if axis_value == nil then return t:reshape({ t:numel() }):cumsum(1) end

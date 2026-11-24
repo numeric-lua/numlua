@@ -171,6 +171,7 @@ local files = {
   "test_select.lua",
   "test_ufuncs.lua",
   "test_manipulation.lua",
+  "test_gradient.lua",
   "test_pad.lua",
   "test_apply_along_axis.lua",
   "test_apply_over_axes.lua",

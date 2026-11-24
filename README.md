@@ -275,7 +275,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `arange`, `linspace`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `gradient`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square` |
 | Reductions | `sum`, `mean`, `var`, `std`, `max`, `min`, `argmax`, `argmin`, `nansum`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd` |
@@ -303,7 +303,7 @@ valid values; `nansum` treats NaN as zero.
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
 `diagflat`, `tril`, `triu`, `pad`, `tile`, `repeat_`, `flip`, `fliplr`,
-`flipud`, `rot90`, `roll`, `diff`,
+`flipud`, `rot90`, `roll`, `diff`, `gradient`,
 `cumsum`, `cumprod`, `argsort`,
 `sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
 allocate independent storage (`rot90(t, 0)` returns the input); see
@@ -312,6 +312,11 @@ allocate independent storage (`rot90(t, 0)` returns the input); see
 axis-specific flips); `numlua.diagonal` returns a writable view for non-empty
 numeric input, while `numlua.trace` sums that diagonal and returns a 0-D tensor
 for 2-D input or the batch shape for higher-rank input.
+`numlua.gradient` follows NumPy's first-order edge differences and central
+interior differences. It accepts uniform spacing, coordinate arrays, and
+per-axis spacing, and returns one tensor per requested axis (a single tensor
+for a numeric `axis` or for a 1-D input with no `axis`).
+
 `put` is the exception: it writes into its input tensor in place and returns
 it. `pad` supports `constant`, `edge`, `linear_ramp`, `maximum`, `mean`,
 `median`, `minimum`, `reflect`, `symmetric`, and `wrap` modes. Its fill value

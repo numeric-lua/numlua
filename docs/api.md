@@ -741,6 +741,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.roll(t, shift[, axis])` | cyclic shift; flattens when `axis` is omitted |
 | `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"linear_ramp"`, `"maximum"`, `"mean"`, `"median"`, `"minimum"`, `"reflect"`, `"symmetric"`, and `"wrap"`; `value` is mode-specific (materialized) |
 | `numlua.diff(t[, n[, axis]])` | default axis is the last |
+| `numlua.gradient(t[, spacing[, axis]])` | first-order edge and central interior differences |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices; at least 1-D input |
 | `numlua.sort(t[, axis[, descending]])` | sorted values; last axis by default; at least 1-D input |
@@ -753,6 +754,25 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.apply_over_axes(func, t, axes[, ...])` | apply `func` over axes, restoring each reduced axis |
 | `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
 | `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
+
+`numlua.gradient(t[, spacing[, axis]])` computes first-order edge differences
+and second-order central interior differences along every axis, or along a
+1-based `axis` number/table. `spacing` may be a uniform number, a 1-D table or
+tensor of coordinates for one selected axis, or a table/tensor with one
+spacing per selected axis; coordinate tables may also be supplied per axis.
+Coordinate values must be 1-D, match the axis size, and not repeat a position;
+uniform spacings must be finite and non-zero. Floating input keeps its dtype,
+integer/bool input promotes to `float64`. With `axis = nil`, a 1-D input returns
+one tensor and higher-rank input returns a table in axis order; an integer
+`axis` returns one tensor and an axis table returns a table in the requested
+order. Every selected axis needs at least two elements.
+
+```lua
+local t = numlua.array({ 1, 4, 9, 16 }, { dtype = "float64" })
+numlua.gradient(t)               -- {3, 4, 6, 7}
+numlua.gradient(t, 2)            -- {1.5, 2, 3, 3.5}
+numlua.gradient(t, {0, 1, 3, 6}) -- coordinate spacing
+```
 
 `broadcast_to` and `broadcast_arrays` follow NumPy's right-aligned rules,
 including 0-D inputs and zero-size axes: a size-1 axis broadcast against a
