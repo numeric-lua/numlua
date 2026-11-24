@@ -782,15 +782,18 @@ end)
 
 test("savetxt accepts one format per column", function()
   local path = tmp_path("fmt-columns")
+  -- Avoid exact .5 ties here: printf-style half-way rounding differs between
+  -- LuaJIT builds (round-half-even vs round-half-away), and this test is about
+  -- per-column formats, not about a specific tie-breaking convention.
   local a = numlua.array({
-    { 1.25, 2, 3000 },
+    { 1.26, 2, 3000 },
     { 4.5, 5, 6000 },
   }, { dtype = "float64" })
   assert_true(numlua.savetxt(path, a, {
     delimiter = ",",
     fmt = { "%.1f", "%d", "%.1e" },
   }))
-  assert_eq(read_text(path), "1.2,2,3.0e+03\n4.5,5,6.0e+03\n")
+  assert_eq(read_text(path), "1.3,2,3.0e+03\n4.5,5,6.0e+03\n")
   os.remove(path)
 
   -- Strings and functions may be mixed per column.
@@ -802,7 +805,7 @@ test("savetxt accepts one format per column", function()
       "%d",
     },
   }))
-  assert_eq(read_text(path), "1.25|n2|3000\n4.50|n5|6000\n")
+  assert_eq(read_text(path), "1.26|n2|3000\n4.50|n5|6000\n")
   os.remove(path)
 
   -- A 1-D vector has one format column.
