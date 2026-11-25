@@ -105,6 +105,26 @@ print("ediff1d: " ..
     99, 0):totable(), ", "))
 assert(numlua.nanargmin(nan_values):item() == 3)
 assert(numlua.nanargmax(nan_values):item() == 4)
+print("covariance:\n" .. numlua.cov(numlua.array({
+  { 1, 2, 3 }, { 2, 4, 6 },
+})):format())
+print("correlation:\n" .. numlua.corrcoef(numlua.array({
+  { 1, 2, 3 }, { 2, 4, 6 },
+})):format())
+local fit = numlua.polyfit(numlua.array({ 0, 1, 2, 3 }),
+  numlua.array({ 3, 5, 7, 9 }), 1)
+print("polyfit: " .. table.concat(fit:totable(), ", "))
+print("polyval at 2: " .. tostring(numlua.polyval(fit, 2):item()))
+local counts, edges = numlua.histogram(numlua.array({ 0, 1, 2, 3, 4 }),
+  { bins = 2 })
+print("histogram counts: " .. table.concat(counts:totable(), ", ") ..
+  " edges: " .. table.concat(edges:totable(), ", "))
+print("ravel: " .. table.concat(numlua.ravel_multi_index(
+  { { 1, 2 }, { 2, 3 } }, { 2, 3 }):totable(), ", "))
+local row, column = numlua.unravel_index(
+  numlua.array({ 2, 6 }, { dtype = "int64" }), { 2, 3 })
+print("unravel: " .. table.concat(row:totable(), ", ") .. " / " ..
+  table.concat(column:totable(), ", "))
 print("logspace: " .. table.concat(numlua.logspace(0, 2, 3):totable(), ", "))
 print("geomspace: " ..
   table.concat(numlua.geomspace(1, 1000, 4):totable(), ", "))
@@ -214,6 +234,13 @@ print("nan_to_num:\n" ..
   numlua.nan_to_num(numlua.array({ 0 / 0, math.huge }), 7, 8, 9):format())
 print("nancumsum:\n" ..
   numlua.nancumsum(numlua.array({ 1, 0 / 0, 3 })):format())
+print("isposinf/isneginf:\n" ..
+  numlua.isposinf(numlua.array({ math.huge, -math.huge })):format() ..
+  numlua.isneginf(numlua.array({ math.huge, -math.huge })):format())
+print("hypot: " .. table.concat(numlua.hypot(
+  numlua.array({ 3, 5 }), numlua.array({ 4, 12 })):totable(), ", "))
+print("remainder: " .. table.concat(numlua.remainder(
+  numlua.array({ 5, -5 }), 2):totable(), ", "))
 print("unwrap:\n" .. numlua.unwrap(numlua.array({ 0, 3.5, 7 })):format())
 print("interp: " .. tostring(numlua.interp(2,
   numlua.array({ 1, 3, 5 }), numlua.array({ 10, 30, 50 })):item()))

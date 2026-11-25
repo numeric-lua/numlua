@@ -2250,6 +2250,162 @@ function M.put(t, indices, values, mode)
   return t
 end
 
+local INDEX_DTYPES = {
+  int64 = true, int32 = true, int16 = true, int8 = true, uint8 = true,
+}
+
+local function integer_vector(value, name, label)
+  if torch.is_tensor(value) then
+    if not INDEX_DTYPES[value:dtype()] then
+      error(string.format(
+        "numlua.%s: %s must have an integer dtype, got %s",
+        name, label, value:dtype()), 3)
+    end
+    return value:reshape(-1)
+  end
+  if type(value) == "table" then
+    local values = {}
+    for index = 1, #value do
+      local entry = value[index]
+      if type(entry) ~= "number" or entry % 1 ~= 0 then
+        error(string.format(
+          "numlua.%s: %s must contain integers", name, label), 3)
+      end
+      values[index] = entry
+    end
+    return torch.tensor(values, { dtype = "int64" })
+  end
+  error(string.format(
+    "numlua.%s: %s must be an integer tensor or table, got %s",
+    name, label, type(value)), 3)
+end
+
+local function index_dims(value, name)
+  if type(value) ~= "table" or #value == 0 then
+    error("numlua." .. name .. " expects a non-empty dims table", 3)
+  end
+  local dims, total = {}, 1
+  for index = 1, #value do
+    local dimension = value[index]
+    if type(dimension) ~= "number" or dimension % 1 ~= 0 or
+        dimension <= 0 then
+      error("numlua." .. name ..
+        ": dimensions must be positive integers", 3)
+    end
+    dims[index] = dimension
+    total = total * dimension
+  end
+  return dims, total
+end
+
+local function index_order(value, name)
+  value = value or "C"
+  if value ~= "C" and value ~= "F" then
+    error("numlua." .. name .. ": order must be 'C' or 'F'", 3)
+  end
+  return value
+end
+
+-- ravel_multi_index converts 1-based coordinate vectors into 1-based flat
+-- indices using C (default) or Fortran stride order.
+function M.ravel_multi_index(coords, dims, order)
+  if type(coords) ~= "table" or #coords == 0 then
+    error("numlua.ravel_multi_index expects a non-empty table of coordinate " ..
+      "vectors", 2)
+  end
+  dims = index_dims(dims, "ravel_multi_index")
+  order = index_order(order, "ravel_multi_index")
+  if #coords ~= #dims then
+    error("numlua.ravel_multi_index: coordinate count does not match dims", 2)
+  end
+  local vectors, count = {}, nil
+  for index = 1, #coords do
+    local vector = integer_vector(coords[index], "ravel_multi_index",
+      "coordinate " .. index)
+    if count == nil then
+      count = vector:numel()
+    elseif vector:numel() ~= count then
+      error("numlua.ravel_multi_index: coordinate vectors differ in length", 2)
+    end
+    vectors[index] = vector
+  end
+
+  local strides = {}
+  if order == "C" then
+    local stride = 1
+    for index = #dims, 1, -1 do
+      strides[index] = stride
+      stride = stride * dims[index]
+    end
+  else
+    local stride = 1
+    for index = 1, #dims do
+      strides[index] = stride
+      stride = stride * dims[index]
+    end
+  end
+
+  local flat = torch.zeros(count, { dtype = "int64" })
+  for index = 1, #dims do
+    local vector = vectors[index]
+    if vector:numel() > 0 then
+      local lowest, highest = vector:min():item(), vector:max():item()
+      if lowest < 1 or highest > dims[index] then
+        error(string.format(
+          "numlua.ravel_multi_index: coordinate %d is out of range for " ..
+          "dimension %d", lowest < 1 and lowest or highest, dims[index]), 2)
+      end
+    end
+    flat = flat:add(vector:sub(1):mul(strides[index]))
+  end
+  return flat:add(1)
+end
+
+-- unravel_index converts 1-based flat indices into one 1-based coordinate
+-- tensor per dimension, in C (default) or Fortran order.
+function M.unravel_index(indices, dims, order)
+  dims = index_dims(dims, "unravel_index")
+  order = index_order(order, "unravel_index")
+  local vector = integer_vector(indices, "unravel_index", "indices")
+  local total = 1
+  for index = 1, #dims do total = total * dims[index] end
+  if vector:numel() > 0 then
+    local lowest, highest = vector:min():item(), vector:max():item()
+    if lowest < 1 or highest > total then
+      error(string.format(
+        "numlua.unravel_index: index %d is out of range for %d elements",
+        lowest < 1 and lowest or highest, total), 2)
+    end
+  end
+
+  local flat = vector:to("int64"):sub(1)
+  local coordinates = {}
+  for index = 1, #dims do coordinates[index] = {} end
+  for position = 1, flat:numel() do
+    local remaining = flat:get(position)
+    local values = {}
+    if order == "C" then
+      for index = #dims, 1, -1 do
+        values[index] = remaining % dims[index] + 1
+        remaining = math.floor(remaining / dims[index])
+      end
+    else
+      for index = 1, #dims do
+        values[index] = remaining % dims[index] + 1
+        remaining = math.floor(remaining / dims[index])
+      end
+    end
+    for index = 1, #dims do
+      coordinates[index][position] = values[index]
+    end
+  end
+  local result = {}
+  for index = 1, #dims do
+    result[index] = torch.tensor(coordinates[index], { dtype = "int64" })
+  end
+  return (table.unpack or unpack)(result)
+end
+
 M.repeat_ = M["repeat"]
 
 return M

@@ -423,6 +423,17 @@ input's full shape; when `axis` is omitted, weights must match the full input
 shape. A zero sum of weights raises a `numlua.average:` error. With
 `returned = true`, the call also returns the sum-of-weights tensor.
 
+### `numlua.cov(m[, y[, rowvar[, ddof]]])`, `numlua.corrcoef`
+
+`cov` returns the sample covariance matrix with `ddof = 1` by default,
+following `np.cov`. Inputs may be 1-D or 2-D; `rowvar` defaults to `true`
+(rows are variables), and `rowvar = false` treats columns as variables.
+Optional `y` observations are stacked as additional variables. A one-variable
+input returns a 0-D tensor, and integer input promotes to `float64`.
+
+`corrcoef(m[, y[, rowvar]])` normalizes `cov` by the per-variable standard
+deviations and clips round-off to `[-1, 1]`.
+
 ### `numlua.prod(t[, axis[, keepdims]])`
 
 Multiplies elements over the selected axis, with the same `axis`/`keepdims`
@@ -523,6 +534,20 @@ and non-negative.
 numlua.unwrap(numlua.array({ 0, 3.5, 7 })) -- {0, -2.7832, -5.5664}
 ```
 
+### `numlua.polyval(coefficients, x)`
+
+Evaluates a polynomial with descending-degree coefficients using Horner's
+rule. `coefficients` is a 1-D tensor or table; `x` may be a number, tensor, or
+table and keeps its shape. Two `float32` operands produce `float32`; other
+combinations produce `float64`.
+
+### `numlua.polyfit(x, y, degree)`
+
+Least-squares polynomial fit of 1-D `x`/`y`, returning descending-degree
+`float64` coefficients. The implementation uses `vander` and the existing SVD
+`linalg.lstsq`; `degree` must be a non-negative integer smaller than the number
+of points.
+
 ### `numlua.argmax(t[, axis[, keepdims]])`
 
 Returns an `int64` tensor of 1-based indices. If `axis` is omitted, the result
@@ -552,6 +577,21 @@ Binary-search insertion positions in a 1-D sorted tensor. `side` is `"left"`
 ### `numlua.bincount(input[, weights[, minlength]])`
 
 Count non-negative integer values; delegates to luatorch's `bincount`.
+
+### `numlua.histogram(t[, options])`, `numlua.histogram_bin_edges(t[, options])`
+
+`histogram` returns counts and `float64` bin edges. Options are `bins` (a
+positive integer or an explicit edge table/tensor), `range` (a `{min, max}`
+pair for integer bins), `weights`, and `density`. Bins are left-closed and the
+last bin is closed on both ends; values outside the range are ignored.
+Explicit edges must be strictly increasing and cannot be combined with
+`range`. `histogram_bin_edges` returns only the edges and accepts `bins` and
+`range`.
+
+```lua
+numlua.histogram(numlua.array({ 0, 1, 2, 3, 4 }), { bins = 2 })
+-- counts {2, 3}, edges {0, 2, 4}
+```
 
 ### `numlua.percentile(t, q[, axis[, keepdims]])`
 
@@ -759,6 +799,9 @@ numbers produces a 0-D tensor.
 | `numlua.round(t)` | round half to even, following ATen |
 | `numlua.reciprocal(t)` | multiplicative inverse |
 | `numlua.isinf(t)` / `numlua.isfinite(t)` | boolean infinity/finiteness masks |
+| `numlua.isposinf(t)` / `numlua.isneginf(t)` | boolean signed-infinity masks |
+| `numlua.hypot(a, b)` | Euclidean norm of two operands |
+| `numlua.remainder(a, b)` / `numlua.mod(a, b)` | Python-style elementwise remainder |
 | `numlua.logical_not(t)` | boolean negation |
 | `numlua.logical_and(a, b)` / `numlua.logical_or(a, b)` / `numlua.logical_xor(a, b)` | boolean logic over truth-tested operands |
 
@@ -809,8 +852,11 @@ Unary operations split into four groups:
 - `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, and `reciprocal`
   produce `float32` for integer/bool input and preserve `float32`/`float64`
   floating input. NumPy would normally use `float64` for integral input;
-- `isinf` and `isfinite` always return `bool` tensors. The logical ufuncs
-  truth-test their operands and return `bool` tensors.
+- `isinf`, `isfinite`, `isposinf`, and `isneginf` always return `bool`
+  tensors. The logical ufuncs truth-test their operands and return `bool`
+  tensors.
+- `hypot` and `remainder` follow ATen's scalar promotion; integral inputs
+  normally become `float32`, while floating input keeps its dtype.
 
 For `maximum`/`minimum` with a scalar, numlua materializes a 0-D operand with
 the input's dtype for integral scalars (or `int64` for a `bool` input) and
@@ -956,6 +1002,8 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.apply_over_axes(func, t, axes[, ...])` | apply `func` over axes, restoring each reduced axis |
 | `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
 | `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
+| `numlua.ravel_multi_index(coords, dims[, order])` | 1-based coordinates to 1-based flat indices |
+| `numlua.unravel_index(indices, dims[, order])` | 1-based flat indices to coordinate tensors |
 
 `numlua.diff` prepend/append values may be numbers (filling one slice) or
 tensors/tables with the input's rank and matching non-axis dimensions.
@@ -963,6 +1011,11 @@ tensors/tables with the input's rank and matching non-axis dimensions.
 
 `numlua.broadcast_shapes(...)` accepts shape tables (including `{}` for a 0-D
 shape) and returns the broadcast result table without allocating a tensor.
+
+`numlua.ravel_multi_index(coords, dims[, order])` and
+`numlua.unravel_index(indices, dims[, order])` convert between 1-based
+coordinate vectors and 1-based flat indices. `order` is `"C"` (default) or
+`"F"`; coordinate and result tensors use `int64`.
 
 `numlua.gradient(t[, spacing[, axis]])` computes first-order edge differences
 and second-order central interior differences along every axis, or along a
@@ -1239,11 +1292,11 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
 `repeat_`, `flip`, `fliplr`,
 `flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
-`interp`, `average`, `nanargmin`, `nanargmax`, `nan_to_num`, `nancumsum`,
-`nancumprod`, `cumsum`, `cumprod`, `argsort`,
-`sort`,
-`unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, and
-`apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
+`interp`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`, `histogram`,
+`histogram_bin_edges`, `nanargmin`, `nanargmax`, `nan_to_num`, `nancumsum`,
+`nancumprod`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`,
+`argwhere`, `take`, `take_along_axis`, `ravel_multi_index`,
+`unravel_index`, and `apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
 unchanged. `reshape` and
 `ravel` also copy when their input is not contiguous, because ATen must
 materialize a C-order layout first. Tests cover
@@ -1825,6 +1878,14 @@ dtype, or backend constraints are forwarded as-is.
   (numbers fill one slice); `ediff1d` always flattens.
 - `broadcast_shapes(...)` returns a Lua shape table and does not allocate a
   tensor.
+- `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D input,
+  `rowvar = false`, and optional `y`; `corrcoef` clips round-off to `[-1, 1]`.
+- `polyval`/`polyfit` use descending-degree coefficients; `polyfit` uses the
+  SVD least-squares helper and returns `float64`.
+- `histogram` edges are `float64`; explicit edges must be strictly increasing,
+  and `range` cannot be combined with explicit edges.
+- `ravel_multi_index`/`unravel_index` use 1-based coordinates and flat indices,
+  support `"C"`/`"F"` order, and return `int64` tensors.
 - `nan_to_num` uses ATen's dtype-maximum defaults when replacement values are
   omitted; `nancumsum`/`nancumprod` skip NaN rather than returning NaN.
 - Elementwise ufuncs delegate dtype promotion to ATen rather than to NumPy's

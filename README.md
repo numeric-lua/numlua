@@ -275,11 +275,11 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `ravel_multi_index`, `unravel_index` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
-| Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not` |
-| Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num` |
-| Numerical | `trapezoid`, `trapz`, `interp` |
+| Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod` |
+| Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `cov`, `corrcoef` |
+| Numerical | `trapezoid`, `trapz`, `interp`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges` |
 | Predicates/selection | `where`, `select`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
@@ -311,19 +311,25 @@ one. `numlua.prod` delegates the product reduction to ATen, and `numlua.ptp`
 returns `max - min` over the same axis (bool input becomes `int64`).
 `numlua.average` computes an optional weighted mean along one axis and can
 return the sum of weights; `numlua.nanargmin`/`numlua.nanargmax` ignore NaNs
-and reject all-NaN slices.
+and reject all-NaN slices. `numlua.cov` computes sample covariance matrices and
+`numlua.corrcoef` normalizes them to correlations.
 `numlua.trapezoid` (with `numlua.trapz` as its historical alias) integrates
 along one axis with uniform `dx` or coordinate arrays; the default axis is the
 last one. `numlua.interp` performs linear interpolation over a strictly
 increasing 1-D grid and keeps the shape of its coordinate input. `numlua.unwrap`
 removes phase jumps along a 1-based axis with a configurable period and
-discontinuity threshold.
+discontinuity threshold. `numlua.polyval` evaluates descending-degree
+coefficients and `numlua.polyfit` performs an SVD least-squares fit.
+`numlua.histogram`/`numlua.histogram_bin_edges` provide counts, explicit or
+integer bin edges, weights, and density normalization.
 
 The elementwise surface also includes `numlua.isinf`, `numlua.isfinite`,
 `numlua.sign`, `numlua.floor`, `numlua.ceil`, `numlua.trunc`, `numlua.round`,
 `numlua.reciprocal`, `numlua.log1p`, and the logical ufuncs
 `numlua.logical_and`, `numlua.logical_or`, `numlua.logical_xor`, and
-`numlua.logical_not`.
+`numlua.logical_not`. The newer additions are `numlua.isposinf`,
+`numlua.isneginf`, `numlua.hypot`, `numlua.remainder`, and its `numlua.mod`
+alias.
 `numlua.nan_to_num` replaces NaN/infinity values, while `numlua.nancumsum` and
 `numlua.nancumprod` skip NaNs in cumulative reductions.
 
@@ -338,6 +344,7 @@ flattens both operands before forming the product, and `numlua.cross` computes
 `repeat_`, `flip`, `fliplr`,
 `flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
 `interp`, `cumsum`, `cumprod`, `argsort`,
+`ravel_multi_index`, `unravel_index`,
 `sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
 allocate independent storage (`rot90(t, 0)` returns the input); see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
@@ -611,9 +618,10 @@ broadcast/take/take_along_axis/put edge shapes, split/diagonal/triangular
 helpers, variance/NaN reductions, product/`ptp` reductions, logarithmic and
 Vandermonde/triangular constructors, dot/inner/outer/cross products,
 trapezoidal integration, linear interpolation, phase unwrapping, weighted
-averages, NaN-aware arg reductions, additional ufuncs and NaN helpers,
-difference edges, broadcast-shape arithmetic, quoted/bool text fields, meshgrid,
-gradients, closeness predicates,
+averages, covariance/correlation, polynomial evaluation/fitting, histograms,
+coordinate/flat-index conversion, NaN-aware arg reductions, additional ufuncs
+and NaN helpers, difference edges, broadcast-shape arithmetic, quoted/bool text
+fields, meshgrid, gradients, closeness predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
 fixtures, release
 metadata, and error paths. The pad tests compare
@@ -621,7 +629,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 437 tests.
+It currently contains 460 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -686,6 +694,15 @@ This is an MVP, not a complete NumPy replacement:
   (or be numbers, which fill one slice); `ediff1d` always flattens;
 - `broadcast_shapes(...)` returns a Lua shape table and does not allocate a
   tensor;
+- `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D inputs,
+  `rowvar = false`, and optional `y` observations; `corrcoef` uses unit sample
+  covariance and clips round-off to `[-1, 1]`;
+- `polyval`/`polyfit` use descending-degree coefficients; `polyfit` returns
+  `float64` and requires fewer degrees than data points;
+- `histogram` edges are `float64`; explicit edges must be strictly increasing,
+  and `range` cannot be combined with explicit edges;
+- `numlua.ravel_multi_index`/`numlua.unravel_index` use 1-based coordinates and flat indices,
+  support `"C"`/`"F"` order, and return `int64` tensors;
 - elementwise ufuncs delegate dtype promotion to ATen, not NumPy's promotion
   rules or `numlua.promote_types`; integral input to transcendental functions
   becomes `float32`, and integer division becomes `float32`;

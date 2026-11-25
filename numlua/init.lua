@@ -624,6 +624,78 @@ function numlua.average(t, axis, weights, returned)
   return value
 end
 
+local function covariance_matrix(value, name, rowvar)
+  local matrix
+  if torch.is_tensor(value) then
+    matrix = value
+  elseif type(value) == "table" then
+    local ok, converted = pcall(torch.tensor, value)
+    if not ok then
+      error("numlua." .. name .. ": input is not numeric: " ..
+        tostring(converted), 2)
+    end
+    matrix = converted
+  else
+    error("numlua." .. name .. " expects a tensor or table", 2)
+  end
+  if matrix:dim() == 1 then
+    matrix = matrix:reshape(1, matrix:numel())
+  elseif matrix:dim() == 2 then
+    if not rowvar then matrix = matrix:t() end
+  else
+    error("numlua." .. name .. " expects a 1-D or 2-D input", 2)
+  end
+  if not matrix:is_floating_point() then
+    matrix = matrix:to("float64")
+  end
+  return matrix
+end
+
+-- cov follows np.cov's rowvar/default ddof behavior (sample covariance with
+-- ddof = 1).  Optional y observations are stacked as additional variables.
+function numlua.cov(m, y, rowvar, ddof)
+  check_tensor(m, "cov")
+  if rowvar == nil then rowvar = true end
+  if type(rowvar) ~= "boolean" then
+    error("numlua.cov: rowvar must be a boolean or nil", 2)
+  end
+  ddof = ddof == nil and 1 or ddof
+  if type(ddof) ~= "number" or ddof ~= ddof or
+      ddof == math.huge or ddof == -math.huge then
+    error("numlua.cov: ddof must be a finite number", 2)
+  end
+  local data = covariance_matrix(m, "cov", rowvar)
+  if y ~= nil then
+    local extra = covariance_matrix(y, "cov", rowvar)
+    if extra:size(2) ~= data:size(2) then
+      error("numlua.cov: m and y must have the same number of observations", 2)
+    end
+    data = torch.cat({ data, extra }, 1)
+  end
+  local count = data:size(2)
+  if count == 0 then
+    error("numlua.cov needs at least one observation", 2)
+  end
+  local centered = data:sub(data:mean(2, true))
+  local result = centered:matmul(centered:t()):div(count - ddof)
+  if result:numel() == 1 then
+    return result:reshape({})
+  end
+  return result
+end
+
+-- corrcoef normalizes cov() by the per-variable standard deviations and
+-- clips round-off to [-1, 1].
+function numlua.corrcoef(m, y, rowvar)
+  local covariance = numlua.cov(m, y, rowvar, 1)
+  if covariance:dim() == 0 then
+    return covariance:div(covariance)
+  end
+  local deviation = numlua.diagonal(covariance):sqrt()
+  local denominator = deviation:outer(deviation)
+  return covariance:div(denominator):clamp(-1, 1)
+end
+
 -- prod follows the same axis/keepdims rules as sum.  luatorch/ATen performs
 -- the reduction, including the empty-reduction identity of 1.
 function numlua.prod(t, axis, keepdims)
@@ -961,6 +1033,149 @@ function numlua.bincount(input, weights, minlength)
   return torch.bincount(input, weights, minlength)
 end
 
+local function histogram_options(options, name, allowed)
+  if options == nil then return {} end
+  if type(options) ~= "table" then
+    error("numlua." .. name .. ": options must be a table or nil", 2)
+  end
+  for key in pairs(options) do
+    if not allowed[key] then
+      error("numlua." .. name .. ": unknown option '" .. tostring(key) .. "'", 2)
+    end
+  end
+  return options
+end
+
+local function histogram_edges(t, options, name)
+  local bins = options.bins == nil and 10 or options.bins
+  local range_value = options.range
+  if type(bins) == "number" then
+    if bins % 1 ~= 0 or bins <= 0 then
+      error("numlua." .. name .. ": bins must be a positive integer", 2)
+    end
+    local low, high
+    if range_value ~= nil then
+      if type(range_value) ~= "table" or #range_value ~= 2 then
+        error("numlua." .. name .. ": range must be a {min, max} pair", 2)
+      end
+      low, high = range_value[1], range_value[2]
+      if type(low) ~= "number" or type(high) ~= "number" or
+          low ~= low or high ~= high or low == math.huge or
+          high == math.huge or low == -math.huge or high == -math.huge then
+        error("numlua." .. name .. ": range endpoints must be finite numbers", 2)
+      end
+      if low > high then
+        error("numlua." .. name .. ": range minimum exceeds maximum", 2)
+      end
+    else
+      if t:numel() == 0 then
+        error("numlua." .. name .. ": cannot infer a range from empty input", 2)
+      end
+      low = t:min():item()
+      high = t:max():item()
+      if low ~= low or high ~= high or low == math.huge or
+          high == math.huge or low == -math.huge or high == -math.huge then
+        error("numlua." .. name .. ": input range must be finite", 2)
+      end
+    end
+    if low == high then
+      low, high = low - 0.5, high + 0.5
+    end
+    return torch.linspace(low, high, bins + 1, { dtype = "float64" })
+  end
+
+  if type(bins) ~= "table" and not torch.is_tensor(bins) then
+    error("numlua." .. name ..
+      ": bins must be a positive integer or an edge table/tensor", 2)
+  end
+  if range_value ~= nil then
+    error("numlua." .. name .. ": range cannot be combined with explicit bins", 2)
+  end
+  local edges
+  if torch.is_tensor(bins) then
+    edges = bins:to("float64")
+  else
+    local ok, converted = pcall(torch.tensor, bins, { dtype = "float64" })
+    if not ok then
+      error("numlua." .. name .. ": bin edges are not numeric: " ..
+        tostring(converted), 2)
+    end
+    edges = converted
+  end
+  if edges:dim() ~= 1 or edges:numel() < 2 then
+    error("numlua." .. name .. ": bins must be a 1-D sequence of at least " ..
+      "two edges", 2)
+  end
+  if not numlua.diff(edges):gt(0):all():item() then
+    error("numlua." .. name .. ": bin edges must be strictly increasing", 2)
+  end
+  return edges
+end
+
+-- histogram_bin_edges follows np.histogram_bin_edges for integer bin counts
+-- and explicit edge sequences.  Edges are returned as float64 tensors.
+function numlua.histogram_bin_edges(t, options)
+  check_tensor(t, "histogram_bin_edges")
+  options = histogram_options(options, "histogram_bin_edges",
+    { bins = true, range = true })
+  return histogram_edges(t, options, "histogram_bin_edges")
+end
+
+-- histogram returns counts plus bin edges.  `weights`, `density`, `bins`, and
+-- `range` are accepted as options; counts use bincount, and density divides by
+-- the total weight and bin widths.
+function numlua.histogram(t, options)
+  check_tensor(t, "histogram")
+  options = histogram_options(options, "histogram",
+    { bins = true, range = true, weights = true, density = true })
+  if options.density ~= nil and type(options.density) ~= "boolean" then
+    error("numlua.histogram: density must be a boolean or nil", 2)
+  end
+  local edges = histogram_edges(t, options, "histogram")
+  local bins = edges:numel() - 1
+  local values = t:reshape(-1):to("float64")
+  local weights = nil
+  if options.weights ~= nil then
+    if torch.is_tensor(options.weights) then
+      weights = options.weights
+    elseif type(options.weights) == "table" then
+      local ok, converted = pcall(torch.tensor, options.weights)
+      if not ok then
+        error("numlua.histogram: weights are not numeric: " ..
+          tostring(converted), 2)
+      end
+      weights = converted
+    else
+      error("numlua.histogram: weights must be a tensor, table, or nil", 2)
+    end
+    weights = weights:reshape(-1):to("float64")
+    if weights:numel() ~= values:numel() then
+      error("numlua.histogram: weights must match the input size", 2)
+    end
+  end
+
+  local positions = numlua.searchsorted(edges, values, "right"):sub(2)
+  positions = positions:masked_fill(values:lt(edges:get(1)), bins)
+  positions = positions:masked_fill(values:ne(values), bins)
+  positions = positions:masked_fill(values:eq(edges:get(edges:numel())),
+    bins - 1)
+  local counts = numlua.bincount(positions, weights, bins)
+  if counts:numel() > bins then
+    counts = counts:narrow(1, 1, bins)
+  end
+  if options.density then
+    local total = weights ~= nil and weights:sum()
+      or torch.tensor(values:numel(), { dtype = "float64" })
+    if total:item() == 0 then
+      error("numlua.histogram: density requires a non-zero total weight", 2)
+    end
+    local widths = edges:narrow(1, 2, bins):sub(
+      edges:narrow(1, 1, bins))
+    counts = counts:to("float64"):div(total:mul(widths))
+  end
+  return counts, edges
+end
+
 -- trapezoid integrates along one axis with the trapezoidal rule, following
 -- np.trapezoid (formerly np.trapz).  `x` may be a 1-D coordinate vector for
 -- the selected axis or an array with the input's shape; when it is omitted,
@@ -1169,6 +1384,98 @@ function numlua.interp(x, xp, fp, left, right)
     right == nil and fp:get(count) or right)
   values = values:masked_fill(flat_x:ne(flat_x), 0 / 0)
   return values:reshape(original_shape)
+end
+
+local function polynomial_coefficients(value, name)
+  if torch.is_tensor(value) then
+    if value:dim() ~= 1 then
+      error("numlua." .. name .. " expects 1-D coefficients", 2)
+    end
+    return value
+  end
+  if type(value) == "table" then
+    local ok, converted = pcall(torch.tensor, value)
+    if not ok then
+      error("numlua." .. name .. ": coefficients are not numeric: " ..
+        tostring(converted), 2)
+    end
+    if converted:dim() ~= 1 then
+      error("numlua." .. name .. " expects 1-D coefficients", 2)
+    end
+    return converted
+  end
+  error("numlua." .. name ..
+    " expects a 1-D coefficient tensor or table, got " .. type(value), 2)
+end
+
+-- polyval evaluates a polynomial with coefficients in descending-degree order
+-- using Horner's rule.  The result follows NumPy-style floating promotion.
+function numlua.polyval(coefficients, x)
+  local p = polynomial_coefficients(coefficients, "polyval")
+  if p:numel() == 0 then
+    error("numlua.polyval expects at least one coefficient", 2)
+  end
+  local point
+  if torch.is_tensor(x) then
+    point = x
+  elseif type(x) == "table" then
+    local ok, converted = pcall(torch.tensor, x)
+    if not ok then
+      error("numlua.polyval: x is not numeric: " .. tostring(converted), 2)
+    end
+    point = converted
+  elseif type(x) == "number" then
+    point = torch.tensor(x)
+  else
+    error("numlua.polyval expects x to be a tensor, table, or number, got " ..
+      type(x), 2)
+  end
+
+  local dtype = (p:dtype() == "float32" and point:dtype() == "float32")
+    and "float32" or "float64"
+  p = p:to(dtype)
+  point = point:to(dtype)
+  local result = point:mul(0):add(p:get(1))
+  for index = 2, p:numel() do
+    result = result:mul(point):add(p:get(index))
+  end
+  return result
+end
+
+-- polyfit solves a least-squares polynomial fit and returns coefficients in
+-- descending-degree order.  It uses the existing Vandermonde and SVD least
+-- squares helpers, so no new solver lives here.
+function numlua.polyfit(x, y, degree)
+  local function vector(value)
+    if torch.is_tensor(value) then
+      if value:dim() ~= 1 then
+        error("numlua.polyfit expects 1-D x and y", 2)
+      end
+      return value:to("float64")
+    elseif type(value) == "table" then
+      local ok, converted = pcall(torch.tensor, value, { dtype = "float64" })
+      if not ok or converted:dim() ~= 1 then
+        error("numlua.polyfit expects numeric 1-D x and y", 2)
+      end
+      return converted
+    end
+    error("numlua.polyfit expects 1-D x and y tensors or tables", 2)
+  end
+
+  x = vector(x)
+  y = vector(y)
+  if x:numel() ~= y:numel() then
+    error("numlua.polyfit: x and y must have the same length", 2)
+  end
+  if type(degree) ~= "number" or degree % 1 ~= 0 or degree < 0 then
+    error("numlua.polyfit: degree must be a non-negative integer", 2)
+  end
+  if x:numel() <= degree then
+    error("numlua.polyfit: degree must be smaller than the number of points", 2)
+  end
+  local design = numlua.vander(x, degree + 1, true)
+  local ascending = linalg.lstsq(design, y)
+  return numlua.flip(ascending, 1)
 end
 
 function numlua.flatnonzero(t)

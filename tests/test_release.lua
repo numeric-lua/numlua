@@ -77,7 +77,12 @@ test("new public API and format support are documented", function()
       "numlua.round", "numlua.reciprocal", "numlua.log1p",
       "numlua.logical_and", "numlua.logical_or", "numlua.logical_xor",
       "numlua.logical_not", "numlua.broadcast_shapes", "numlua.ediff1d",
-      "numlua.average", "numlua.nanargmin", "numlua.nanargmax" }) do
+      "numlua.average", "numlua.nanargmin", "numlua.nanargmax",
+      "numlua.polyval", "numlua.polyfit", "numlua.cov", "numlua.corrcoef",
+      "numlua.histogram", "numlua.histogram_bin_edges",
+      "numlua.ravel_multi_index", "numlua.unravel_index",
+      "numlua.isposinf", "numlua.isneginf", "numlua.hypot",
+      "numlua.remainder", "numlua.mod" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -252,6 +257,21 @@ test("new public API and format support are documented", function()
       readme:find("numlua.nanargmin", 1, true) ~= nil and
       readme:find("numlua.nanargmax", 1, true) ~= nil,
     "README.md does not document average/nanarg")
+  assert_true(readme:find("numlua.polyval", 1, true) ~= nil and
+      readme:find("numlua.polyfit", 1, true) ~= nil and
+      readme:find("numlua.cov", 1, true) ~= nil and
+      readme:find("numlua.corrcoef", 1, true) ~= nil,
+    "README.md does not document polynomial/covariance helpers")
+  assert_true(readme:find("numlua.histogram", 1, true) ~= nil and
+      readme:find("numlua.histogram_bin_edges", 1, true) ~= nil,
+    "README.md does not document histogram helpers")
+  assert_true(readme:find("numlua.ravel_multi_index", 1, true) ~= nil and
+      readme:find("numlua.unravel_index", 1, true) ~= nil,
+    "README.md does not document index conversion helpers")
+  assert_true(readme:find("numlua.isposinf", 1, true) ~= nil and
+      readme:find("numlua.hypot", 1, true) ~= nil and
+      readme:find("numlua.remainder", 1, true) ~= nil,
+    "README.md does not document the new math ufuncs")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,
     "README.md does not document quote-aware comments")
   assert_true(readme:find("Bool tensors", 1, true) ~= nil,

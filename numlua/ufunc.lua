@@ -48,6 +48,7 @@ local BINARY_METHODS = {
   power = "pow",
   maximum = "maximum",
   minimum = "minimum",
+  remainder = "remainder",
 }
 
 local function binary(left, right, name)
@@ -102,6 +103,8 @@ local UNARY_METHODS = {
   reciprocal = "reciprocal",
   isinf = "isinf",
   isfinite = "isfinite",
+  isposinf = "isposinf",
+  isneginf = "isneginf",
   logical_not = "logical_not",
 }
 
@@ -170,5 +173,22 @@ end
 M.logical_not = function(value)
   return logical_operand(value, "logical_not", "operand"):logical_not()
 end
+
+-- hypot has no scalar overload in luatorch, so materialize a missing tensor
+-- operand before delegating to ATen.
+M.hypot = function(left, right)
+  check_operand(left, "hypot", "left")
+  check_operand(right, "hypot", "right")
+  if torch.is_tensor(left) then
+    local other = torch.is_tensor(right) and right or scalar_tensor(right, left)
+    return left:hypot(other)
+  elseif torch.is_tensor(right) then
+    local other = scalar_tensor(left, right)
+    return other:hypot(right)
+  end
+  return torch.tensor(left):hypot(torch.tensor(right))
+end
+
+M.mod = M.remainder
 
 return M

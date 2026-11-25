@@ -14,16 +14,30 @@
   on all-NaN slices.
 - `loadtxt`/`genfromtxt` now keep configured comment markers inside quoted
   fields; comment stripping is quote-aware when `quotechar` is set.
+- `numlua.polyval` and `numlua.polyfit` add descending-degree polynomial
+  evaluation and SVD least-squares fitting.
+- `numlua.cov` and `numlua.corrcoef` add sample covariance/correlation
+  matrices with `rowvar`, optional `y`, and `ddof` support.
+- `numlua.histogram` and `numlua.histogram_bin_edges` add weighted/density
+  histograms with integer or explicit edges.
+- `numlua.ravel_multi_index` and `numlua.unravel_index` convert between
+  1-based coordinates and flat indices in C or Fortran order.
+- `numlua.isposinf`, `numlua.isneginf`, `numlua.hypot`, `numlua.remainder`,
+  and the `numlua.mod` alias extend the elementwise surface.
 
 ### Tests
 
-- 437 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 460 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
   forms and validation; `test_nan_arg.lua` covers NaN skipping, axes,
   all-NaN errors, and integer aliases; `test_quotechar.lua` adds quoted
-  comment-marker coverage.
+  comment-marker coverage; `test_polynomial.lua` covers polyval/polyfit and
+  validation; `test_cov.lua` covers covariance/correlation forms and errors;
+  `test_histogram.lua` covers edges, counts, weights, density, and errors;
+  `test_index_conversion.lua` covers C/F order and bounds; `test_ufunc_more.lua`
+  covers signed-infinity predicates, hypot, remainder, and mod.
 
 ## 0.26.0 — 2026-11-24
 
