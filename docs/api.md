@@ -574,6 +574,14 @@ Binary-search insertion positions in a 1-D sorted tensor. `side` is `"left"`
 (default) or `"right"`. Scalar values return a number; tables/tensors return an
 `int64` tensor.
 
+### `numlua.digitize(x, bins[, right])`
+
+Returns 1-based insertion positions for `x` relative to a sorted 1-D `bins`
+tensor, using left-side insertion by default and right-side when `right = true`.
+This is the facade's 1-based counterpart to `np.digitize` (NumPy returns
+0-based bin numbers). Scalars return a 0-D `int64` tensor; N-D inputs preserve
+their shape.
+
 ### `numlua.bincount(input[, weights[, minlength]])`
 
 Count non-negative integer values; delegates to luatorch's `bincount`.
@@ -989,19 +997,24 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"linear_ramp"`, `"maximum"`, `"mean"`, `"median"`, `"minimum"`, `"reflect"`, `"symmetric"`, and `"wrap"`; `value` is mode-specific (materialized) |
 | `numlua.diff(t[, n[, axis[, prepend[, append]]]])` | default axis is the last; optional edge values |
 | `numlua.ediff1d(t[, to_end[, to_begin]])` | flatten, difference, and add optional edges |
-| `numlua.gradient(t[, spacing[, axis]])` | first-order edge and central interior differences |
+| `numlua.gradient(t[, spacing[, axis[, options]]])` | edge/central differences; `options.edge_order` is 1 or 2 |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices; at least 1-D input |
 | `numlua.sort(t[, axis[, descending]])` | sorted values; last axis by default; at least 1-D input |
 | `numlua.unique(t[, options])` | sorted unique flattened values with optional index/inverse/counts |
 | `numlua.nonzero(t)` | one 1-based coordinate tensor per input axis |
 | `numlua.argwhere(t)` | `(N, ndim)` int64 matrix of 1-based non-zero coordinates |
-| `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; scalar and N-D index tensors |
+| `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; negative indices count from the end |
 | `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
 | `numlua.apply_along_axis(func, axis, t[, ...])` | call `func` on each 1-D slice along `axis` (materialized) |
 | `numlua.apply_over_axes(func, t, axes[, ...])` | apply `func` over axes, restoring each reduced axis |
 | `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
 | `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
+| `numlua.partition(t, kth[, axis])` | sorted values satisfying the kth contract |
+| `numlua.argpartition(t, kth[, axis])` | sorted indices satisfying the kth contract |
+| `numlua.indices(dimensions[, opts])` | 1-based coordinate grid |
+| `numlua.diag_indices(n[, ndim[, opts]])` | diagonal coordinate vectors |
+| `numlua.tril_indices(n[, k[, m[, opts]]])` / `triu_indices` | triangular coordinate vectors |
 | `numlua.ravel_multi_index(coords, dims[, order])` | 1-based coordinates to 1-based flat indices |
 | `numlua.unravel_index(indices, dims[, order])` | 1-based flat indices to coordinate tensors |
 
@@ -1017,14 +1030,31 @@ shape) and returns the broadcast result table without allocating a tensor.
 coordinate vectors and 1-based flat indices. `order` is `"C"` (default) or
 `"F"`; coordinate and result tensors use `int64`.
 
-`numlua.gradient(t[, spacing[, axis]])` computes first-order edge differences
+`numlua.partition(t, kth[, axis])` and `numlua.argpartition(t, kth[, axis])`
+return fully sorted values/indices; this satisfies `np.partition`'s kth-position
+contract, though the order of other elements differs. `kth` may be a number or
+a table of 1-based positions.
+
+`numlua.indices(dimensions[, opts])` returns a `(ndim, d1, ..., dn)` tensor of
+1-based coordinates. `numlua.diag_indices`, `numlua.tril_indices`, and
+`numlua.triu_indices` return 1-based coordinate tensors for diagonal and
+triangular positions; `opts.dtype` selects an integer dtype.
+
+`numlua.digitize(x, bins[, right])` returns 1-based insertion positions
+relative to a sorted 1-D `bins` tensor; `right = true` uses right-side
+insertion. This is `searchsorted`'s 1-based result and differs from NumPy's
+0-based `digitize`.
+
+`numlua.gradient(t[, spacing[, axis[, options]]])` computes first-order edge differences
 and second-order central interior differences along every axis, or along a
 1-based `axis` number/table. `spacing` may be a uniform number, a 1-D table or
 tensor of coordinates for one selected axis, or a table/tensor with one
 spacing per selected axis; coordinate tables may also be supplied per axis.
 Coordinate values must be 1-D, match the axis size, and not repeat a position;
-uniform spacings must be finite and non-zero. Floating input keeps its dtype,
-integer/bool input promotes to `float64`. With `axis = nil`, a 1-D input returns
+uniform spacings must be finite and non-zero. `options.edge_order` may be `1`
+(default) or `2`; second-order edges use three-point one-sided formulas and
+need at least three elements. Floating input keeps its dtype, integer/bool input
+promotes to `float64`. With `axis = nil`, a 1-D input returns
 one tensor and higher-rank input returns a table in axis order; an integer
 `axis` returns one tensor and an axis table returns a table in the requested
 order. Every selected axis needs at least two elements.
@@ -1046,11 +1076,12 @@ replaced by the index shape, a 0-D index removes that axis (a scalar result
 when no axis is given), and an N-D index contributes all of its dimensions.
 With no axis, the input is flattened in C order first and the result has
 exactly the index shape. Empty index tensors are allowed, including empty N-D
-shapes. Non-integer indices, index values outside `1 .. size`, and selecting
-with non-empty indices from an empty tensor or empty axis raise a
-`numlua.take:` error; range errors name the offending 1-based index, the axis
-or flattened input, and its size. 0-D and non-contiguous inputs are flattened
-in C order before selection. All selections are 1-based.
+shapes. Negative indices count from the end (`-1` is the last element), while
+`0`, values below `-size`, and values above `size` raise a `numlua.take:`
+error; range errors name the offending index, the axis or flattened input, and
+its size. Selecting with non-empty indices from an empty tensor or empty axis
+also raises. 0-D and non-contiguous inputs are flattened in C order before
+selection. All selections are 1-based.
 
 `numlua.argsort(t[, axis[, descending]])` returns 1-based indices along `axis`
 (the last axis by default). `descending` is a numlua extension; when provided it
@@ -1120,9 +1151,9 @@ the same rank as `t` and the usual integer index dtypes (`int64`, `int32`,
 omitted or `nil`, both operands are flattened in C order and `indices` must be
 1-D. Non-axis dimensions may match or be 1 in either operand, following
 NumPy's broadcasting rule, and the length along `axis` comes from `indices`; it
-need not equal the input's length. Indices are 1-based, so `0` and negative
-values are out of range and raise a `numlua.take_along_axis:` error rather than
-NumPy's negative-index wrapping. The result has the broadcast shape and owns
+need not equal the input's length. Indices are 1-based and negative values
+count from the end; `0` and values outside `-size .. size` raise a
+`numlua.take_along_axis:` error. The result has the broadcast shape and owns
 independent storage.
 
 ```lua
@@ -1292,11 +1323,12 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
 `repeat_`, `flip`, `fliplr`,
 `flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
-`interp`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`, `histogram`,
-`histogram_bin_edges`, `nanargmin`, `nanargmax`, `nan_to_num`, `nancumsum`,
-`nancumprod`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`,
-`argwhere`, `take`, `take_along_axis`, `ravel_multi_index`,
-`unravel_index`, and `apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
+`interp`, `digitize`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`,
+`histogram`, `histogram_bin_edges`, `nanargmin`, `nanargmax`, `nan_to_num`,
+`nancumsum`, `nancumprod`, `cumsum`, `cumprod`, `argsort`, `sort`,
+`partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`,
+`triu_indices`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`,
+`ravel_multi_index`, `unravel_index`, and `apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
 unchanged. `reshape` and
 `ravel` also copy when their input is not contiguous, because ATen must
 materialize a C-order layout first. Tests cover
@@ -1905,11 +1937,16 @@ dtype, or backend constraints are forwarded as-is.
   descr values are only aliases for the little-endian `<` spellings. `save`,
   `load`, `savez`, `savez_compressed`, and `loadz` accept open Lua file handles
   in addition to paths; `loadz` reads from the current handle position to EOF.
-- `take` follows NumPy's scalar/N-D index result shapes but uses 1-based
-  indices and rejects negative index values; NumPy resolves negatives relative
-  to the end of the axis.
-- `take_along_axis` uses 1-based indices and rejects negative index values;
-  NumPy's version resolves them relative to the end of the axis.
+- `take` follows NumPy's scalar/N-D index result shapes, uses 1-based indices,
+  and resolves negative indices relative to the end of the axis.
+- `take_along_axis` uses 1-based indices and resolves negative indices relative
+  to the end of the axis; `put` still rejects negative indices in `"raise"`
+  mode.
+- `partition`/`argpartition` return a fully sorted result, which satisfies the
+  kth-position contract but not NumPy's unspecified ordering of other elements.
+- `indices`, `diag_indices`, `tril_indices`, and `triu_indices` return 1-based
+  integer tensors; `indices` adds a leading axis of length `ndim`.
+- `digitize` returns 1-based insertion positions; NumPy returns 0-based bins.
 - `split` boundary tables are 1-based; `split` with an integer section count
   requires an even division, while `array_split` distributes the remainder.
   `hsplit`, `vsplit`, and `dsplit` require at least 1-D, 2-D, and 3-D input.
@@ -1942,10 +1979,10 @@ dtype, or backend constraints are forwarded as-is.
   promotion: each output keeps its own input dtype. `copy = false` returns
   expanded views instead of independent writable arrays, and the options table
   is a Lua extension rather than NumPy keyword arguments.
-- `gradient` implements NumPy's default `edge_order = 1` only; there is no
-  `edge_order = 2` option. Spacing may be uniform, a coordinate vector for one
-  selected axis, or one entry per selected axis. Integer/bool input promotes
-  to `float64`, and selected axes require at least two elements.
+- `gradient` defaults to `edge_order = 1` and accepts `{ edge_order = 2 }` as
+  its fourth argument; second-order edges need at least three elements. Spacing
+  may be uniform, a coordinate vector for one selected axis, or one entry per
+  selected axis. Integer/bool input promotes to `float64`.
 - Text I/O stores numeric and bool fields: no shape/dtype metadata, quoted
   string columns, or parsed header metadata. `quotechar` makes quoted fields
   atomic during reading, including embedded comment markers, but `savetxt`

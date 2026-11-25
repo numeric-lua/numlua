@@ -82,7 +82,9 @@ test("new public API and format support are documented", function()
       "numlua.histogram", "numlua.histogram_bin_edges",
       "numlua.ravel_multi_index", "numlua.unravel_index",
       "numlua.isposinf", "numlua.isneginf", "numlua.hypot",
-      "numlua.remainder", "numlua.mod" }) do
+      "numlua.remainder", "numlua.mod", "numlua.partition",
+      "numlua.argpartition", "numlua.indices", "numlua.diag_indices",
+      "numlua.tril_indices", "numlua.triu_indices", "numlua.digitize" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -272,6 +274,19 @@ test("new public API and format support are documented", function()
       readme:find("numlua.hypot", 1, true) ~= nil and
       readme:find("numlua.remainder", 1, true) ~= nil,
     "README.md does not document the new math ufuncs")
+  assert_true(readme:find("numlua.partition", 1, true) ~= nil and
+      readme:find("numlua.argpartition", 1, true) ~= nil,
+    "README.md does not document partition/argpartition")
+  assert_true(readme:find("numlua.indices", 1, true) ~= nil and
+      readme:find("numlua.tril_indices", 1, true) ~= nil and
+      readme:find("numlua.triu_indices", 1, true) ~= nil,
+    "README.md does not document index constructors")
+  assert_true(readme:find("numlua.digitize", 1, true) ~= nil,
+    "README.md does not document digitize")
+  assert_true(readme:find("edge_order = 2", 1, true) ~= nil,
+    "README.md does not document second-order gradient edges")
+  assert_true(readme:find("Negative indices count from the end", 1, true) ~= nil,
+    "README.md does not document negative take indices")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,
     "README.md does not document quote-aware comments")
   assert_true(readme:find("Bool tensors", 1, true) ~= nil,

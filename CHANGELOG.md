@@ -24,10 +24,19 @@
   1-based coordinates and flat indices in C or Fortran order.
 - `numlua.isposinf`, `numlua.isneginf`, `numlua.hypot`, `numlua.remainder`,
   and the `numlua.mod` alias extend the elementwise surface.
+- `numlua.partition` and `numlua.argpartition` add kth-position sorting helpers.
+- `numlua.indices`, `numlua.diag_indices`, `numlua.tril_indices`, and
+  `numlua.triu_indices` add 1-based index-grid constructors.
+- `numlua.gradient` accepts `{ edge_order = 2 }` for second-order edge
+  differences.
+- `numlua.take` and `numlua.take_along_axis` resolve negative indices from the
+  end of the axis.
+- `numlua.digitize` returns 1-based bin/insertion positions for a sorted bins
+  tensor.
 
 ### Tests
 
-- 460 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 477 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -37,7 +46,13 @@
   validation; `test_cov.lua` covers covariance/correlation forms and errors;
   `test_histogram.lua` covers edges, counts, weights, density, and errors;
   `test_index_conversion.lua` covers C/F order and bounds; `test_ufunc_more.lua`
-  covers signed-infinity predicates, hypot, remainder, and mod.
+  covers signed-infinity predicates, hypot, remainder, and mod;
+  `test_partition.lua` covers partition/argpartition contracts and errors;
+  `test_indices.lua` covers coordinate grids, diagonal/triangular indices, and
+  validation; `test_gradient_edge2.lua` covers uniform/non-uniform and 2-D
+  second-order edges; `test_negative_indices.lua` covers negative take and
+  take_along_axis indices; `test_digitize.lua` covers left/right bin positions,
+  shapes, and errors.
 
 ## 0.26.0 — 2026-11-24
 

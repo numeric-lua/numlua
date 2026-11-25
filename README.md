@@ -104,8 +104,9 @@ local left, right = table.unpack(numlua.hsplit(rows[1]:reshape(1, 2), 2))
 ```
 
 `numlua.take` uses the same 1-based indices and accepts scalar (0-D) or N-D
-integer index tensors. The index shape replaces the selected axis; a 0-D index
-removes it, matching `np.take`:
+integer index tensors. Negative indices count from the end, so `-1` selects the
+last element. The index shape replaces the selected axis; a 0-D index removes
+it, matching `np.take`:
 
 ```lua
 local grid = numlua.array({ { 10, 20, 30 }, { 40, 50, 60 } })
@@ -275,11 +276,11 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `ravel_multi_index`, `unravel_index` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `ravel_multi_index`, `unravel_index` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod` |
 | Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `cov`, `corrcoef` |
-| Numerical | `trapezoid`, `trapz`, `interp`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges` |
+| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges` |
 | Predicates/selection | `where`, `select`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
@@ -343,7 +344,8 @@ flattens both operands before forming the product, and `numlua.cross` computes
 `diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
 `repeat_`, `flip`, `fliplr`,
 `flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
-`interp`, `cumsum`, `cumprod`, `argsort`,
+`interp`, `cumsum`, `cumprod`, `argsort`, `partition`, `argpartition`,
+`indices`, `diag_indices`, `tril_indices`, `triu_indices`,
 `ravel_multi_index`, `unravel_index`,
 `sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
 allocate independent storage (`rot90(t, 0)` returns the input); see
@@ -352,14 +354,22 @@ allocate independent storage (`rot90(t, 0)` returns the input); see
 axis-specific flips); `numlua.diagonal` returns a writable view for non-empty
 numeric input, while `numlua.trace` sums that diagonal and returns a 0-D tensor
 for 2-D input or the batch shape for higher-rank input.
-`numlua.gradient` follows NumPy's first-order edge differences and central
-interior differences. It accepts uniform spacing, coordinate arrays, and
-per-axis spacing, and returns one tensor per requested axis (a single tensor
-for a numeric `axis` or for a 1-D input with no `axis`).
+`numlua.gradient` follows NumPy's edge and central interior differences. It
+accepts uniform spacing, coordinate arrays, and per-axis spacing, and returns
+one tensor per requested axis (a single tensor for a numeric `axis` or for a
+1-D input with no `axis`). Pass `{ edge_order = 2 }` as a fourth argument for
+second-order one-sided edges.
 `numlua.diff` accepts optional `prepend`/`append` values, and
 `numlua.ediff1d` flattens its input before differencing and adding optional
 begin/end values. `numlua.broadcast_shapes(...)` exposes the same right-aligned
 shape arithmetic as `broadcast_arrays` without allocating tensors.
+
+`numlua.partition` and `numlua.argpartition` return fully sorted values/indices
+that satisfy the `np.partition` kth-position contract. `numlua.indices` builds
+a 1-based coordinate grid, while `numlua.diag_indices`,
+`numlua.tril_indices`, and `numlua.triu_indices` return 1-based coordinate
+vectors for diagonal and triangular positions. `numlua.digitize` returns 1-based insertion/bin positions relative
+to a sorted bins tensor; NumPy's equivalent result is 0-based.
 
 `put` is the exception: it writes into its input tensor in place and returns
 it. `pad` supports `constant`, `edge`, `linear_ramp`, `maximum`, `mean`,
@@ -619,9 +629,11 @@ helpers, variance/NaN reductions, product/`ptp` reductions, logarithmic and
 Vandermonde/triangular constructors, dot/inner/outer/cross products,
 trapezoidal integration, linear interpolation, phase unwrapping, weighted
 averages, covariance/correlation, polynomial evaluation/fitting, histograms,
-coordinate/flat-index conversion, NaN-aware arg reductions, additional ufuncs
-and NaN helpers, difference edges, broadcast-shape arithmetic, quoted/bool text
-fields, meshgrid, gradients, closeness predicates,
+coordinate/flat-index conversion, partition/sorting contracts, index-grid
+constructors, second-order gradient edges, negative-index selection,
+digitize bins, NaN-aware arg reductions, additional ufuncs and NaN helpers,
+difference edges, broadcast-shape arithmetic, quoted/bool text fields, meshgrid,
+gradients, closeness predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
 fixtures, release
 metadata, and error paths. The pad tests compare
@@ -629,7 +641,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 460 tests.
+It currently contains 477 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -673,9 +685,9 @@ This is an MVP, not a complete NumPy replacement:
   be finite, and all-NaN slices return NaN without NumPy's runtime warning;
 - `meshgrid` requires 1-D inputs, keeps each input's dtype instead of applying
   NumPy result-type promotion, and `copy = false` returns expanded views;
-- `gradient` implements edge order 1 only (no `edge_order = 2`), promotes
-  integer/bool input to `float64`, and requires at least two elements on each
-  selected axis;
+- `gradient` defaults to edge order 1 and accepts `{ edge_order = 2 }` as its
+  fourth argument; second-order edges need at least three elements. Integer/bool
+  input promotes to `float64`;
 - `dot` follows NumPy's vector/matrix/batched shape rules but delegates the
   multiply to ATen, so mixed integer/floating operands follow ATen's matmul
   dtype checks rather than NumPy's promotion;

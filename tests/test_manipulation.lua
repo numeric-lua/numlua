@@ -282,9 +282,11 @@ test("take reports 1-based index range errors explicitly", function()
   assert_error(function()
     numlua.take(t, indices(7, { dtype = "int64" }))
   end, "index 7 is out of range for the flattened input with size 6")
+  assert_eq(numlua.take(t, indices(-1, { dtype = "int64" })):item(), 60)
+  assert_eq(numlua.take(t, indices(-6, { dtype = "int64" })):item(), 10)
   assert_error(function()
-    numlua.take(t, indices(-1, { dtype = "int64" }))
-  end, "index -1 is out of range for the flattened input with size 6")
+    numlua.take(t, indices(-7, { dtype = "int64" }))
+  end, "index -7 is out of range for the flattened input with size 6")
   assert_error(function()
     numlua.take(t, indices({ { 1, 4 } }, { dtype = "int32" }), 2)
   end, "index 4 is out of range for axis 2 with size 3")
@@ -402,10 +404,9 @@ test("take_along_axis validates rank, axes, shapes, and indices", function()
     numlua.take_along_axis(t,
       numlua.array({ { 0 } }, { dtype = "int64" }), 2)
   end, "out of range")
-  assert_error(function()
-    numlua.take_along_axis(t,
-      numlua.array({ { -1 } }, { dtype = "int64" }), 2)
-  end, "out of range")
+  assert_tensor(numlua.take_along_axis(t,
+    numlua.array({ { -1 } }, { dtype = "int64" }), 2),
+    { { 20 }, { 50 } })
   assert_error(function() numlua.take_along_axis(t, one) end, "must be 1-D")
   assert_error(function()
     numlua.take_along_axis(t,

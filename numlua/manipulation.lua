@@ -1579,21 +1579,44 @@ local function gradient_spacings(spacing, axes, t)
   return specs
 end
 
-local function gradient_axis(source, axis_value, spec)
+local function gradient_axis(source, axis_value, spec, edge_order)
   local size = source:size(axis_value)
-  if size < 2 then
+  if size < edge_order + 1 then
     error(string.format(
-      "numlua.gradient: axis %d needs at least 2 elements", axis_value), 3)
+      "numlua.gradient: axis %d needs at least %d elements for edge_order %d",
+      axis_value, edge_order + 1, edge_order), 3)
   end
   local function interval(index)
     if spec.kind == "uniform" then return spec.value end
     return spec.value:get(index + 1) - spec.value:get(index)
   end
 
-  local first = source:narrow(axis_value, 2, 1):sub(
-    source:narrow(axis_value, 1, 1)):div(interval(1))
-  local last = source:narrow(axis_value, size, 1):sub(
-    source:narrow(axis_value, size - 1, 1)):div(interval(size - 1))
+  local first, last
+  if edge_order == 1 then
+    first = source:narrow(axis_value, 2, 1):sub(
+      source:narrow(axis_value, 1, 1)):div(interval(1))
+    last = source:narrow(axis_value, size, 1):sub(
+      source:narrow(axis_value, size - 1, 1)):div(interval(size - 1))
+  else
+    -- Three-point one-sided Lagrange derivative at each edge.
+    local h1, h2 = interval(1), interval(2)
+    local f0 = source:narrow(axis_value, 1, 1)
+    local f1 = source:narrow(axis_value, 2, 1)
+    local f2 = source:narrow(axis_value, 3, 1)
+    local c0 = -(2 * h1 + h2) / (h1 * (h1 + h2))
+    local c1 = (h1 + h2) / (h1 * h2)
+    local c2 = -h1 / (h2 * (h1 + h2))
+    first = f0:mul(c0):add(f1:mul(c1)):add(f2:mul(c2))
+
+    local g0 = source:narrow(axis_value, size - 2, 1)
+    local g1 = source:narrow(axis_value, size - 1, 1)
+    local g2 = source:narrow(axis_value, size, 1)
+    h1, h2 = interval(size - 2), interval(size - 1)
+    c0 = h2 / (h1 * (h1 + h2))
+    c1 = -(h1 + h2) / (h1 * h2)
+    c2 = (h1 + 2 * h2) / (h2 * (h1 + h2))
+    last = g0:mul(c0):add(g1:mul(c1)):add(g2:mul(c2))
+  end
   if size == 2 then
     return torch.cat({ first, last }, axis_value)
   end
@@ -1615,12 +1638,29 @@ local function gradient_axis(source, axis_value, spec)
   return torch.cat({ first, interior, last }, axis_value)
 end
 
--- gradient(t[, spacing[, axis]]) follows np.gradient's first-order edge
--- differences and central interior differences.  axis defaults to every axis
--- in order; a numeric axis returns one tensor, while a table of axes returns a
--- table in the requested order.
-function M.gradient(t, spacing, axis_value)
+-- gradient(t[, spacing[, axis[, options]]]) follows np.gradient's edge and
+-- central interior differences.  `options.edge_order` is 1 (default) or 2.
+-- axis defaults to every axis in order; a numeric axis returns one tensor,
+-- while a table of axes returns a table in the requested order.
+function M.gradient(t, spacing, axis_value, options)
   tensor(t, "gradient")
+  local edge_order = 1
+  if options ~= nil then
+    if type(options) ~= "table" then
+      error("numlua.gradient: options must be a table or nil", 2)
+    end
+    for key in pairs(options) do
+      if key ~= "edge_order" then
+        error("numlua.gradient: unknown option '" .. tostring(key) .. "'", 2)
+      end
+    end
+    if options.edge_order ~= nil then
+      if options.edge_order ~= 1 and options.edge_order ~= 2 then
+        error("numlua.gradient: edge_order must be 1 or 2", 2)
+      end
+      edge_order = options.edge_order
+    end
+  end
   local rank = t:dim()
   if rank == 0 then
     error("numlua.gradient expects at least a 1-D tensor", 2)
@@ -1656,7 +1696,8 @@ function M.gradient(t, spacing, axis_value)
   local source = t:is_floating_point() and t or t:to("float64")
   local results = {}
   for index = 1, #axes do
-    results[index] = gradient_axis(source, axes[index], specs[index])
+    results[index] = gradient_axis(source, axes[index], specs[index],
+      edge_order)
   end
   if multiple then return results end
   return results[1]
@@ -1702,6 +1743,49 @@ function M.sort(t, axis_value, descending)
   return (t:sort(dim, descending == true))
 end
 
+local function check_kth(kth, size, name)
+  local values = type(kth) == "table" and kth or { kth }
+  if #values == 0 then
+    error("numlua." .. name .. " expects at least one kth index", 2)
+  end
+  for index = 1, #values do
+    local value = values[index]
+    if type(value) ~= "number" or value % 1 ~= 0 or
+        value < 1 or value > size then
+      error(string.format(
+        "numlua.%s: kth %s is out of range for an axis of size %d",
+        name, tostring(value), size), 2)
+    end
+  end
+end
+
+-- partition returns the fully sorted values along the selected axis.  A full
+-- sort satisfies np.partition's contract (the kth position is in sorted order
+-- and smaller/larger values are on the correct sides) even though the
+-- unspecified order of the other elements differs.
+function M.partition(t, kth, axis_value)
+  tensor(t, "partition")
+  if t:dim() == 0 then
+    error("numlua.partition expects at least a 1-D tensor", 2)
+  end
+  local dim = axis_value == nil and t:dim()
+    or axis(axis_value, t:dim(), "partition")
+  check_kth(kth, t:size(dim), "partition")
+  return (t:sort(dim, false))
+end
+
+function M.argpartition(t, kth, axis_value)
+  tensor(t, "argpartition")
+  if t:dim() == 0 then
+    error("numlua.argpartition expects at least a 1-D tensor", 2)
+  end
+  local dim = axis_value == nil and t:dim()
+    or axis(axis_value, t:dim(), "argpartition")
+  check_kth(kth, t:size(dim), "argpartition")
+  local _, indices = t:sort(dim, false)
+  return indices
+end
+
 local TAKE_INDEX_DTYPES = {
   int64 = true,
   int32 = true,
@@ -1720,19 +1804,26 @@ local function check_take_indices(indices)
   end
 end
 
--- Validate 1-based index values before index_select so errors name the
--- facade's convention and the offending index instead of ATen's 0-based
--- message.
-local function check_take_range(indices, size, label)
-  if indices:numel() == 0 then return end
+-- Normalize 1-based and negative indices before index_select/gather so
+-- errors name the facade's convention and the offending index instead of
+-- ATen's 0-based message.
+local function normalize_take_indices(indices, size, label, name)
+  if indices:numel() == 0 then return indices end
   local lowest = indices:min():item()
   local highest = indices:max():item()
-  if lowest < 1 or highest > size then
-    local offending = lowest < 1 and lowest or highest
+  if lowest < -size or lowest == 0 or highest > size then
+    local offending = (lowest < -size or lowest == 0) and lowest or highest
     error(string.format(
-      "numlua.take: index %d is out of range for %s with size %d " ..
-      "(indices are 1-based)", offending, label, size), 3)
+      "numlua.%s: index %d is out of range for %s with size %d " ..
+      "(indices are 1-based; negative indices count from the end)",
+      name, offending, label, size), 3)
   end
+  if lowest < 0 then
+    local adjusted = indices:to("int64")
+    adjusted = adjusted:add(indices:lt(0):to("int64"):mul(size + 1))
+    return adjusted
+  end
+  return indices
 end
 
 -- NumPy's take() shape rule: indices replace the selected axis (or the whole
@@ -1765,7 +1856,8 @@ function M.take(t, indices, axis_value)
       error("numlua.take: cannot take from an empty tensor " ..
         "with non-empty indices", 2)
     end
-    check_take_range(flat_indices, t:numel(), "the flattened input")
+    flat_indices = normalize_take_indices(flat_indices, t:numel(),
+      "the flattened input", "take")
     local selected = t:reshape({ t:numel() }):index_select(1, flat_indices)
     return selected:reshape(take_shape(t:sizes(), index_shape, nil))
   end
@@ -1774,7 +1866,8 @@ function M.take(t, indices, axis_value)
     error("numlua.take: cannot take from empty axis " .. normalized ..
       " with non-empty indices", 2)
   end
-  check_take_range(flat_indices, t:size(normalized), "axis " .. normalized)
+  flat_indices = normalize_take_indices(flat_indices, t:size(normalized),
+    "axis " .. normalized, "take")
   local selected = t:index_select(normalized, flat_indices)
   return selected:reshape(take_shape(t:sizes(), index_shape, normalized))
 end
@@ -1794,19 +1887,6 @@ local function check_along_indices(indices)
   end
 end
 
--- Validate 1-based index values before gather so errors name the facade's
--- convention and the offending index instead of ATen's 0-based message.
-local function check_along_range(indices, size, label)
-  if indices:numel() == 0 then return end
-  local lowest = indices:min():item()
-  local highest = indices:max():item()
-  if lowest < 1 or highest > size then
-    local offending = lowest < 1 and lowest or highest
-    error(string.format(
-      "numlua.take_along_axis: index %d is out of range for %s with size %d " ..
-      "(indices are 1-based)", offending, label, size), 3)
-  end
-end
 
 function M.take_along_axis(t, indices, axis_value)
   tensor(t, "take_along_axis")
@@ -1818,7 +1898,8 @@ function M.take_along_axis(t, indices, axis_value)
       error("numlua.take_along_axis: when axis is omitted, indices must be " ..
         "1-D", 2)
     end
-    check_along_range(indices, t:numel(), "the flattened input")
+    indices = normalize_take_indices(indices, t:numel(),
+      "the flattened input", "take_along_axis")
     return t:reshape({ t:numel() }):index_select(1, indices)
   end
 
@@ -1857,7 +1938,8 @@ function M.take_along_axis(t, indices, axis_value)
     end
   end
 
-  check_along_range(indices, input_shape[dim], "axis " .. dim)
+  indices = normalize_take_indices(indices, input_shape[dim], "axis " .. dim,
+    "take_along_axis")
   local input = t:expand(input_target)
   local index_tensor = indices:expand(index_target)
   return input:gather(dim, index_tensor)
@@ -2253,6 +2335,115 @@ end
 local INDEX_DTYPES = {
   int64 = true, int32 = true, int16 = true, int8 = true, uint8 = true,
 }
+
+local function index_dtype(opts, name)
+  if opts == nil then return "int64" end
+  if type(opts) ~= "table" then
+    error("numlua." .. name .. ": options must be a table or nil", 2)
+  end
+  for key in pairs(opts) do
+    if key ~= "dtype" then
+      error("numlua." .. name .. ": unknown option '" .. tostring(key) .. "'", 2)
+    end
+  end
+  local dtype = opts.dtype == nil and "int64" or opts.dtype
+  if type(dtype) ~= "string" and type(dtype) ~= "number" then
+    error("numlua." .. name .. ": dtype must be an integer dtype", 2)
+  end
+  local ok, probe = pcall(torch.zeros, 0, { dtype = dtype })
+  if not ok or not INDEX_DTYPES[probe:dtype()] then
+    error("numlua." .. name .. ": dtype must be an integer dtype", 2)
+  end
+  return probe:dtype()
+end
+
+-- indices(dimensions[, opts]) returns a (ndim, d1, ..., dn) grid of 1-based
+-- coordinates, following np.indices with the facade's 1-based convention.
+function M.indices(dimensions, opts)
+  if type(dimensions) ~= "table" or #dimensions == 0 then
+    error("numlua.indices expects a non-empty dimensions table", 2)
+  end
+  local dims = {}
+  for index = 1, #dimensions do
+    local dimension = dimensions[index]
+    if type(dimension) ~= "number" or dimension % 1 ~= 0 or
+        dimension < 0 then
+      error("numlua.indices: dimensions must be non-negative integers", 2)
+    end
+    dims[index] = dimension
+  end
+  local dtype = index_dtype(opts, "indices")
+  local target = { 1 }
+  for index = 1, #dims do target[#target + 1] = dims[index] end
+  local parts = {}
+  for index = 1, #dims do
+    local shape = {}
+    for dimension = 1, #dims + 1 do shape[dimension] = 1 end
+    shape[index + 1] = dims[index]
+    local values = torch.arange(1, dims[index] + 1, { dtype = dtype })
+    parts[index] = values:reshape(shape):expand(target)
+  end
+  return torch.cat(parts, 1)
+end
+
+-- diag_indices(n[, ndim[, opts]]) returns ndim vectors 1..n.
+function M.diag_indices(n, ndim, opts)
+  if type(ndim) == "table" then opts, ndim = ndim, nil end
+  if type(n) ~= "number" or n % 1 ~= 0 or n < 0 then
+    error("numlua.diag_indices: n must be a non-negative integer", 2)
+  end
+  ndim = ndim == nil and 2 or ndim
+  if type(ndim) ~= "number" or ndim % 1 ~= 0 or ndim < 1 then
+    error("numlua.diag_indices: ndim must be a positive integer", 2)
+  end
+  local dtype = index_dtype(opts, "diag_indices")
+  local values = torch.arange(1, n + 1, { dtype = dtype })
+  local result = {}
+  for index = 1, ndim do result[index] = values:clone() end
+  return (table.unpack or unpack)(result)
+end
+
+local function triangular_indices(n, k, m, opts, upper, name)
+  if type(k) == "table" then opts, k = k, nil end
+  if type(m) == "table" then opts, m = m, nil end
+  if type(n) ~= "number" or n % 1 ~= 0 or n < 0 then
+    error("numlua." .. name .. ": n must be a non-negative integer", 2)
+  end
+  m = m == nil and n or m
+  if type(m) ~= "number" or m % 1 ~= 0 or m < 0 then
+    error("numlua." .. name .. ": m must be a non-negative integer", 2)
+  end
+  k = k == nil and 0 or k
+  if type(k) ~= "number" or k % 1 ~= 0 then
+    error("numlua." .. name .. ": k must be an integer", 2)
+  end
+  local dtype = index_dtype(opts, name)
+  local rows, columns = {}, {}
+  for row = 1, n do
+    for column = 1, m do
+      local keep
+      if upper then
+        keep = row <= column - k
+      else
+        keep = row >= column - k
+      end
+      if keep then
+        rows[#rows + 1] = row
+        columns[#columns + 1] = column
+      end
+    end
+  end
+  return torch.tensor(rows, { dtype = dtype }),
+    torch.tensor(columns, { dtype = dtype })
+end
+
+function M.tril_indices(n, k, m, opts)
+  return triangular_indices(n, k, m, opts, false, "tril_indices")
+end
+
+function M.triu_indices(n, k, m, opts)
+  return triangular_indices(n, k, m, opts, true, "triu_indices")
+end
 
 local function integer_vector(value, name, label)
   if torch.is_tensor(value) then

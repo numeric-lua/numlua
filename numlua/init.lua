@@ -1028,6 +1028,38 @@ function numlua.searchsorted(sorted, values, side)
   return torch.tensor(result, { dtype = "int64" })
 end
 
+-- digitize returns 1-based insertion/bin positions for x relative to a sorted
+-- 1-D bins tensor.  This is searchsorted's result, shifted from NumPy's
+-- 0-based convention to match the rest of the facade.
+function numlua.digitize(x, bins, right)
+  check_tensor(bins, "digitize")
+  if bins:dim() ~= 1 then
+    error("numlua.digitize expects a 1-D bins tensor", 2)
+  end
+  if right ~= nil and type(right) ~= "boolean" then
+    error("numlua.digitize: right must be a boolean or nil", 2)
+  end
+  local side = right and "right" or "left"
+  if type(x) == "number" then
+    return torch.tensor(numlua.searchsorted(bins, x, side),
+      { dtype = "int64" })
+  end
+  local values, shape
+  if torch.is_tensor(x) then
+    values, shape = x:reshape(-1), x:sizes()
+  elseif type(x) == "table" then
+    local ok, converted = pcall(torch.tensor, x)
+    if not ok then
+      error("numlua.digitize: x is not numeric: " .. tostring(converted), 2)
+    end
+    values, shape = converted:reshape(-1), converted:sizes()
+  else
+    error("numlua.digitize expects x to be a number, tensor, or table, got " ..
+      type(x), 2)
+  end
+  return numlua.searchsorted(bins, values, side):reshape(shape)
+end
+
 function numlua.bincount(input, weights, minlength)
   check_tensor(input, "bincount")
   return torch.bincount(input, weights, minlength)

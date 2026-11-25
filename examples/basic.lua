@@ -85,6 +85,10 @@ local gradient = numlua.gradient(numlua.array({ 1, 4, 9, 16 },
   { dtype = "float64" }))
 print("gradient: " .. table.concat(gradient:totable(), ", "))
 assert(gradient:get(1) == 3 and gradient:get(4) == 7)
+local edge2 = numlua.gradient(numlua.array({ 0, 1, 4, 9 },
+  { dtype = "float64" }), nil, nil, { edge_order = 2 })
+print("gradient edge_order=2: " .. table.concat(edge2:totable(), ", "))
+assert(edge2:get(1) == 0 and edge2:get(4) == 6)
 
 print("product reduction: " .. tostring(numlua.prod(a):item()))
 print("peak-to-peak: " .. tostring(numlua.ptp(a):item()))
@@ -203,6 +207,17 @@ assert(sorted:equal(numlua.array({ { 10, 20, 30 }, { 40, 50, 60 } })))
 
 print("sort values:\n" .. numlua.sort(matrix):format())
 assert(numlua.sort(matrix):equal(sorted))
+print("partition:\n" .. numlua.partition(matrix, 1, 2):format())
+assert(numlua.partition(matrix, 1, 2):equal(sorted))
+print("indices shape: " ..
+  table.concat(numlua.shape(numlua.indices({ 2, 3 })), " x "))
+local lower_rows, lower_columns = numlua.tril_indices(3)
+print("tril rows: " .. table.concat(lower_rows:totable(), ", ") ..
+  " columns: " .. table.concat(lower_columns:totable(), ", "))
+local negative_take = numlua.take(matrix,
+  numlua.array({ -1 }, { dtype = "int64" }))
+print("take last flat element: " .. tostring(negative_take:item()))
+assert(negative_take:item() == 50)
 
 local unique_values, unique_counts = numlua.unique(
   numlua.array({ 3, 1, 3, 2 }), { return_counts = true })
@@ -210,6 +225,8 @@ print("unique values:\n" .. unique_values:format())
 print("unique counts:\n" .. unique_counts:format())
 assert(unique_values:equal(numlua.array({ 1, 2, 3 })))
 
+print("digitize: " .. table.concat(numlua.digitize(
+  numlua.array({ 0, 2, 4, 6 }), numlua.array({ 1, 3, 5 })):totable(), ", "))
 local coordinates = numlua.argwhere(matrix:gt(25))
 print("argwhere above 25:\n" .. coordinates:format())
 assert(numlua.dtype(coordinates) == "int64")
