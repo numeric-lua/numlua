@@ -40,10 +40,16 @@
 - `numlua.piecewise` adds conditional callback/constant evaluation.
 - The `.npz` writers now emit ZIP64 archives automatically when classic
   entry-count, member-size, or offset fields overflow.
+- `numlua.searchsorted` accepts a 1-based `sorter` permutation.
+- `numlua.put_along_axis` adds per-slice in-place assignment, and
+  `numlua.delete` adds index removal.
+- `numlua.nanmedian` adds a NaN-aware median with axis/keepdims support.
+- `numlua.diag_indices_from`, `numlua.tril_indices_from`, and
+  `numlua.triu_indices_from` derive coordinate vectors from input shapes.
 
 ### Tests
 
-- 490 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 506 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned

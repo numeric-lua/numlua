@@ -108,6 +108,7 @@ local nan_values = numlua.array({ 1, 0 / 0, -2, 3 })
 print("nanargmin/nanargmax: " ..
   tostring(numlua.nanargmin(nan_values):item()) .. "/" ..
   tostring(numlua.nanargmax(nan_values):item()))
+print("nanmedian: " .. tostring(numlua.nanmedian(nan_values):item()))
 print("broadcast_shapes: " ..
   table.concat(numlua.broadcast_shapes({ 2, 1, 3 }, { 1, 4, 1 }), " x "))
 print("diff with edges: " .. table.concat(numlua.diff(
@@ -227,10 +228,21 @@ print("indices shape: " ..
 local lower_rows, lower_columns = numlua.tril_indices(3)
 print("tril rows: " .. table.concat(lower_rows:totable(), ", ") ..
   " columns: " .. table.concat(lower_columns:totable(), ", "))
+local from_rows, from_columns = numlua.tril_indices_from(matrix)
+print("tril_indices_from shape: " ..
+  tostring(from_rows:numel()) .. "/" .. tostring(from_columns:numel()))
 local negative_take = numlua.take(matrix,
   numlua.array({ -1 }, { dtype = "int64" }))
 print("take last flat element: " .. tostring(negative_take:item()))
 assert(negative_take:item() == 50)
+local written = numlua.array({ { 1, 2, 3 }, { 4, 5, 6 } })
+numlua.put_along_axis(written,
+  numlua.array({ { 1 }, { 3 } }, { dtype = "int64" }),
+  numlua.array({ { 10 }, { 60 } }), 2)
+print("put_along_axis:\n" .. written:format())
+print("delete: " .. table.concat(numlua.delete(
+  numlua.array({ { 1, 2, 3 }, { 4, 5, 6 } }), 2, 2):reshape(-1)
+  :totable(), ", "))
 
 local unique_values, unique_counts = numlua.unique(
   numlua.array({ 3, 1, 3, 2 }), { return_counts = true })
@@ -240,6 +252,9 @@ assert(unique_values:equal(numlua.array({ 1, 2, 3 })))
 
 print("digitize: " .. table.concat(numlua.digitize(
   numlua.array({ 0, 2, 4, 6 }), numlua.array({ 1, 3, 5 })):totable(), ", "))
+print("searchsorted with sorter: " .. table.concat(numlua.searchsorted(
+  numlua.array({ 3, 1, 2 }), numlua.array({ 1, 2 }), "left",
+  numlua.argsort(numlua.array({ 3, 1, 2 }))):totable(), ", "))
 local coordinates = numlua.argwhere(matrix:gt(25))
 print("argwhere above 25:\n" .. coordinates:format())
 assert(numlua.dtype(coordinates) == "int64")

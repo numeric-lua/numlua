@@ -85,6 +85,9 @@ test("new public API and format support are documented", function()
       "numlua.remainder", "numlua.mod", "numlua.partition",
       "numlua.argpartition", "numlua.indices", "numlua.diag_indices",
       "numlua.tril_indices", "numlua.triu_indices", "numlua.digitize",
+      "numlua.searchsorted", "numlua.put_along_axis", "numlua.delete",
+      "numlua.nanmedian", "numlua.diag_indices_from",
+      "numlua.tril_indices_from", "numlua.triu_indices_from",
       "numlua.vstack", "numlua.hstack", "numlua.dstack",
       "numlua.column_stack", "numlua.row_stack", "numlua.append",
       "numlua.rollaxis", "numlua.msort", "numlua.piecewise" }) do
@@ -300,6 +303,16 @@ test("new public API and format support are documented", function()
     "README.md does not document piecewise")
   assert_true(readme:find("switches to ZIP64", 1, true) ~= nil,
     "README.md does not document ZIP64 writing")
+  assert_true(readme:find("numlua.put_along_axis", 1, true) ~= nil and
+      readme:find("numlua.delete", 1, true) ~= nil,
+    "README.md does not document put_along_axis/delete")
+  assert_true(readme:find("numlua.nanmedian", 1, true) ~= nil,
+    "README.md does not document nanmedian")
+  assert_true(readme:find("numlua.diag_indices_from", 1, true) ~= nil and
+      readme:find("numlua.tril_indices_from", 1, true) ~= nil,
+    "README.md does not document indices_from helpers")
+  assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
+    "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,
     "README.md does not document quote-aware comments")
   assert_true(readme:find("Bool tensors", 1, true) ~= nil,

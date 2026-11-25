@@ -1027,6 +1027,86 @@ function numlua.median(t, axis, keepdims)
   return value
 end
 
+local function median_of_sorted(sorted)
+  local count = sorted:numel()
+  if count % 2 == 1 then
+    return sorted:get((count + 1) / 2)
+  end
+  return (sorted:get(count / 2) + sorted:get(count / 2 + 1)) / 2
+end
+
+-- nanmedian ignores NaNs and returns NaN for an all-NaN slice.  With an axis
+-- the reduced dimension may contain a different number of valid values per
+-- slice, so this path materializes and sorts each slice.
+function numlua.nanmedian(t, axis, keepdims)
+  check_tensor(t, "nanmedian")
+  check_axis(axis, "nanmedian")
+  check_keepdims(keepdims, "nanmedian")
+  local function delegated()
+    local result = numlua.median(t, axis, keepdims)
+    if type(result) == "number" then
+      local dtype = t:is_floating_point() and t:dtype() or "float32"
+      result = torch.tensor(result, { dtype = dtype })
+    end
+    if axis ~= nil and not keepdims and result:dim() == t:dim() and
+        result:size(axis) == 1 then
+      result = result:squeeze(axis)
+    end
+    return result
+  end
+  if not t:is_floating_point() then
+    return delegated()
+  end
+  local missing = t:ne(t)
+  if not missing:any():item() then
+    return delegated()
+  end
+
+  if axis == nil then
+    local flat = t:reshape(-1)
+    local valid = flat:masked_select(flat:eq(flat))
+    if valid:numel() == 0 then
+      return torch.tensor(0 / 0, { dtype = t:dtype() })
+    end
+    return torch.tensor(median_of_sorted(valid:sort()),
+      { dtype = t:dtype() })
+  end
+
+  local ndim = t:dim()
+  local dim = axis > 0 and axis or ndim + axis + 1
+  if dim < 1 or dim > ndim then
+    error(string.format(
+      "numlua.nanmedian: axis %d is out of range for a %d-D tensor",
+      axis, ndim), 2)
+  end
+  local moved = numlua.moveaxis(t, dim, ndim)
+  local size = moved:size(ndim)
+  if size == 0 then
+    error("numlua.nanmedian: cannot reduce an empty axis", 2)
+  end
+  local rows = 1
+  for index = 1, ndim - 1 do rows = rows * moved:size(index) end
+  local slices = moved:reshape(rows, size)
+  local values = {}
+  for row = 1, rows do
+    local slice = slices:select(1, row)
+    local valid = slice:masked_select(slice:eq(slice))
+    if valid:numel() == 0 then
+      values[row] = 0 / 0
+    else
+      values[row] = median_of_sorted(valid:sort())
+    end
+  end
+  local shape = {}
+  for index = 1, ndim - 1 do shape[index] = moved:size(index) end
+  if keepdims then shape[#shape + 1] = 1 end
+  local result = torch.tensor(values, { dtype = t:dtype() }):reshape(shape)
+  if keepdims then
+    result = numlua.moveaxis(result, result:dim(), dim)
+  end
+  return result
+end
+
 local function quantile_scalar(sorted, q, axis, keepdims)
   local n = axis == nil and sorted:numel() or sorted:size(axis)
   if n == 0 then error("numlua.quantile: empty input", 2) end
@@ -1091,7 +1171,11 @@ local function search_one(values, target, side)
   return low
 end
 
-function numlua.searchsorted(sorted, values, side)
+local SEARCH_INDEX_DTYPES = {
+  int64 = true, int32 = true, int16 = true, int8 = true, uint8 = true,
+}
+
+function numlua.searchsorted(sorted, values, side, sorter)
   check_tensor(sorted, "searchsorted")
   if sorted:dim() ~= 1 then
     error("numlua.searchsorted expects a 1-D sorted tensor", 2)
@@ -1099,6 +1183,37 @@ function numlua.searchsorted(sorted, values, side)
   side = side or "left"
   if side ~= "left" and side ~= "right" then
     error("numlua.searchsorted side must be 'left' or 'right'", 2)
+  end
+  if sorter ~= nil then
+    if type(sorter) == "table" then
+      for index = 1, #sorter do
+        local entry = sorter[index]
+        if type(entry) ~= "number" or entry % 1 ~= 0 then
+          error("numlua.searchsorted: sorter entries must be integers", 2)
+        end
+      end
+      local ok, converted = pcall(torch.tensor, sorter, { dtype = "int64" })
+      if not ok then
+        error("numlua.searchsorted: sorter is not numeric: " ..
+          tostring(converted), 2)
+      end
+      sorter = converted
+    end
+    if not torch.is_tensor(sorter) or not SEARCH_INDEX_DTYPES[sorter:dtype()] then
+      error("numlua.searchsorted expects sorter to be an integer tensor or " ..
+        "table", 2)
+    end
+    if sorter:dim() ~= 1 or sorter:numel() ~= sorted:numel() then
+      error("numlua.searchsorted: sorter must be 1-D and match sorted's " ..
+        "length", 2)
+    end
+    if sorter:numel() > 0 then
+      local lowest, highest = sorter:min():item(), sorter:max():item()
+      if lowest < 1 or highest > sorted:numel() then
+        error("numlua.searchsorted: sorter indices are out of range", 2)
+      end
+    end
+    sorted = sorted:index_select(1, sorter)
   end
   local haystack = sorted:totable()
   if type(values) == "number" then

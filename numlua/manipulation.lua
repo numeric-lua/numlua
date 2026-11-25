@@ -1901,17 +1901,70 @@ function M.take(t, indices, axis_value)
   return selected:reshape(take_shape(t:sizes(), index_shape, normalized))
 end
 
+local function delete_keep_positions(value, size, name)
+  local raw = {}
+  if torch.is_tensor(value) then
+    if not TAKE_INDEX_DTYPES[value:dtype()] then
+      error("numlua." .. name .. ": indices must have an integer dtype", 2)
+    end
+    raw = value:reshape(-1):totable()
+  elseif type(value) == "table" then
+    raw = value
+  elseif type(value) == "number" then
+    raw = { value }
+  else
+    error("numlua." .. name .. " expects indices as a number, table, or " ..
+      "integer tensor", 2)
+  end
+
+  local removed = {}
+  for index = 1, #raw do
+    local position = raw[index]
+    if type(position) ~= "number" or position % 1 ~= 0 then
+      error("numlua." .. name .. ": indices must be integers", 2)
+    end
+    if position < 0 then position = size + position + 1 end
+    if position < 1 or position > size then
+      error(string.format(
+        "numlua.%s: index %d is out of range for size %d",
+        name, raw[index], size), 2)
+    end
+    removed[position] = true
+  end
+
+  local keep = {}
+  for index = 1, size do
+    if not removed[index] then keep[#keep + 1] = index end
+  end
+  return torch.tensor(keep, { dtype = "int64" })
+end
+
+-- delete removes 1-based (or negative) indices, returning a new tensor.
+-- With no axis the input is flattened first, matching np.delete.
+function M.delete(t, obj, axis_value)
+  tensor(t, "delete")
+  if axis_value == nil then
+    local flat = t:reshape(-1)
+    local keep = delete_keep_positions(obj, flat:numel(), "delete")
+    return flat:index_select(1, keep)
+  end
+  local dim = axis(axis_value, t:dim(), "delete")
+  local keep = delete_keep_positions(obj, t:size(dim), "delete")
+  return t:index_select(dim, keep)
+end
+
 -- take_along_axis follows NumPy's shape rule: indices and input have the same
 -- rank, non-axis dimensions broadcast in either direction (1 against N), and
 -- the length along the axis comes from indices.  ATen's gather needs matching
 -- non-axis sizes, so numlua expands both operands to the broadcast shape.
-local function check_along_indices(indices)
+local function check_along_indices(indices, name)
+  name = name or "take_along_axis"
   if not torch.is_tensor(indices) then
-    error("numlua.take_along_axis: indices must be an integer Tensor", 3)
+    error("numlua." .. name .. ": indices must be an integer Tensor", 3)
   end
   local dtype = indices:dtype()
   if not TAKE_INDEX_DTYPES[dtype] then
-    error("numlua.take_along_axis: indices must be an integer Tensor, got " ..
+    error("numlua." .. name .. ": indices must be an integer Tensor, got " ..
       dtype, 3)
   end
 end
@@ -1972,6 +2025,89 @@ function M.take_along_axis(t, indices, axis_value)
   local input = t:expand(input_target)
   local index_tensor = indices:expand(index_target)
   return input:gather(dim, index_tensor)
+end
+
+-- put_along_axis writes values at per-slice index positions, mutating and
+-- returning the input like np.put_along_axis.  Values may be a matching tensor
+-- or a scalar/one-element tensor; non-axis input dimensions must match the
+-- indices or be 1 (broadcast).
+function M.put_along_axis(t, indices, values, axis_value)
+  tensor(t, "put_along_axis")
+  check_along_indices(indices, "put_along_axis")
+  local ndim = t:dim()
+  if indices:dim() ~= ndim then
+    error("numlua.put_along_axis: indices must have the same rank as the " ..
+      "input", 2)
+  end
+  local dim = axis(axis_value, ndim, "put_along_axis")
+  local index_shape = indices:sizes()
+  local target = {}
+  for index = 1, ndim do
+    if index == dim then
+      target[index] = index_shape[index]
+    else
+      local current, incoming = t:size(index), index_shape[index]
+      if current == incoming then
+        target[index] = current
+      elseif current == 1 then
+        target[index] = incoming
+      elseif incoming == 1 then
+        target[index] = current
+      else
+        error(string.format(
+          "numlua.put_along_axis: input size %d on dimension %d does not " ..
+          "match indices size %d", current, index, incoming), 2)
+      end
+    end
+  end
+  indices = normalize_take_indices(indices, t:size(dim), "axis " .. dim,
+    "put_along_axis")
+  indices = indices:expand(target)
+
+  local replacement
+  if torch.is_tensor(values) then
+    replacement = values
+  elseif type(values) == "table" then
+    local ok, converted = pcall(torch.tensor, values)
+    if not ok then
+      error("numlua.put_along_axis: values are not numeric: " ..
+        tostring(converted), 2)
+    end
+    replacement = converted
+  elseif type(values) == "number" then
+    replacement = torch.tensor(values)
+  else
+    error("numlua.put_along_axis expects values to be a tensor, table, or " ..
+      "number", 2)
+  end
+  local target_count = 1
+  for index = 1, ndim do target_count = target_count * target[index] end
+  local index_count = 1
+  for index = 1, ndim do index_count = index_count * index_shape[index] end
+  if replacement:numel() == 1 then
+    -- scalar, cycled by put
+  elseif replacement:numel() == index_count then
+    replacement = replacement:reshape(index_shape):expand(target):reshape(-1)
+  elseif replacement:numel() == target_count then
+    replacement = replacement:reshape(-1)
+  else
+    error("numlua.put_along_axis: values must be scalar or match the " ..
+      "indices or broadcast shape", 2)
+  end
+
+  local grids = M.indices(target)
+  local coordinates = {}
+  for index = 1, ndim do
+    local grid = grids:narrow(1, index, 1):squeeze(1):reshape(-1)
+    if index == dim then
+      grid = indices:reshape(-1)
+    elseif t:size(index) == 1 then
+      grid = torch.ones(grid:sizes(), { dtype = "int64" })
+    end
+    coordinates[index] = grid
+  end
+  local flat = M.ravel_multi_index(coordinates, t:sizes())
+  return M.put(t, flat, replacement)
 end
 
 -- Convert one callback result to a tensor and enforce NumPy's result-rank
@@ -2472,6 +2608,34 @@ end
 
 function M.triu_indices(n, k, m, opts)
   return triangular_indices(n, k, m, opts, true, "triu_indices")
+end
+
+function M.diag_indices_from(t)
+  tensor(t, "diag_indices_from")
+  if t:dim() < 2 then
+    error("numlua.diag_indices_from expects at least a 2-D tensor", 2)
+  end
+  local smallest = t:size(1)
+  for index = 2, t:dim() do
+    smallest = math.min(smallest, t:size(index))
+  end
+  return M.diag_indices(smallest, t:dim())
+end
+
+function M.tril_indices_from(t, k)
+  tensor(t, "tril_indices_from")
+  if t:dim() ~= 2 then
+    error("numlua.tril_indices_from expects a 2-D tensor", 2)
+  end
+  return M.tril_indices(t:size(1), k, t:size(2))
+end
+
+function M.triu_indices_from(t, k)
+  tensor(t, "triu_indices_from")
+  if t:dim() ~= 2 then
+    error("numlua.triu_indices_from expects a 2-D tensor", 2)
+  end
+  return M.triu_indices(t:size(1), k, t:size(2))
 end
 
 local function integer_vector(value, name, label)

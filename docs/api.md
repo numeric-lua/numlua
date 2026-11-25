@@ -474,6 +474,13 @@ the ordinary reduction aliases (no promotion for `nansum`/`nanprod`/`nanmin`/
 `nanmax`, `float64` for `nanmean`/`nanvar`/`nanstd`); floating input keeps its
 dtype.
 
+### `numlua.nanmedian(t[, axis[, keepdims]])`
+
+NaN-aware median. Ignores NaNs in each slice, returns NaN for an all-NaN slice,
+and follows the ordinary `median`/reduction shape rules. With an axis the
+reduced dimension is removed unless `keepdims` is true; integer input follows
+`median`'s dtype behavior, while floating input keeps its dtype.
+
 ### `numlua.nan_to_num(t[, nan[, posinf[, neginf]]])`
 
 Replaces NaN and infinities with finite values. With no replacement arguments,
@@ -582,11 +589,13 @@ returns a tensor with the quantile axis first. With no axis the input is flatten
 is returned. With an axis the reduced axis is removed unless `keepdims` is
 true.
 
-### `numlua.searchsorted(sorted, values[, side])`
+### `numlua.searchsorted(sorted, values[, side[, sorter]])`
 
 Binary-search insertion positions in a 1-D sorted tensor. `side` is `"left"`
 (default) or `"right"`. Scalar values return a number; tables/tensors return an
-`int64` tensor.
+`int64` tensor. An optional 1-based `sorter` permutation is applied before the
+search; it must be a 1-D integer tensor/table with the same length and values
+in `1 .. numel(sorted)`.
 
 ### `numlua.digitize(x, bins[, right])`
 
@@ -1041,6 +1050,8 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.argwhere(t)` | `(N, ndim)` int64 matrix of 1-based non-zero coordinates |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; negative indices count from the end |
 | `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
+| `numlua.put_along_axis(t, indices, values, axis)` | per-slice in-place assignment |
+| `numlua.delete(t, obj[, axis])` | remove 1-based/negative indices (new tensor) |
 | `numlua.apply_along_axis(func, axis, t[, ...])` | call `func` on each 1-D slice along `axis` (materialized) |
 | `numlua.apply_over_axes(func, t, axes[, ...])` | apply `func` over axes, restoring each reduced axis |
 | `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
@@ -1050,6 +1061,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.indices(dimensions[, opts])` | 1-based coordinate grid |
 | `numlua.diag_indices(n[, ndim[, opts]])` | diagonal coordinate vectors |
 | `numlua.tril_indices(n[, k[, m[, opts]]])` / `triu_indices` | triangular coordinate vectors |
+| `numlua.diag_indices_from(t)` / `tril_indices_from` / `triu_indices_from` | shape-derived coordinate vectors |
 | `numlua.ravel_multi_index(coords, dims[, order])` | 1-based coordinates to 1-based flat indices |
 | `numlua.unravel_index(indices, dims[, order])` | 1-based flat indices to coordinate tensors |
 
@@ -1074,6 +1086,10 @@ a table of 1-based positions.
 1-based coordinates. `numlua.diag_indices`, `numlua.tril_indices`, and
 `numlua.triu_indices` return 1-based coordinate tensors for diagonal and
 triangular positions; `opts.dtype` selects an integer dtype.
+`numlua.diag_indices_from(t)`, `numlua.tril_indices_from(t[, k])`, and
+`numlua.triu_indices_from(t[, k])` derive those coordinates from the input
+shape; `diag_indices_from` uses the smallest dimension and works for N-D
+inputs, while the triangular variants require a 2-D input.
 
 `numlua.digitize(x, bins[, right])` returns 1-based insertion positions
 relative to a sorted 1-D `bins` tensor; `right = true` uses right-side
@@ -1297,6 +1313,18 @@ numlua.put(t, { 8 }, -1, "wrap")               -- writes index 2
 numlua.put(t, { 99 }, 0, "clip")               -- writes index 6
 ```
 
+`numlua.put_along_axis(t, indices, values, axis)` is the per-slice counterpart
+of `put`: `indices` and `t` must have the same rank, non-axis dimensions may
+match or be 1 in either operand, and the selected axis length comes from
+`indices`. Values may be scalar/one-element or match the indices/broadcast
+shape; they are cast to the input dtype. Negative indices count from the end,
+the input is mutated, and `t` is returned.
+
+`numlua.delete(t, obj[, axis])` returns a new tensor with the selected indices
+removed. With no axis the input is flattened first; otherwise slices are
+removed along the 1-based axis. `obj` may be an integer, a table/tensor of
+integers, or negative indices; slice objects are not supported.
+
 `pad_width` follows NumPy's common forms: a number pads every axis equally, a
 `{before, after}` pair pads every axis with that pair, and a table of per-axis
 pairs pads each axis separately. `"edge"` repeats the first and last values,
@@ -1364,18 +1392,20 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `interp`, `digitize`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`,
 `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`,
 `piecewise`, `msort`,
-`histogram`, `histogram_bin_edges`, `nanargmin`, `nanargmax`, `nan_to_num`,
-`nancumsum`, `nancumprod`, `cumsum`, `cumprod`, `argsort`, `sort`,
-`partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`,
-`triu_indices`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`,
-`ravel_multi_index`, `unravel_index`, and `apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
+`histogram`, `histogram_bin_edges`, `nanargmin`, `nanargmax`, `nanmedian`,
+`nan_to_num`, `nancumsum`, `nancumprod`, `cumsum`, `cumprod`, `argsort`,
+`sort`, `partition`, `argpartition`, `indices`, `diag_indices`,
+`tril_indices`, `triu_indices`, `diag_indices_from`, `tril_indices_from`,
+`triu_indices_from`, `unique`, `nonzero`, `argwhere`, `take`,
+`take_along_axis`, `delete`, `ravel_multi_index`, `unravel_index`, and
+`apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
 unchanged. `reshape` and
 `ravel` also copy when their input is not contiguous, because ATen must
 materialize a C-order layout first. Tests cover
 the view/copy boundary, including large arrays, so a regression cannot silently
 turn a view into a full-size copy or make an allocating helper alias its input.
-`take` and `take_along_axis` allocate independent results; `put` instead
-mutates its input in place and returns it.
+`take` and `take_along_axis` allocate independent results; `put` and
+`put_along_axis` instead mutate their input in place and return it.
 
 ## Dtype
 
@@ -1978,6 +2008,13 @@ dtype, or backend constraints are forwarded as-is.
 - `take_along_axis` uses 1-based indices and resolves negative indices relative
   to the end of the axis; `put` still rejects negative indices in `"raise"`
   mode.
+- `put_along_axis` resolves negative indices and broadcasts singleton non-axis
+  input dimensions, but values must be scalar or match the indices/broadcast
+  size. `delete` accepts integer/table indices, not slice objects.
+- `nanmedian` materializes each slice's valid values and follows `median`'s
+  integer-input dtype behavior; all-NaN slices return NaN.
+- `searchsorted` sorters are 1-based permutations of the sorted axis, and
+  `*_indices_from` derive 1-based coordinates from the input shape.
 - `partition`/`argpartition` return a fully sorted result, which satisfies the
   kth-position contract but not NumPy's unspecified ordering of other elements.
 - `indices`, `diag_indices`, `tril_indices`, and `triu_indices` return 1-based
