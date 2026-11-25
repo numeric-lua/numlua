@@ -46,10 +46,15 @@
 - `numlua.nanmedian` adds a NaN-aware median with axis/keepdims support.
 - `numlua.diag_indices_from`, `numlua.tril_indices_from`, and
   `numlua.triu_indices_from` derive coordinate vectors from input shapes.
+- `numlua.unique` accepts `{ axis = ... }` and deduplicates slices with
+  optional index/inverse/count results.
+- `numlua.insert` adds scalar-position insertion, `numlua.choose` adds
+  index-based choice selection, and `numlua.extract`/`numlua.trim_zeros` add
+  flattened selection and edge trimming.
 
 ### Tests
 
-- 506 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 518 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned

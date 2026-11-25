@@ -613,6 +613,109 @@ function numlua.sum(t, axis, keepdims)
   return t:sum(axis, keepdims)
 end
 
+local function insert_position(obj, size, name)
+  local value = obj
+  if torch.is_tensor(obj) then
+    if obj:numel() ~= 1 then
+      error("numlua." .. name .. ": obj must be a scalar position", 2)
+    end
+    value = obj:item()
+  elseif type(obj) == "table" then
+    if #obj ~= 1 then
+      error("numlua." .. name .. ": obj must be a scalar position", 2)
+    end
+    value = obj[1]
+  end
+  if type(value) ~= "number" or value % 1 ~= 0 then
+    error("numlua." .. name .. ": obj must be an integer position", 2)
+  end
+  if value < 0 then value = size + value + 1 end
+  if value < 1 or value > size + 1 then
+    error(string.format(
+      "numlua.%s: insert position %d is out of range for size %d",
+      name, value, size), 2)
+  end
+  return value
+end
+
+local function insert_values(value, dtype, shape, scalar)
+  if type(value) == "number" then
+    if scalar then
+      local fill = value
+      local target = dtype
+      if dtype == "bool" then fill, target = value ~= 0 and 1 or 0, "uint8" end
+      local result = torch.full(shape, fill, { dtype = target })
+      if dtype == "bool" then result = result:to("bool") end
+      return result
+    end
+    return torch.tensor({ value }, { dtype = dtype })
+  end
+  local result
+  if torch.is_tensor(value) then
+    result = value
+  elseif type(value) == "table" then
+    local ok, converted = pcall(torch.tensor, value)
+    if not ok then
+      error("numlua.insert: values are not numeric: " .. tostring(converted), 2)
+    end
+    result = converted
+  else
+    error("numlua.insert expects values to be a tensor, table, or number", 2)
+  end
+  if result:dtype() ~= dtype then result = result:to(dtype) end
+  return result
+end
+
+-- insert(arr, obj, values[, axis]) inserts at one 1-based position.  With no
+-- axis both operands are flattened; with an axis, values must be a scalar, a
+-- 1-D value for a 1-D input, or have the input rank with matching non-axis
+-- dimensions.
+function numlua.insert(arr, obj, values, axis)
+  check_tensor(arr, "insert")
+  if axis == nil then
+    local flat = arr:reshape(-1)
+    local position = insert_position(obj, flat:numel(), "insert")
+    local payload = insert_values(values, arr:dtype(), { 1 }, false)
+    payload = payload:reshape(-1)
+    return torch.cat({
+      flat:narrow(1, 1, position - 1),
+      payload,
+      flat:narrow(1, position, flat:numel() - position + 1),
+    }, 1)
+  end
+  check_axis(axis, "insert")
+  local ndim = arr:dim()
+  local dim = axis > 0 and axis or ndim + axis + 1
+  if dim < 1 or dim > ndim then
+    error(string.format(
+      "numlua.insert: axis %d is out of range for a %d-D tensor", axis, ndim), 2)
+  end
+  local size = arr:size(dim)
+  local position = insert_position(obj, size, "insert")
+  local payload
+  if type(values) == "number" then
+    local shape = arr:sizes()
+    shape[dim] = 1
+    payload = insert_values(values, arr:dtype(), shape, true)
+  else
+    payload = insert_values(values, arr:dtype(), nil, false)
+    if payload:dim() ~= ndim then
+      error("numlua.insert: values must match the input rank when axis is " ..
+        "given", 2)
+    end
+    for index = 1, ndim do
+      if index ~= dim and payload:size(index) ~= arr:size(index) then
+        error("numlua.insert: values shape does not match the input", 2)
+      end
+    end
+  end
+  return torch.cat({
+    arr:narrow(dim, 1, position - 1),
+    payload,
+    arr:narrow(dim, position, size - position + 1),
+  }, dim)
+end
+
 -- ATen refuses to infer an output dtype for mean() on integer/bool tensors.
 -- Follow NumPy's convention there: promote non-floating input to float64,
 -- then reduce.  Floating inputs keep their dtype.
@@ -1721,7 +1824,98 @@ local UNIQUE_OPTIONS = {
   return_index = true,
   return_inverse = true,
   return_counts = true,
+  axis = true,
 }
+
+local function unique_row_key(value)
+  if type(value) == "boolean" then return value and 1 or 0 end
+  return value
+end
+
+local function unique_row_less(left, right)
+  for index = 1, #left do
+    local a, b = unique_row_key(left[index]), unique_row_key(right[index])
+    if a ~= b then
+      if a ~= a then return false end
+      if b ~= b then return true end
+      return a < b
+    end
+  end
+  return false
+end
+
+local function unique_row_equal(left, right)
+  for index = 1, #left do
+    local a, b = left[index], right[index]
+    if a ~= b then
+      local a_nan = type(a) == "number" and a ~= a
+      local b_nan = type(b) == "number" and b ~= b
+      if not (a_nan and b_nan) then return false end
+    end
+  end
+  return true
+end
+
+local function unique_axis(t, dim, options)
+  local ndim = t:dim()
+  local count = t:size(dim)
+  local moved = numlua.moveaxis(t, dim, 1)
+  local row_size = 1
+  for index = 2, ndim do row_size = row_size * moved:size(index) end
+  local rows
+  if count == 0 then
+    rows = torch.empty({ 0, row_size }, { dtype = t:dtype() })
+  else
+    rows = moved:reshape(count, row_size)
+  end
+
+  local row_values = {}
+  for index = 1, count do row_values[index] = rows:select(1, index):totable() end
+  local order = {}
+  for index = 1, count do order[index] = index end
+  table.sort(order, function(left, right)
+    return unique_row_less(row_values[left], row_values[right])
+  end)
+
+  local reps, keys, slots, firsts, counts = {}, {}, {}, {}, {}
+  for _, original in ipairs(order) do
+    local key = row_values[original]
+    local slot
+    if #keys > 0 and unique_row_equal(keys[#keys], key) then
+      slot = #keys
+    else
+      keys[#keys + 1] = key
+      reps[#reps + 1] = original
+      slot = #keys
+      firsts[slot] = original
+      counts[slot] = 0
+    end
+    slots[original] = slot
+    counts[slot] = counts[slot] + 1
+    if original < firsts[slot] then firsts[slot] = original end
+  end
+
+  local selected = torch.tensor(reps, { dtype = "int64" })
+  local values_flat = rows:index_select(1, selected)
+  local shape = { #reps }
+  for index = 2, ndim do shape[#shape + 1] = moved:size(index) end
+  local values = numlua.moveaxis(values_flat:reshape(shape), 1, dim)
+
+  local inverse = {}
+  for index = 1, count do inverse[index] = slots[index] end
+  local result = { values }
+  if options.return_index then
+    result[#result + 1] = torch.tensor(firsts, { dtype = "int64" })
+  end
+  if options.return_inverse then
+    result[#result + 1] = torch.tensor(inverse, { dtype = "int64" })
+  end
+  if options.return_counts then
+    result[#result + 1] = torch.tensor(counts, { dtype = "int64" })
+  end
+  if #result == 1 then return values end
+  return unpack(result, 1, #result)
+end
 
 -- unique(t[, options]) flattens the input and returns the sorted unique
 -- values, optionally followed by first-occurrence indices, the inverse
@@ -1739,9 +1933,28 @@ function numlua.unique(t, options)
     end
   end
   for key in pairs(UNIQUE_OPTIONS) do
-    if options[key] ~= nil and type(options[key]) ~= "boolean" then
+    if key ~= "axis" and options[key] ~= nil and
+        type(options[key]) ~= "boolean" then
       error("numlua.unique: " .. key .. " must be a boolean or nil", 2)
     end
+  end
+  if options.axis ~= nil and (type(options.axis) ~= "number" or
+      options.axis % 1 ~= 0 or options.axis == 0) then
+    error("numlua.unique: axis must be a non-zero integer or nil", 2)
+  end
+  if options.axis ~= nil then
+    local ndim = t:dim()
+    if ndim == 0 then
+      error("numlua.unique: axis requires at least a 1-D tensor", 2)
+    end
+    local dim = options.axis > 0 and options.axis
+      or ndim + options.axis + 1
+    if dim < 1 or dim > ndim then
+      error(string.format(
+        "numlua.unique: axis %d is out of range for a %d-D tensor",
+        options.axis, ndim), 2)
+    end
+    return unique_axis(t, dim, options)
   end
 
   local want_index = options.return_index == true
@@ -1883,6 +2096,37 @@ function numlua.compress(condition, t, axis)
     { dtype = "int64" })
   local selected = positions:masked_select(condition)
   return t:index_select(normalized, selected)
+end
+
+-- extract is np.extract: flatten both operands and compress the input.
+function numlua.extract(condition, t)
+  check_tensor(t, "extract")
+  return numlua.compress(condition, t)
+end
+
+-- trim_zeros removes leading/trailing zero (or false) values from a 1-D
+-- tensor.  `trim` is "fb" (default), "bf", "f", or "b".
+function numlua.trim_zeros(filt, trim)
+  check_tensor(filt, "trim_zeros")
+  if filt:dim() ~= 1 then
+    error("numlua.trim_zeros expects a 1-D tensor", 2)
+  end
+  trim = trim or "fb"
+  if trim ~= "fb" and trim ~= "bf" and trim ~= "f" and trim ~= "b" then
+    error("numlua.trim_zeros: trim must be 'fb', 'bf', 'f', or 'b'", 2)
+  end
+  local values = filt:totable()
+  local function zero(value) return value == 0 or value == false end
+  local first, last = 1, #values
+  while first <= #values and zero(values[first]) do first = first + 1 end
+  while last >= 1 and zero(values[last]) do last = last - 1 end
+  if trim == "f" then
+    last = #values
+  elseif trim == "b" then
+    first = 1
+  end
+  if first > last then return filt:narrow(1, 1, 0) end
+  return filt:narrow(1, first, last - first + 1)
 end
 
 function numlua.argmax(t, axis, keepdims)
@@ -2044,6 +2288,28 @@ function numlua.select(condlist, choicelist, default)
     result = selected
   end
   return result
+end
+
+-- choose(a, choices) selects choices[a[i]] for an integer index tensor.
+function numlua.choose(a, choices)
+  check_tensor(a, "choose")
+  if not SEARCH_INDEX_DTYPES[a:dtype()] then
+    error("numlua.choose expects an integer index tensor", 2)
+  end
+  if type(choices) ~= "table" or #choices == 0 then
+    error("numlua.choose expects a non-empty choices table", 2)
+  end
+  if a:numel() > 0 then
+    local lowest, highest = a:min():item(), a:max():item()
+    if lowest < 0 or highest >= #choices then
+      error(string.format(
+        "numlua.choose: index %d is out of range for %d choices",
+        lowest < 0 and lowest or highest, #choices), 2)
+    end
+  end
+  local conditions = {}
+  for index = 1, #choices do conditions[index] = a:eq(index - 1) end
+  return numlua.select(conditions, choices, 0)
 end
 
 -- piecewise evaluates a function (or uses a constant) per condition and folds

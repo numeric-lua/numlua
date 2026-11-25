@@ -646,6 +646,15 @@ numlua.compress({ true, false }, t)          -- {10} (flat prefix)
 numlua.compress({ true, false, true }, t, 2) -- {{10, 30}, {40, 60}}
 ```
 
+`numlua.extract(condition, t)` is the flattened form: both operands are
+raveled in C order and a short condition selects a prefix, like `np.extract`.
+
+### `numlua.trim_zeros(t[, trim])`
+
+Removes leading and/or trailing zeros from a 1-D tensor. `trim` is `"fb"`
+(default), `"bf"`, `"f"`, or `"b"`; booleans use `false` as zero. The result is
+a view, and an all-zero input returns an empty 1-D tensor.
+
 ### `numlua.argmin(t[, axis[, keepdims]])`
 
 The minimum counterpart of `argmax`: returns an `int64` tensor of 1-based
@@ -710,6 +719,13 @@ local positive = values:gt(0)
 numlua.select({ negative, positive }, { -1, 1 }, 0)
 -- {-1, -1, 0, 1, 1}
 ```
+
+### `numlua.choose(indices, choices)`
+
+Selects `choices[indices[i]]` from a non-empty choices table using a 0-based
+integer index tensor. All indices must be in `0 .. #choices - 1`; negative or
+out-of-range values raise a `numlua.choose:` error. Choices and the index tensor
+broadcast through `select`.
 
 ### `numlua.piecewise(x, condlist, funclist[, ...])`
 
@@ -1045,13 +1061,15 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices; at least 1-D input |
 | `numlua.msort(t)` | sort along the first axis |
 | `numlua.sort(t[, axis[, descending]])` | sorted values; last axis by default; at least 1-D input |
-| `numlua.unique(t[, options])` | sorted unique flattened values with optional index/inverse/counts |
+| `numlua.unique(t[, options])` | sorted unique values, flat or along an axis, with optional index/inverse/counts |
 | `numlua.nonzero(t)` | one 1-based coordinate tensor per input axis |
 | `numlua.argwhere(t)` | `(N, ndim)` int64 matrix of 1-based non-zero coordinates |
 | `numlua.take(t, indices[, axis])` | flatten when `axis` is omitted; negative indices count from the end |
 | `numlua.take_along_axis(t, indices[, axis])` | per-slice 1-based selection; flattens when `axis` is omitted |
 | `numlua.put_along_axis(t, indices, values, axis)` | per-slice in-place assignment |
 | `numlua.delete(t, obj[, axis])` | remove 1-based/negative indices (new tensor) |
+| `numlua.insert(t, position, values[, axis])` | insert at one 1-based position |
+| `numlua.trim_zeros(t[, trim])` | trim leading/trailing zeros |
 | `numlua.apply_along_axis(func, axis, t[, ...])` | call `func` on each 1-D slice along `axis` (materialized) |
 | `numlua.apply_over_axes(func, t, axes[, ...])` | apply `func` over axes, restoring each reduced axis |
 | `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
@@ -1156,17 +1174,18 @@ numlua.sort(a, 2, true) -- {{3, 2, 1}, {6, 5, 4}}
 position and returns a view. `numlua.msort(t)` sorts along the first axis.
 
 `numlua.unique(t[, options])` flattens the input in C order and returns the
-sorted unique values, following `np.unique` without an `axis` argument. The
-input may be 0-D; the result is always 1-D. The optional `options` table
-accepts `return_index`, `return_inverse`, and `return_counts`, all booleans.
-Requested results are returned after the values in NumPy's fixed order:
-`values[, index[, inverse[, counts]]]`. `index` contains the 1-based flat
-position of the first occurrence of each value, `inverse` has the input's
-shape (a 1-D shape for 0-D input) and maps each position to its 1-based slot
-in `values`, and `counts` gives the multiplicity of each value. All index
-results are `int64`; `values` keeps the input dtype. Unknown options and
-non-boolean flags raise a `numlua.unique:` error. There is no `axis`,
-`equal_nan`, or unsorted mode.
+sorted unique values by default. The input may be 0-D; the default result is
+1-D. The optional `options` table accepts `return_index`, `return_inverse`, and
+`return_counts` booleans plus `axis`. With `axis`, slices along that 1-based
+axis are compared lexicographically and deduplicated; the values keep the input
+rank and the reduced axis has one entry per unique slice. `index` contains the
+1-based position along the axis of the first occurrence of each unique slice;
+`inverse` has length `size(axis)` and maps each original slice to its 1-based
+slot; `counts` gives each slice's multiplicity. Values keep the input dtype,
+index results are `int64`, and requested results follow NumPy's fixed order:
+`values[, index[, inverse[, counts]]]`. Unknown options, non-boolean flags, and
+invalid axes raise a `numlua.unique:` error. There is no `equal_nan` or
+unsorted mode.
 
 ```lua
 local a = numlua.array({ { 3, 1, 2 }, { 3, 2, 1 } })
@@ -1325,6 +1344,12 @@ removed. With no axis the input is flattened first; otherwise slices are
 removed along the 1-based axis. `obj` may be an integer, a table/tensor of
 integers, or negative indices; slice objects are not supported.
 
+`numlua.insert(t, position, values[, axis])` returns a new tensor with `values`
+inserted at one 1-based `position` (`size + 1` appends; negative positions
+count from the end). With no axis both operands are flattened. With an axis,
+`values` may be a scalar or a tensor matching the input rank and non-axis
+dimensions.
+
 `pad_width` follows NumPy's common forms: a number pads every axis equally, a
 `{before, after}` pair pads every axis with that pair, and a table of per-axis
 pairs pads each axis separately. `"edge"` repeats the first and last values,
@@ -1391,7 +1416,7 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
 `interp`, `digitize`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`,
 `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`,
-`piecewise`, `msort`,
+`insert`, `choose`, `extract`, `piecewise`, `msort`,
 `histogram`, `histogram_bin_edges`, `nanargmin`, `nanargmax`, `nanmedian`,
 `nan_to_num`, `nancumsum`, `nancumprod`, `cumsum`, `cumprod`, `argsort`,
 `sort`, `partition`, `argpartition`, `indices`, `diag_indices`,
@@ -1406,6 +1431,7 @@ the view/copy boundary, including large arrays, so a regression cannot silently
 turn a view into a full-size copy or make an allocating helper alias its input.
 `take` and `take_along_axis` allocate independent results; `put` and
 `put_along_axis` instead mutate their input in place and return it.
+`trim_zeros` returns a view created with `narrow`.
 
 ## Dtype
 
@@ -2010,7 +2036,10 @@ dtype, or backend constraints are forwarded as-is.
   mode.
 - `put_along_axis` resolves negative indices and broadcasts singleton non-axis
   input dimensions, but values must be scalar or match the indices/broadcast
-  size. `delete` accepts integer/table indices, not slice objects.
+  size. `delete` accepts integer/table indices, not slice objects; `insert`
+  supports one scalar 1-based position at a time.
+- `choose` uses 0-based integer indices; `extract` flattens both operands and
+  permits a shorter condition prefix; `trim_zeros` is 1-D only.
 - `nanmedian` materializes each slice's valid values and follows `median`'s
   integer-input dtype behavior; all-NaN slices return NaN.
 - `searchsorted` sorters are 1-based permutations of the sorted axis, and
@@ -2090,8 +2119,9 @@ dtype, or backend constraints are forwarded as-is.
 - `argsort` and `sort` accept a `descending` flag that is a numlua extension;
   NumPy has no descending argument. The flag must be a boolean or `nil`.
   `sort` defaults to the last axis and rejects 0-D input, like `argsort`.
-- `unique` always flattens and sorts; it has no `axis`, `equal_nan`, or unsorted
-  mode. Its first-occurrence and inverse indices are 1-based.
+- `unique` flattens by default or deduplicates slices with `{ axis = ... }`;
+  it has no `equal_nan` or unsorted mode. Its first-occurrence and inverse
+  indices are 1-based.
 - `nonzero` and `argwhere` return 1-based coordinates in C order and reject
   0-D input; use `flatnonzero` for flat indices or a 0-D scalar.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.

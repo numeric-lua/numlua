@@ -86,7 +86,8 @@ test("new public API and format support are documented", function()
       "numlua.argpartition", "numlua.indices", "numlua.diag_indices",
       "numlua.tril_indices", "numlua.triu_indices", "numlua.digitize",
       "numlua.searchsorted", "numlua.put_along_axis", "numlua.delete",
-      "numlua.nanmedian", "numlua.diag_indices_from",
+      "numlua.insert", "numlua.choose", "numlua.extract",
+      "numlua.trim_zeros", "numlua.nanmedian", "numlua.diag_indices_from",
       "numlua.tril_indices_from", "numlua.triu_indices_from",
       "numlua.vstack", "numlua.hstack", "numlua.dstack",
       "numlua.column_stack", "numlua.row_stack", "numlua.append",
@@ -311,6 +312,13 @@ test("new public API and format support are documented", function()
   assert_true(readme:find("numlua.diag_indices_from", 1, true) ~= nil and
       readme:find("numlua.tril_indices_from", 1, true) ~= nil,
     "README.md does not document indices_from helpers")
+  assert_true(readme:find("numlua.unique` also accepts `{ axis", 1, true) ~= nil,
+    "README.md does not document unique axis support")
+  assert_true(readme:find("numlua.insert", 1, true) ~= nil and
+      readme:find("numlua.choose", 1, true) ~= nil and
+      readme:find("numlua.extract", 1, true) ~= nil and
+      readme:find("numlua.trim_zeros", 1, true) ~= nil,
+    "README.md does not document insert/choose/extract/trim_zeros")
   assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
     "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,

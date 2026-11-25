@@ -194,6 +194,11 @@ local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })
 print("clipped:\n" .. numlua.clip(values, -1, 1):format())
 print("positive values selected:\n" ..
   numlua.where(values:gt(0), values, 0):format())
+print("choose: " .. table.concat(numlua.choose(
+  numlua.array({ 0, 1, 0 }, { dtype = "int64" }), { 5, 7 }):totable(), ", "))
+print("extract: " .. table.concat(numlua.extract(
+  numlua.array({ true, false, true }, { dtype = "bool" }), values):totable(),
+  ", "))
 print("piecewise:\n" .. numlua.piecewise(values, {
   values:lt(0), values:gt(0),
 }, { function(value) return numlua.negative(value) end,
@@ -243,12 +248,18 @@ print("put_along_axis:\n" .. written:format())
 print("delete: " .. table.concat(numlua.delete(
   numlua.array({ { 1, 2, 3 }, { 4, 5, 6 } }), 2, 2):reshape(-1)
   :totable(), ", "))
+print("insert: " .. table.concat(numlua.insert(
+  numlua.array({ 1, 2, 3 }), 2, 9):totable(), ", "))
+print("trim_zeros: " .. table.concat(numlua.trim_zeros(
+  numlua.array({ 0, 1, 2, 0 })):totable(), ", "))
 
 local unique_values, unique_counts = numlua.unique(
   numlua.array({ 3, 1, 3, 2 }), { return_counts = true })
 print("unique values:\n" .. unique_values:format())
 print("unique counts:\n" .. unique_counts:format())
 assert(unique_values:equal(numlua.array({ 1, 2, 3 })))
+print("unique axis 1:\n" .. numlua.unique(
+  numlua.array({ { 1, 2 }, { 1, 2 }, { 3, 4 } }), { axis = 1 }):format())
 
 print("digitize: " .. table.concat(numlua.digitize(
   numlua.array({ 0, 2, 4, 6 }), numlua.array({ 1, 3, 5 })):totable(), ", "))

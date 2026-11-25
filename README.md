@@ -207,6 +207,10 @@ print(rows:format(), columns:format())      -- {1, 2}, {2, 3}
 print(numlua.argwhere(a:eq(1)):format())    -- {{1, 2}, {2, 3}}
 ```
 
+`numlua.unique` also accepts `{ axis = ... }` to deduplicate slices along one
+1-based axis, returning the same optional index/inverse/count arrays as the
+flat form.
+
 ## Requirements
 
 - LuaJIT 2.1 (the primary and tested target).
@@ -286,12 +290,12 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `rollaxis`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `msort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `put_along_axis`, `delete`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `diag_indices_from`, `tril_indices_from`, `triu_indices_from`, `ravel_multi_index`, `unravel_index` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `rollaxis`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `msort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `put_along_axis`, `delete`, `insert`, `trim_zeros`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `diag_indices_from`, `tril_indices_from`, `triu_indices_from`, `ravel_multi_index`, `unravel_index` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod` |
 | Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `nanmedian`, `cov`, `corrcoef` |
 | Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges` |
-| Predicates/selection | `where`, `select`, `piecewise`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
+| Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
@@ -403,7 +407,15 @@ with one entry per axis (each a number or pair), matching NumPy's
 `numlua.compress(condition, t[, axis])` now supports axis-aligned selection in
 addition to flattened selection. A short condition is used as a prefix and a
 longer one is an error, matching `np.compress`; numeric conditions are
-truth-tested, and axis conditions must be 1-D.
+truth-tested, and axis conditions must be 1-D. `numlua.extract` is the flattened
+convenience, and `numlua.trim_zeros` removes leading/trailing zeros from a 1-D
+input.
+
+`numlua.choose(indices, choices)` selects from a non-empty choices list using a
+0-based integer index tensor, while `numlua.insert(t, position, values[,
+axis])` inserts at one 1-based position (negative positions count from the
+end). `insert` flattens when no axis is given; with an axis, values must be a
+scalar or match the input rank and non-axis dimensions.
 
 `numlua` arrays are ordinary luatorch tensors, so luaplotlib can plot them
 directly through its tensor adapter. See `examples/plot.lua`.
@@ -654,9 +666,10 @@ averages, covariance/correlation, polynomial evaluation/fitting, histograms,
 coordinate/flat-index conversion, partition/sorting contracts, index-grid
 constructors, second-order gradient edges, negative-index selection,
 digitize bins, stacking/append and rollaxis helpers, piecewise selection,
-ZIP64 writing, NaN-aware median/arg reductions, put_along_axis/delete,
-shape-derived index helpers, searchsorted sorters, additional ufuncs and NaN
-helpers, difference edges, broadcast-shape arithmetic, quoted/bool text fields,
+ZIP64 writing, NaN-aware median/arg reductions, put_along_axis/delete/insert,
+axis-aware unique, choose/extract/trim_zeros, shape-derived index helpers,
+searchsorted sorters, additional ufuncs and NaN helpers, difference edges,
+broadcast-shape arithmetic, quoted/bool text fields,
 meshgrid, gradients, closeness predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
 fixtures, release
@@ -665,7 +678,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 506 tests.
+It currently contains 518 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -711,7 +724,10 @@ This is an MVP, not a complete NumPy replacement:
   integer-input dtype behavior;
 - `put_along_axis` broadcasts singleton non-axis input dimensions but requires
   values to be scalar or match the indices/broadcast size; `delete` accepts
-  integer indices/tables, not Python-style slice objects;
+  integer indices/tables, not Python-style slice objects; `insert` supports one
+  scalar 1-based position at a time;
+- `choose` uses 0-based integer indices; `extract` flattens both operands and
+  permits a shorter condition prefix; `trim_zeros` is 1-D only;
 - `searchsorted` sorters are 1-based and must be a permutation of the sorted
   axis; `*_indices_from` derive 1-based coordinates from the input shape;
 - `meshgrid` requires 1-D inputs, keeps each input's dtype instead of applying
@@ -756,8 +772,9 @@ This is an MVP, not a complete NumPy replacement:
   for those operations;
 - `sort` defaults to the last axis and accepts a numlua `descending` flag;
   0-D input is rejected, as in `argsort`;
-- `unique` always flattens and sorts; it has no `axis`, `equal_nan`, or unsorted
-  mode, and its first-occurrence/inverse indices are 1-based;
+- `unique` flattens by default or deduplicates slices with `{ axis = ... }`;
+  it has no `equal_nan` or unsorted mode, and its first-occurrence/inverse
+  indices are 1-based;
 - `nonzero` and `argwhere` use 1-based C-order coordinates and reject 0-D
   input; use `flatnonzero` for flat indices or a 0-D scalar;
 - `squeeze` delegates to luatorch; squeezing an axis whose size is not 1 leaves
