@@ -111,3 +111,26 @@ test("quotechar rejects malformed quotes and options", function()
   end, "unknown option")
   os.remove(file)
 end)
+
+test("quotechar protects comment markers inside quotes", function()
+  local file = path("comments.csv")
+  write_text(file, "\"1#2\",3 # trailing\n4,\"5#6\"\n# full comment\n")
+  local values = numlua.loadtxt(file, {
+    delimiter = ",",
+    quotechar = "\"",
+    comments = "#",
+    converters = {
+      [1] = function(field)
+        if field == "1#2" then return 1.5 end
+        return tonumber(field)
+      end,
+      [2] = function(field)
+        if field == "5#6" then return 2.5 end
+        return tonumber(field)
+      end,
+    },
+  })
+  assert_shape(values, { 2, 2 })
+  assert_tensor(values, { { 1.5, 3 }, { 4, 2.5 } })
+  os.remove(file)
+end)

@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `numlua.broadcast_shapes(...)` exposes right-aligned shape arithmetic as a
+  Lua-table helper without allocating a tensor.
+- `numlua.diff` accepts optional `prepend`/`append` values, and
+  `numlua.ediff1d` flattens, differences, and optionally adds begin/end values.
+- `numlua.average(t[, axis[, weights[, returned]]])` adds weighted means with
+  1-D or full-shape weights and an optional sum-of-weights result.
+- `numlua.nanargmin` and `numlua.nanargmax` ignore NaNs along an axis and raise
+  on all-NaN slices.
+- `loadtxt`/`genfromtxt` now keep configured comment markers inside quoted
+  fields; comment stripping is quote-aware when `quotechar` is set.
+
+### Tests
+
+- 437 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+  `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
+  validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
+  `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
+  forms and validation; `test_nan_arg.lua` covers NaN skipping, axes,
+  all-NaN errors, and integer aliases; `test_quotechar.lua` adds quoted
+  comment-marker coverage.
+
 ## 0.26.0 — 2026-11-24
 
 ### Added

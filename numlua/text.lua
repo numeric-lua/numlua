@@ -318,18 +318,45 @@ local function read_input(source, name)
   return data
 end
 
-local function strip_comments(line, markers)
-  local first = nil
-  for i = 1, #markers do
-    local index = line:find(markers[i], 1, true)
-    if index ~= nil and (first == nil or index < first) then
-      first = index
+local function strip_comments(line, markers, quotechar)
+  if quotechar == nil then
+    local first = nil
+    for i = 1, #markers do
+      local index = line:find(markers[i], 1, true)
+      if index ~= nil and (first == nil or index < first) then
+        first = index
+      end
+    end
+    if first == nil then
+      return line
+    end
+    return line:sub(1, first - 1)
+  end
+
+  local quoted = false
+  local position = 1
+  while position <= #line do
+    local char = line:sub(position, position)
+    if char == quotechar then
+      if quoted and line:sub(position + 1, position + 1) == quotechar then
+        position = position + 2
+      else
+        quoted = not quoted
+        position = position + 1
+      end
+    elseif not quoted then
+      for index = 1, #markers do
+        local marker = markers[index]
+        if line:sub(position, position + #marker - 1) == marker then
+          return line:sub(1, position - 1)
+        end
+      end
+      position = position + 1
+    else
+      position = position + 1
     end
   end
-  if first == nil then
-    return line
-  end
-  return line:sub(1, first - 1)
+  return line
 end
 
 local function split_fields(line, delimiter, quotechar, name)
@@ -633,7 +660,7 @@ function text.loadtxt(path, options)
       -- skiprows counts physical lines, including comments and blank lines,
       -- exactly like NumPy's skiprows.  max_rows below counts data rows only.
       if line_number > (skiprows or 0) then
-        local line = strip_comments(raw, markers)
+        local line = strip_comments(raw, markers, quotechar)
         if trim(line) ~= "" then
           local fields = split_fields(line, delimiter, quotechar, "loadtxt")
           if columns == nil then
@@ -960,7 +987,7 @@ function text.genfromtxt(path, options)
   local last_line = #lines - skip_footer
   for line_number = first_line, last_line do
     if max_rows == 0 then break end
-    local line = strip_comments(lines[line_number], markers)
+    local line = strip_comments(lines[line_number], markers, quotechar)
     if trim(line) ~= "" then
       local fields = split_fields(line, delimiter, quotechar, "genfromtxt")
       if columns == nil then

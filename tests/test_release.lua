@@ -76,7 +76,8 @@ test("new public API and format support are documented", function()
       "numlua.sign", "numlua.floor", "numlua.ceil", "numlua.trunc",
       "numlua.round", "numlua.reciprocal", "numlua.log1p",
       "numlua.logical_and", "numlua.logical_or", "numlua.logical_xor",
-      "numlua.logical_not" }) do
+      "numlua.logical_not", "numlua.broadcast_shapes", "numlua.ediff1d",
+      "numlua.average", "numlua.nanargmin", "numlua.nanargmax" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -244,6 +245,15 @@ test("new public API and format support are documented", function()
       readme:find("numlua.logical_and", 1, true) ~= nil and
       readme:find("numlua.round", 1, true) ~= nil,
     "README.md does not document the new elementwise ufuncs")
+  assert_true(readme:find("numlua.broadcast_shapes", 1, true) ~= nil and
+      readme:find("numlua.ediff1d", 1, true) ~= nil,
+    "README.md does not document broadcast_shapes/ediff1d")
+  assert_true(readme:find("numlua.average", 1, true) ~= nil and
+      readme:find("numlua.nanargmin", 1, true) ~= nil and
+      readme:find("numlua.nanargmax", 1, true) ~= nil,
+    "README.md does not document average/nanarg")
+  assert_true(readme:find("comment markers inside", 1, true) ~= nil,
+    "README.md does not document quote-aware comments")
   assert_true(readme:find("Bool tensors", 1, true) ~= nil,
     "README.md does not document bool text output")
   for _, option in ipairs({ "usecols", "ndmin", "header", "newline",

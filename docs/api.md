@@ -415,6 +415,14 @@ removed unless `keepdims` is true. `keepdims` must be a boolean when provided.
 Because ATen refuses to infer a dtype for integer/bool `mean`, numlua promotes
 non-floating input to `float64` first.
 
+### `numlua.average(t[, axis[, weights[, returned]]])`
+
+Weighted mean along a 1-based axis, following `np.average`. Without weights it
+matches `mean`. Weights may be 1-D and match the selected axis, or have the
+input's full shape; when `axis` is omitted, weights must match the full input
+shape. A zero sum of weights raises a `numlua.average:` error. With
+`returned = true`, the call also returns the sum-of-weights tensor.
+
 ### `numlua.prod(t[, axis[, keepdims]])`
 
 Multiplies elements over the selected axis, with the same `axis`/`keepdims`
@@ -580,6 +588,13 @@ numlua.argmin(t):item()     -- 3, the flat index of 2
 numlua.argmin(t, 1)         -- {2, 2}
 numlua.argmin(t, 2)         -- {1, 1}
 ```
+
+### `numlua.nanargmin(t[, axis[, keepdims]])`, `numlua.nanargmax`
+
+NaN-aware argmin/argmax. NaNs are ignored and an all-NaN slice raises a
+`numlua.nanargmin:`/`numlua.nanargmax:` error rather than returning an index.
+Results are `int64` 1-based indices with the same axis/`keepdims` rules as
+`argmin`/`argmax`; integer input follows the ordinary arg reductions.
 
 ## Predicates and selection
 
@@ -917,6 +932,7 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.hsplit` / `vsplit` / `dsplit` | NumPy column/row/depth splitters (views) |
 | `numlua.broadcast_to(t, shape)` | broadcast view; NumPy-compatible right alignment |
 | `numlua.broadcast_arrays(...)` | returns multiple broadcast views |
+| `numlua.broadcast_shapes(...)` | pure right-aligned shape arithmetic; returns a Lua table |
 | `numlua.tile(t, reps)` | repeat whole blocks (materialized); `reps` is a number or table |
 | `numlua.repeat_(t, repeats[, axis])` | repeat elements (materialized); `numlua["repeat"]` is the same function |
 | `numlua.flip(t, axis)` | reverse one axis or a table of axes (materialized) |
@@ -925,7 +941,8 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.rot90(t[, k[, axes]])` | quarter-turn rotation; `k` is reduced modulo 4 and `axes` is a pair of 1-based axes (materialized; `k = 0` returns the input) |
 | `numlua.roll(t, shift[, axis])` | cyclic shift; flattens when `axis` is omitted |
 | `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"linear_ramp"`, `"maximum"`, `"mean"`, `"median"`, `"minimum"`, `"reflect"`, `"symmetric"`, and `"wrap"`; `value` is mode-specific (materialized) |
-| `numlua.diff(t[, n[, axis]])` | default axis is the last |
+| `numlua.diff(t[, n[, axis[, prepend[, append]]]])` | default axis is the last; optional edge values |
+| `numlua.ediff1d(t[, to_end[, to_begin]])` | flatten, difference, and add optional edges |
 | `numlua.gradient(t[, spacing[, axis]])` | first-order edge and central interior differences |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices; at least 1-D input |
@@ -939,6 +956,13 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.apply_over_axes(func, t, axes[, ...])` | apply `func` over axes, restoring each reduced axis |
 | `numlua.put(t, indices, values[, mode])` | flat in-place writes; modes `"raise"`, `"wrap"`, `"clip"` |
 | `numlua.flatnonzero(t)` | 1-based flat indices of non-zero entries |
+
+`numlua.diff` prepend/append values may be numbers (filling one slice) or
+tensors/tables with the input's rank and matching non-axis dimensions.
+`numlua.ediff1d` always flattens its input in C order first.
+
+`numlua.broadcast_shapes(...)` accepts shape tables (including `{}` for a 0-D
+shape) and returns the broadcast result table without allocating a tensor.
 
 `numlua.gradient(t[, spacing[, axis]])` computes first-order edge differences
 and second-order central interior differences along every axis, or along a
@@ -1214,8 +1238,9 @@ contiguous `reshape`, and contiguous `ravel`.
 with `narrow`. These allocate independent storage: `resize`, `diag`,
 `diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
 `repeat_`, `flip`, `fliplr`,
-`flipud`, `rot90`, `roll`, `diff`, `gradient`, `unwrap`, `interp`,
-`nan_to_num`, `nancumsum`, `nancumprod`, `cumsum`, `cumprod`, `argsort`,
+`flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
+`interp`, `average`, `nanargmin`, `nanargmax`, `nan_to_num`, `nancumsum`,
+`nancumprod`, `cumsum`, `cumprod`, `argsort`,
 `sort`,
 `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, and
 `apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
@@ -1541,7 +1566,8 @@ data rows returns an empty 1-D tensor. Numeric fields accept decimal, scientific
 `numlua.loadtxt: unknown option ...` error instead of being ignored.
 
 With `quotechar` set to one character, a field beginning with that character is
-read atomically: delimiters and whitespace inside the quotes are preserved, and
+read atomically: delimiters, whitespace, and configured comment markers inside
+the quotes are preserved, and
 a doubled quote character represents one literal quote. The quotes are removed
 before the numeric parser or a configured converter sees the field. Unterminated
 quotes and extra characters after a closing quote raise a `numlua.loadtxt:`
@@ -1792,6 +1818,13 @@ dtype, or backend constraints are forwarded as-is.
 - `unwrap` takes `discont`, `axis`, and `period` positionally (NumPy exposes
   `discont`/`axis`/`period` as keywords), promotes integer input to `float64`,
   and returns independent storage.
+- `average` accepts no weights, 1-D weights along one axis, or full-shape
+  weights; a zero weighted sum raises an error.
+- `nanargmin`/`nanargmax` ignore NaNs and raise on all-NaN slices.
+- `diff` prepend/append values must match the input rank and non-axis shape
+  (numbers fill one slice); `ediff1d` always flattens.
+- `broadcast_shapes(...)` returns a Lua shape table and does not allocate a
+  tensor.
 - `nan_to_num` uses ATen's dtype-maximum defaults when replacement values are
   omitted; `nancumsum`/`nancumprod` skip NaN rather than returning NaN.
 - Elementwise ufuncs delegate dtype promotion to ATen rather than to NumPy's
@@ -1854,7 +1887,8 @@ dtype, or backend constraints are forwarded as-is.
   to `float64`, and selected axes require at least two elements.
 - Text I/O stores numeric and bool fields: no shape/dtype metadata, quoted
   string columns, or parsed header metadata. `quotechar` makes quoted fields
-  atomic during reading, but `savetxt` never writes quotes. `loadtxt`/`savetxt`
+  atomic during reading, including embedded comment markers, but `savetxt`
+  never writes quotes. `loadtxt`/`savetxt`
   accept caller-owned file
   handles at their current position and never close them. `savetxt`
   header/footer text is written as comments, so `loadtxt` ignores it rather

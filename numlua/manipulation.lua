@@ -50,7 +50,7 @@ local function shape_list(value, name, required)
   return result
 end
 
-local function broadcast_shape(shapes)
+local function broadcast_shape(shapes, name)
   local dimensions = 0
   for _, shape in ipairs(shapes) do dimensions = math.max(dimensions, #shape) end
   local result = {}
@@ -69,13 +69,39 @@ local function broadcast_shape(shapes)
           result[target] = current
         else
           error(string.format(
-            "numlua.broadcast_arrays: incompatible shapes at dimension %d " ..
-            "(%d vs %d)", target, current, incoming), 3)
+            "numlua.%s: incompatible shapes at dimension %d (%d vs %d)",
+            name, target, current, incoming), 3)
         end
       end
     end
   end
   return result
+end
+
+-- Expose NumPy's broadcast_shapes() as pure shape arithmetic.  Each argument
+-- is a shape table (including {} for a 0-D shape); no tensor is allocated.
+function M.broadcast_shapes(...)
+  local shapes = {}
+  for index = 1, select("#", ...) do
+    local value = select(index, ...)
+    if type(value) ~= "table" then
+      error(string.format(
+        "numlua.broadcast_shapes: argument %d must be a shape table, got %s",
+        index, type(value)), 2)
+    end
+    local shape = {}
+    for position = 1, #value do
+      local dimension = value[position]
+      if type(dimension) ~= "number" or dimension % 1 ~= 0 or
+          dimension < 0 then
+        error("numlua.broadcast_shapes: shape entries must be " ..
+          "non-negative integers", 2)
+      end
+      shape[position] = dimension
+    end
+    shapes[index] = shape
+  end
+  return broadcast_shape(shapes, "broadcast_shapes")
 end
 
 function M.broadcast_to(t, shape)
@@ -94,7 +120,7 @@ function M.broadcast_arrays(...)
     tensor(inputs[index], "broadcast_arrays")
     shapes[index] = inputs[index]:sizes()
   end
-  local target = broadcast_shape(shapes)
+  local target = broadcast_shape(shapes, "broadcast_arrays")
   local result = {}
   for index = 1, #inputs do result[index] = inputs[index]:expand(target) end
   return (table.unpack or unpack)(result)
@@ -1310,14 +1336,76 @@ function M.pad(t, pad_width, mode, value)
   return result
 end
 
-function M.diff(t, n, axis_value)
+local function diff_edge(value, t, dim, name, label)
+  if value == nil then return nil end
+  local part
+  if type(value) == "number" then
+    local shape = t:sizes()
+    shape[dim] = 1
+    local dtype = t:dtype()
+    local fill = value
+    if dtype == "bool" then
+      fill = value ~= 0 and 1 or 0
+      dtype = "uint8"
+    end
+    part = torch.full(shape, fill, { dtype = dtype })
+    if t:dtype() == "bool" then part = part:to("bool") end
+  else
+    if torch.is_tensor(value) then
+      part = value
+    elseif type(value) == "table" then
+      local ok, converted = pcall(torch.tensor, value)
+      if not ok then
+        error(string.format(
+          "numlua.%s: %s must be numeric, got %s",
+          name, label, tostring(converted)), 2)
+      end
+      part = converted
+    else
+      error(string.format(
+        "numlua.%s: %s must be a tensor, table, number, or nil, got %s",
+        name, label, type(value)), 2)
+    end
+    if part:dim() == 0 then
+      local item = part:item()
+      if type(item) == "boolean" then item = item and 1 or 0 end
+      return diff_edge(item, t, dim, name, label)
+    end
+    if part:dim() ~= t:dim() then
+      error(string.format(
+        "numlua.%s: %s must have rank %d", name, label, t:dim()), 2)
+    end
+    for index = 1, t:dim() do
+      if index ~= dim and part:size(index) ~= t:size(index) then
+        error(string.format(
+          "numlua.%s: %s shape does not match the input on dimension %d",
+          name, label, index), 2)
+      end
+    end
+    if part:dtype() ~= t:dtype() then part = part:to(t:dtype()) end
+  end
+  return part
+end
+
+function M.diff(t, n, axis_value, prepend, append)
   tensor(t, "diff")
+  if t:dim() == 0 then
+    error("numlua.diff expects at least a 1-D tensor", 2)
+  end
   n = n or 1
   if type(n) ~= "number" or n % 1 ~= 0 or n < 0 then
     error("numlua.diff: n must be a non-negative integer", 2)
   end
   local dim = axis_value == nil and t:dim() or axis(axis_value, t:dim(), "diff")
-  local result = t
+  local parts = {}
+  local before = diff_edge(prepend, t, dim, "diff", "prepend")
+  local after = diff_edge(append, t, dim, "diff", "append")
+  if before ~= nil then parts[#parts + 1] = before end
+  parts[#parts + 1] = t
+  if after ~= nil then parts[#parts + 1] = after end
+  local source = #parts == 1 and t or torch.cat(parts, dim)
+
+  local result = source
   for _ = 1, n do
     local size = result:size(dim)
     if size <= 1 then
@@ -1328,6 +1416,57 @@ function M.diff(t, n, axis_value)
     end
   end
   return result
+end
+
+-- ediff1d flattens its input in C order, differences it, and optionally
+-- prepends/appends extra values, matching np.ediff1d.
+function M.ediff1d(ary, to_end, to_begin)
+  tensor(ary, "ediff1d")
+  local flat = ary:reshape(-1)
+  local result
+  if flat:size(1) <= 1 then
+    result = flat:narrow(1, 1, 0)
+  else
+    result = flat:narrow(1, 2, flat:size(1) - 1):sub(
+      flat:narrow(1, 1, flat:size(1) - 1))
+  end
+
+  local function edge(value, label)
+    if value == nil then return nil end
+    local part
+    if torch.is_tensor(value) then
+      part = value:reshape(-1)
+    elseif type(value) == "table" then
+      local ok, converted = pcall(torch.tensor, value)
+      if not ok then
+        error(string.format(
+          "numlua.ediff1d: %s must be numeric, got %s",
+          label, tostring(converted)), 2)
+      end
+      part = converted:reshape(-1)
+    elseif type(value) == "number" then
+      part = torch.tensor({ value }):reshape(-1)
+    else
+      error(string.format(
+        "numlua.ediff1d: %s must be a tensor, table, number, or nil, got %s",
+        label, type(value)), 2)
+    end
+    if result:dtype() == "bool" then
+      part = part:ne(0)
+    elseif part:dtype() ~= result:dtype() then
+      part = part:to(result:dtype())
+    end
+    return part
+  end
+
+  local parts = {}
+  local before = edge(to_begin, "to_begin")
+  local after = edge(to_end, "to_end")
+  if before ~= nil then parts[#parts + 1] = before end
+  parts[#parts + 1] = result
+  if after ~= nil then parts[#parts + 1] = after end
+  if #parts == 1 then return result end
+  return torch.cat(parts, 1)
 end
 
 local function gradient_coordinates(value, size, label)

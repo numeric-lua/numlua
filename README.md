@@ -275,10 +275,10 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not` |
-| Reductions | `sum`, `prod`, `mean`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num` |
+| Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num` |
 | Numerical | `trapezoid`, `trapz`, `interp` |
 | Predicates/selection | `where`, `select`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
@@ -309,6 +309,9 @@ and the other `nan*` reductions ignore NaNs, returning NaN for slices with no
 valid values; `nansum` treats NaN as zero and `numlua.nanprod` treats NaN as
 one. `numlua.prod` delegates the product reduction to ATen, and `numlua.ptp`
 returns `max - min` over the same axis (bool input becomes `int64`).
+`numlua.average` computes an optional weighted mean along one axis and can
+return the sum of weights; `numlua.nanargmin`/`numlua.nanargmax` ignore NaNs
+and reject all-NaN slices.
 `numlua.trapezoid` (with `numlua.trapz` as its historical alias) integrates
 along one axis with uniform `dx` or coordinate arrays; the default axis is the
 last one. `numlua.interp` performs linear interpolation over a strictly
@@ -333,8 +336,8 @@ flattens both operands before forming the product, and `numlua.cross` computes
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
 `diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
 `repeat_`, `flip`, `fliplr`,
-`flipud`, `rot90`, `roll`, `diff`, `gradient`, `unwrap`, `interp`,
-`cumsum`, `cumprod`, `argsort`,
+`flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
+`interp`, `cumsum`, `cumprod`, `argsort`,
 `sort`, `unique`, `nonzero`, `argwhere`, `take`, and `take_along_axis`
 allocate independent storage (`rot90(t, 0)` returns the input); see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
@@ -346,6 +349,10 @@ for 2-D input or the batch shape for higher-rank input.
 interior differences. It accepts uniform spacing, coordinate arrays, and
 per-axis spacing, and returns one tensor per requested axis (a single tensor
 for a numeric `axis` or for a 1-D input with no `axis`).
+`numlua.diff` accepts optional `prepend`/`append` values, and
+`numlua.ediff1d` flattens its input before differencing and adding optional
+begin/end values. `numlua.broadcast_shapes(...)` exposes the same right-aligned
+shape arithmetic as `broadcast_arrays` without allocating tensors.
 
 `put` is the exception: it writes into its input tensor in place and returns
 it. `pad` supports `constant`, `edge`, `linear_ramp`, `maximum`, `mean`,
@@ -538,9 +545,10 @@ same number of fields, and reports malformed rows or invalid numbers with the
 line number. A `converters` function (or a table of 1-based physical column
 numbers to functions) can transform raw fields before the numeric parser, which
 handles sentinels such as `"NA"`. Pass a single-character `quotechar` to treat
-quoted fields as atomic: delimiters and whitespace inside the quotes are kept,
-and a doubled quote character escapes itself. `genfromtxt` accepts the same
-option. `skiprows` skips physical lines (including comments and blanks),
+quoted fields as atomic: delimiters, whitespace, and comment markers inside the
+quotes are kept, and a doubled quote character escapes itself. `genfromtxt`
+accepts the same option. `skiprows` skips physical lines (including comments and
+blanks),
 while `max_rows` limits the number of data rows read after that skip; `max_rows`
 does not count blank or comment lines. `usecols` selects 1-based columns (with
 `-1` for the last column and a table preserving order), `unpack = true`
@@ -602,9 +610,10 @@ empty and pre-suffixed `.npz` members, layout view/copy semantics,
 broadcast/take/take_along_axis/put edge shapes, split/diagonal/triangular
 helpers, variance/NaN reductions, product/`ptp` reductions, logarithmic and
 Vandermonde/triangular constructors, dot/inner/outer/cross products,
-trapezoidal integration, linear interpolation, phase unwrapping, additional
-ufuncs and NaN helpers, quoted/bool text fields, meshgrid, gradients, closeness
-predicates,
+trapezoidal integration, linear interpolation, phase unwrapping, weighted
+averages, NaN-aware arg reductions, additional ufuncs and NaN helpers,
+difference edges, broadcast-shape arithmetic, quoted/bool text fields, meshgrid,
+gradients, closeness predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
 fixtures, release
 metadata, and error paths. The pad tests compare
@@ -612,7 +621,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 421 tests.
+It currently contains 437 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -671,6 +680,12 @@ This is an MVP, not a complete NumPy replacement:
 - `interp` requires a strictly increasing 1-D grid, returns `float64`, and
   takes `left`/`right` positionally; `unwrap` takes `discont`/`axis`/`period`
   positionally and promotes integer input to `float64`;
+- `average` accepts no weights, 1-D weights along one axis, or full-shape
+  weights; weighted sums that are zero raise an error;
+- `diff` prepend/append values must match the input rank and non-axis shape
+  (or be numbers, which fill one slice); `ediff1d` always flattens;
+- `broadcast_shapes(...)` returns a Lua shape table and does not allocate a
+  tensor;
 - elementwise ufuncs delegate dtype promotion to ATen, not NumPy's promotion
   rules or `numlua.promote_types`; integral input to transcendental functions
   becomes `float32`, and integer division becomes `float32`;

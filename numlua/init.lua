@@ -541,6 +541,89 @@ function numlua.mean(t, axis, keepdims)
   return t:mean(axis, keepdims)
 end
 
+-- average follows np.average: an optional axis, optional weights (1-D along
+-- the axis or the input's full shape), and a `returned` flag that also gives
+-- the sum of weights.  The arithmetic delegates to ATen.
+function numlua.average(t, axis, weights, returned)
+  check_tensor(t, "average")
+  axis = check_axis(axis, "average")
+  if returned ~= nil and type(returned) ~= "boolean" then
+    error("numlua.average: returned must be a boolean or nil", 2)
+  end
+  local dim
+  if axis ~= nil then
+    local ndim = t:dim()
+    dim = axis > 0 and axis or ndim + axis + 1
+    if dim < 1 or dim > ndim then
+      error(string.format(
+        "numlua.average: axis %d is out of range for a %d-D tensor",
+        axis, ndim), 2)
+    end
+  end
+
+  if weights == nil then
+    local value = numlua.mean(t, axis)
+    if not returned then return value end
+    local count
+    if t:dim() == 0 then
+      count = torch.tensor(1, { dtype = "float64" })
+    else
+      count = torch.ones(t:sizes(), { dtype = "float64" }):sum(axis)
+    end
+    return value, count
+  end
+
+  if not torch.is_tensor(weights) then
+    if type(weights) == "table" then
+      local ok, converted = pcall(torch.tensor, weights)
+      if not ok then
+        error("numlua.average: weights are not numeric: " ..
+          tostring(converted), 2)
+      end
+      weights = converted
+    else
+      error("numlua.average expects weights to be a tensor, table, or nil", 2)
+    end
+  end
+
+  if dim == nil then
+    for index = 1, t:dim() do
+      if weights:dim() ~= t:dim() or weights:size(index) ~= t:size(index) then
+        error("numlua.average: weights must match the input shape when " ..
+          "axis is omitted", 2)
+      end
+    end
+  else
+    if weights:dim() == 1 then
+      if weights:size(1) ~= t:size(dim) then
+        error(string.format(
+          "numlua.average: weights have %d elements but axis %d has size %d",
+          weights:size(1), dim, t:size(dim)), 2)
+      end
+      local shape = {}
+      for index = 1, t:dim() do shape[index] = 1 end
+      shape[dim] = t:size(dim)
+      weights = weights:reshape(shape):expand(t:sizes())
+    elseif weights:dim() == t:dim() then
+      for index = 1, t:dim() do
+        if weights:size(index) ~= t:size(index) then
+          error("numlua.average: weights shape does not match the input", 2)
+        end
+      end
+    else
+      error("numlua.average: weights must be 1-D or match the input rank", 2)
+    end
+  end
+
+  local denominator = weights:sum(dim)
+  if denominator:eq(0):any():item() then
+    error("numlua.average: sum of weights must not be zero", 2)
+  end
+  local value = t:mul(weights):sum(dim):div(denominator)
+  if returned then return value, denominator end
+  return value
+end
+
 -- prod follows the same axis/keepdims rules as sum.  luatorch/ATen performs
 -- the reduction, including the empty-reduction identity of 1.
 function numlua.prod(t, axis, keepdims)
@@ -1275,6 +1358,36 @@ function numlua.argmin(t, axis, keepdims)
   check_axis(axis, "argmin")
   check_keepdims(keepdims, "argmin")
   return t:argmin(axis, keepdims)
+end
+
+-- nanargmin/nanargmax ignore NaNs and error on an all-NaN slice, matching
+-- NumPy.  Filling with the opposite infinity turns the reduction into the
+-- ordinary ATen argmin/argmax after the valid-value check.
+local function nan_arg_extremum(t, axis, keepdims, minimum, name)
+  check_tensor(t, name)
+  check_axis(axis, name)
+  check_keepdims(keepdims, name)
+  if not t:is_floating_point() then
+    return minimum and numlua.argmin(t, axis, keepdims)
+      or numlua.argmax(t, axis, keepdims)
+  end
+  local missing = nan_mask(t)
+  local count = missing:logical_not():sum(axis, keepdims)
+  if count:eq(0):any():item() then
+    error(string.format("numlua.%s: all-NaN slice encountered", name), 2)
+  end
+  local fill = minimum and math.huge or -math.huge
+  local cleaned = t:masked_fill(missing, fill)
+  return minimum and cleaned:argmin(axis, keepdims)
+    or cleaned:argmax(axis, keepdims)
+end
+
+function numlua.nanargmin(t, axis, keepdims)
+  return nan_arg_extremum(t, axis, keepdims, true, "nanargmin")
+end
+
+function numlua.nanargmax(t, axis, keepdims)
+  return nan_arg_extremum(t, axis, keepdims, false, "nanargmax")
 end
 
 -- ---------------------------------------------------------------------------

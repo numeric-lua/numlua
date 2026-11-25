@@ -89,6 +89,22 @@ assert(gradient:get(1) == 3 and gradient:get(4) == 7)
 print("product reduction: " .. tostring(numlua.prod(a):item()))
 print("peak-to-peak: " .. tostring(numlua.ptp(a):item()))
 assert(numlua.prod(a):item() == 720 and numlua.ptp(a):item() == 5)
+print("average: " .. tostring(numlua.average(a):item()))
+print("weighted average: " .. tostring(numlua.average(
+  numlua.array({ 1, 2, 3 }), nil, { 1, 2, 3 }):item()))
+local nan_values = numlua.array({ 1, 0 / 0, -2, 3 })
+print("nanargmin/nanargmax: " ..
+  tostring(numlua.nanargmin(nan_values):item()) .. "/" ..
+  tostring(numlua.nanargmax(nan_values):item()))
+print("broadcast_shapes: " ..
+  table.concat(numlua.broadcast_shapes({ 2, 1, 3 }, { 1, 4, 1 }), " x "))
+print("diff with edges: " .. table.concat(numlua.diff(
+  numlua.array({ 1, 2, 3 }), 1, 1, 0, 10):totable(), ", "))
+print("ediff1d: " ..
+  table.concat(numlua.ediff1d(numlua.array({ { 1, 2 }, { 4, 7 } }),
+    99, 0):totable(), ", "))
+assert(numlua.nanargmin(nan_values):item() == 3)
+assert(numlua.nanargmax(nan_values):item() == 4)
 print("logspace: " .. table.concat(numlua.logspace(0, 2, 3):totable(), ", "))
 print("geomspace: " ..
   table.concat(numlua.geomspace(1, 1000, 4):totable(), ", "))
