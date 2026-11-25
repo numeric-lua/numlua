@@ -364,6 +364,20 @@ Concatenates a non-empty table of tensors along `axis` (default `1`).
 Stacks a non-empty table of same-shaped tensors along a new `axis` (default
 `1`).
 
+### `numlua.vstack`, `numlua.hstack`, `numlua.dstack`, `numlua.column_stack`, `numlua.row_stack`
+
+NumPy-style stacking wrappers over `concatenate`. `numlua.vstack` promotes to at least
+2-D and concatenates on axis 1; `numlua.hstack` concatenates 1-D inputs on
+axis 1 and rank >= 2 inputs on axis 2; `numlua.dstack` promotes to at least 3-D
+and concatenates on axis 3; `numlua.column_stack` turns 1-D inputs into columns
+and concatenates on axis 2. `numlua.row_stack` is an alias of `numlua.vstack`.
+
+### `numlua.append(t, values[, axis])`
+
+Returns a new tensor with `values` appended. With no axis both operands are
+flattened first; with an axis the values are concatenated along that axis and
+cast to the input dtype.
+
 ### `numlua.split(t, sections[, axis])`
 ### `numlua.array_split(t, sections[, axis])`
 
@@ -688,6 +702,23 @@ numlua.select({ negative, positive }, { -1, 1 }, 0)
 -- {-1, -1, 0, 1, 1}
 ```
 
+### `numlua.piecewise(x, condlist, funclist[, ...])`
+
+Evaluates each `funclist` entry against `x` where the corresponding condition is
+true and folds the results with `select`. Entries may be callbacks or constants;
+a trailing funclist entry is the default. Callbacks receive `x` followed by any
+extra arguments and must return a tensor, number, or boolean. Scalar conditions
+are expanded to `x`'s shape, and mismatched list lengths raise a
+`numlua.piecewise:` error.
+
+```lua
+local x = numlua.array({ -2, -1, 0, 1, 2 })
+numlua.piecewise(x, { x:lt(0), x:gt(0) },
+  { function(v) return numlua.negative(v) end,
+    function(v) return v:mul(2) end }, 0)
+-- {2, 1, 0, 2, 4}
+```
+
 ### `numlua.clip(t, minimum, maximum)`
 
 Clamps every element of `t` to the inclusive `[minimum, maximum]` range.
@@ -983,6 +1014,8 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.tril(t[, k])` / `numlua.triu(t[, k])` | zero one triangle of the last two axes (materialized) |
 | `numlua.split(t, sections[, axis])` | split along an axis; 1-based boundary tables (views) |
 | `numlua.array_split(t, sections[, axis])` | split into unequal sections (views) |
+| `numlua.vstack` / `hstack` / `dstack` / `column_stack` / `row_stack` | NumPy stacking wrappers over `concatenate` |
+| `numlua.append(t, values[, axis])` | flattened or axis concatenation (new tensor) |
 | `numlua.hsplit` / `vsplit` / `dsplit` | NumPy column/row/depth splitters (views) |
 | `numlua.broadcast_to(t, shape)` | broadcast view; NumPy-compatible right alignment |
 | `numlua.broadcast_arrays(...)` | returns multiple broadcast views |
@@ -994,12 +1027,14 @@ These functions are 1-based and return luatorch tensors:
 | `numlua.flipud(t)` | reverse axis 1; requires at least 1-D (materialized) |
 | `numlua.rot90(t[, k[, axes]])` | quarter-turn rotation; `k` is reduced modulo 4 and `axes` is a pair of 1-based axes (materialized; `k = 0` returns the input) |
 | `numlua.roll(t, shift[, axis])` | cyclic shift; flattens when `axis` is omitted |
+| `numlua.rollaxis(t, axis[, start])` | move one axis to a 1-based destination (view) |
 | `numlua.pad(t, pad_width[, mode[, value]])` | modes `"constant"`, `"edge"`, `"linear_ramp"`, `"maximum"`, `"mean"`, `"median"`, `"minimum"`, `"reflect"`, `"symmetric"`, and `"wrap"`; `value` is mode-specific (materialized) |
 | `numlua.diff(t[, n[, axis[, prepend[, append]]]])` | default axis is the last; optional edge values |
 | `numlua.ediff1d(t[, to_end[, to_begin]])` | flatten, difference, and add optional edges |
 | `numlua.gradient(t[, spacing[, axis[, options]]])` | edge/central differences; `options.edge_order` is 1 or 2 |
 | `numlua.cumsum(t[, axis])` / `numlua.cumprod` | flatten when `axis` is omitted |
 | `numlua.argsort(t[, axis[, descending]])` | 1-based indices; at least 1-D input |
+| `numlua.msort(t)` | sort along the first axis |
 | `numlua.sort(t[, axis[, descending]])` | sorted values; last axis by default; at least 1-D input |
 | `numlua.unique(t[, options])` | sorted unique flattened values with optional index/inverse/counts |
 | `numlua.nonzero(t)` | one 1-based coordinate tensor per input axis |
@@ -1100,6 +1135,9 @@ local a = numlua.array({ { 3, 1, 2 }, { 6, 4, 5 } })
 numlua.sort(a)          -- {{1, 2, 3}, {4, 5, 6}}
 numlua.sort(a, 2, true) -- {{3, 2, 1}, {6, 5, 4}}
 ```
+
+`numlua.rollaxis(t, axis[, start])` moves one axis to a 1-based destination
+position and returns a view. `numlua.msort(t)` sorts along the first axis.
 
 `numlua.unique(t[, options])` flattens the input in C order and returns the
 sorted unique values, following `np.unique` without an `axis` argument. The
@@ -1311,9 +1349,9 @@ numlua.pad(m, { { 1, 0 }, { 0, 1 } }, "constant", { { 10, 11 }, { 20, 21 } })
 ### View and copy boundaries
 
 Views share storage with the input, so mutating one is visible through the
-other: `transpose`, `swapaxes`, `moveaxis`, `atleast_1d`, `atleast_2d`,
-`atleast_3d`, `squeeze`, `unsqueeze`, `broadcast_to`, `broadcast_arrays`,
-contiguous `reshape`, and contiguous `ravel`.
+other: `transpose`, `swapaxes`, `moveaxis`, `rollaxis`, `atleast_1d`,
+`atleast_2d`, `atleast_3d`, `squeeze`, `unsqueeze`, `broadcast_to`,
+`broadcast_arrays`, contiguous `reshape`, and contiguous `ravel`.
 
 `diagonal` returns a writable view for non-empty numeric input (a copy for
 `bool` input or an empty diagonal); `trace` only allocates its result.
@@ -1324,6 +1362,8 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `repeat_`, `flip`, `fliplr`,
 `flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
 `interp`, `digitize`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`,
+`vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`,
+`piecewise`, `msort`,
 `histogram`, `histogram_bin_edges`, `nanargmin`, `nanargmax`, `nan_to_num`,
 `nancumsum`, `nancumprod`, `cumsum`, `cumprod`, `argsort`, `sort`,
 `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`,
@@ -1546,18 +1586,14 @@ byte-identical. `savez` rejects `fallback` (compression is not requested) and
 any other unknown option, and validates the version before writing member
 payloads or opening the output file.
 
-Writing is ZIP32-only and validates all field widths before opening the output
-file:
-
-- at most 65535 members;
-- each member name (including the `.npy` suffix) at most 65535 bytes;
-- each uncompressed and compressed member at most 4294967295 bytes;
-- the central-directory offset at most 4294967295 bytes.
-
-An archive that would overflow any of these limits raises a
-`numlua.savez:`/`numlua.savez_compressed:` error naming the limit instead of
-silently wrapping a ZIP field. No output file is created on such an error.
-ZIP64 writing is not supported.
+Writing starts in ZIP32 form and writes a ZIP64 end-of-central-directory
+record, locator, and member extra fields when the entry count, member sizes, or
+central-directory offset exceed the classic fields. Member names (including the
+`.npy` suffix) remain limited to 65535 bytes because ZIP uses a 16-bit name
+length in both formats. Values beyond ZIP64's 64-bit fields, or beyond Lua's
+exact 2^53 integer range, raise a `numlua.savez:`/`numlua.savez_compressed:`
+error instead of silently wrapping. No output file is created on such an
+error.
 
 ### `numlua.savez_compressed(path_or_file, arrays[, options])`
 
@@ -1608,9 +1644,9 @@ The reader validates member CRCs against the uncompressed payload, checks
 local and central-directory headers and sizes before copying, and reports
 corrupt central directories, CRC mismatches, truncation, encryption, multi-disk
 archives, and unsupported compression methods as Lua errors. ZIP64 archives are
-read through the ZIP64 end-of-central-directory record, locator, and
-central/local extra fields; ZIP64 writing remains unsupported. ZIP64 values
-above Lua's exact 2^53 integer range are rejected rather than truncated.
+read and written through the ZIP64 end-of-central-directory record, locator,
+and central/local extra fields. ZIP64 values above Lua's exact 2^53 integer
+range are rejected rather than truncated.
 Before allocating a deflate output buffer, it also rejects a declared
 uncompressed size beyond DEFLATE's 1032:1 expansion bound (plus a small framing
 allowance), so a tiny corrupt archive cannot force a multi-gigabyte
@@ -1947,6 +1983,15 @@ dtype, or backend constraints are forwarded as-is.
 - `indices`, `diag_indices`, `tril_indices`, and `triu_indices` return 1-based
   integer tensors; `indices` adds a leading axis of length `ndim`.
 - `digitize` returns 1-based insertion positions; NumPy returns 0-based bins.
+- `vstack`/`hstack`/`dstack`/`column_stack` are wrappers over `concatenate`
+  and do not add NumPy's mixed-rank promotion beyond their documented rank
+  rules; `hstack` rejects mixed 1-D/N-D inputs. `append` casts values to the
+  input dtype.
+- `rollaxis` uses a 1-based destination position and returns a view; `msort`
+  always sorts along the first axis.
+- `piecewise` callbacks must return a tensor, number, or boolean; scalar
+  conditions are expanded to the input shape, and a trailing funclist entry is
+  the default.
 - `split` boundary tables are 1-based; `split` with an integer section count
   requires an even division, while `array_split` distributes the remainder.
   `hsplit`, `vsplit`, and `dsplit` require at least 1-D, 2-D, and 3-D input.
@@ -2014,11 +2059,11 @@ dtype, or backend constraints are forwarded as-is.
   0-D input; use `flatnonzero` for flat indices or a 0-D scalar.
 - `squeeze` follows luatorch's permissive behavior for non-unit axes.
 - `.npz` writing is stored by default and deflate through
-  `savez_compressed`; reading supports stored and deflate entries plus ZIP64
+  `savez_compressed`; reading and writing support stored, deflate, and ZIP64
   archives. Deflate
   needs a system zlib library through LuaJIT FFI, while stored archives and
-  writing remain dependency-free. Writer output is ZIP32-only; archives above
-  the 16-bit entry/name limits or 32-bit size/offset limits fail explicitly,
-  and ZIP64 writing is not supported.
+  writing remain dependency-free. Writers switch to ZIP64 when classic
+  entry/size/offset fields overflow; member names remain limited to 65535
+  bytes, and ZIP64 values above Lua's exact integer range are rejected.
 - LuaRocks installs the Lua facade; the native `libluatorch.so` must be built
   separately against libtorch.

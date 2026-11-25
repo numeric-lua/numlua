@@ -84,7 +84,10 @@ test("new public API and format support are documented", function()
       "numlua.isposinf", "numlua.isneginf", "numlua.hypot",
       "numlua.remainder", "numlua.mod", "numlua.partition",
       "numlua.argpartition", "numlua.indices", "numlua.diag_indices",
-      "numlua.tril_indices", "numlua.triu_indices", "numlua.digitize" }) do
+      "numlua.tril_indices", "numlua.triu_indices", "numlua.digitize",
+      "numlua.vstack", "numlua.hstack", "numlua.dstack",
+      "numlua.column_stack", "numlua.row_stack", "numlua.append",
+      "numlua.rollaxis", "numlua.msort", "numlua.piecewise" }) do
     assert_true(api:find(symbol, 1, true) ~= nil,
       "docs/api.md does not document " .. symbol)
   end
@@ -232,7 +235,7 @@ test("new public API and format support are documented", function()
     "README.md does not document the new constructors")
   assert_true(readme:find("numlua.compress", 1, true) ~= nil,
     "README.md does not document compress")
-  assert_true(readme:find("ZIP64 archives are read", 1, true) ~= nil,
+  assert_true(readme:find("ZIP64 archives are both read and written", 1, true) ~= nil,
     "README.md does not document ZIP64 reading")
   assert_true(readme:find("numlua.inner", 1, true) ~= nil and
       readme:find("numlua.outer", 1, true) ~= nil and
@@ -287,6 +290,16 @@ test("new public API and format support are documented", function()
     "README.md does not document second-order gradient edges")
   assert_true(readme:find("Negative indices count from the end", 1, true) ~= nil,
     "README.md does not document negative take indices")
+  assert_true(readme:find("numlua.vstack", 1, true) ~= nil and
+      readme:find("numlua.append", 1, true) ~= nil,
+    "README.md does not document stacking/append")
+  assert_true(readme:find("numlua.rollaxis", 1, true) ~= nil and
+      readme:find("numlua.msort", 1, true) ~= nil,
+    "README.md does not document rollaxis/msort")
+  assert_true(readme:find("numlua.piecewise", 1, true) ~= nil,
+    "README.md does not document piecewise")
+  assert_true(readme:find("switches to ZIP64", 1, true) ~= nil,
+    "README.md does not document ZIP64 writing")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,
     "README.md does not document quote-aware comments")
   assert_true(readme:find("Bool tensors", 1, true) ~= nil,

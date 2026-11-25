@@ -189,6 +189,26 @@ function M.moveaxis(t, source, destination)
   return t:permute(order)
 end
 
+-- rollaxis moves one axis to `start` (1..ndim+1), matching np.rollaxis with
+-- 1-based positions.  The result is a view.
+function M.rollaxis(t, axis_value, start)
+  tensor(t, "rollaxis")
+  local ndim = t:dim()
+  local source = axis(axis_value, ndim, "rollaxis")
+  start = start == nil and 1 or start
+  if type(start) ~= "number" or start % 1 ~= 0 or
+      start < 1 or start > ndim + 1 then
+    error("numlua.rollaxis: start must be an integer in 1..ndim+1", 2)
+  end
+  local order = {}
+  for index = 1, ndim do
+    if index ~= source then order[#order + 1] = index end
+  end
+  if start > #order + 1 then start = #order + 1 end
+  table.insert(order, start, source)
+  return t:permute(order)
+end
+
 local function atleast_one(t, rank, name)
   tensor(t, name)
   local ndim = t:dim()
@@ -1741,6 +1761,15 @@ function M.sort(t, axis_value, descending)
   end
   local dim = axis_value == nil and t:dim() or axis(axis_value, t:dim(), "sort")
   return (t:sort(dim, descending == true))
+end
+
+-- msort is NumPy's historical first-axis sort alias.
+function M.msort(t)
+  tensor(t, "msort")
+  if t:dim() == 0 then
+    error("numlua.msort expects at least a 1-D tensor", 2)
+  end
+  return M.sort(t, 1)
 end
 
 local function check_kth(kth, size, name)

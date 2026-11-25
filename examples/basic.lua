@@ -60,6 +60,14 @@ local top, bottom = split_rows[1], split_rows[2]
 print("split rows: " .. table.concat(numlua.shape(top), " x ") .. " and " ..
   table.concat(numlua.shape(bottom), " x "))
 assert(top:equal(a:narrow(1, 1, 1)) and bottom:equal(a:narrow(1, 2, 1)))
+local stacked = numlua.vstack({ numlua.array({ 1, 2 }),
+  numlua.array({ 3, 4 }) })
+print("vstack:\n" .. stacked:format())
+print("append: " .. table.concat(numlua.append(numlua.array({ 1, 2 }),
+  { 3, 4 }):totable(), ", "))
+print("rollaxis shape: " ..
+  table.concat(numlua.shape(numlua.rollaxis(
+    numlua.arange(24):reshape(2, 3, 4), 2, 1)), " x "))
 
 print("diag:\n" .. numlua.diag(numlua.array({ 1, 2, 3 })):format())
 print("tril:\n" .. numlua.tril(numlua.array({
@@ -185,6 +193,10 @@ local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })
 print("clipped:\n" .. numlua.clip(values, -1, 1):format())
 print("positive values selected:\n" ..
   numlua.where(values:gt(0), values, 0):format())
+print("piecewise:\n" .. numlua.piecewise(values, {
+  values:lt(0), values:gt(0),
+}, { function(value) return numlua.negative(value) end,
+     function(value) return value:mul(2) end }, 0):format())
 print("nonzeros = " .. tostring(numlua.count_nonzero(values):item()))
 print("any positive = " .. tostring(numlua.any(values:gt(0)):item()))
 print("all above -3 = " .. tostring(numlua.all(values:gt(-3)):item()))
@@ -207,6 +219,7 @@ assert(sorted:equal(numlua.array({ { 10, 20, 30 }, { 40, 50, 60 } })))
 
 print("sort values:\n" .. numlua.sort(matrix):format())
 assert(numlua.sort(matrix):equal(sorted))
+print("msort:\n" .. numlua.msort(matrix):format())
 print("partition:\n" .. numlua.partition(matrix, 1, 2):format())
 assert(numlua.partition(matrix, 1, 2):equal(sorted))
 print("indices shape: " ..

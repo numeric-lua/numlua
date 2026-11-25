@@ -33,10 +33,17 @@
   end of the axis.
 - `numlua.digitize` returns 1-based bin/insertion positions for a sorted bins
   tensor.
+- `numlua.vstack`, `numlua.hstack`, `numlua.dstack`, `numlua.column_stack`, and
+  `numlua.row_stack` add NumPy stacking wrappers; `numlua.append` adds
+  flattened or axis-aligned concatenation.
+- `numlua.rollaxis` and `numlua.msort` add NumPy layout/sort aliases.
+- `numlua.piecewise` adds conditional callback/constant evaluation.
+- The `.npz` writers now emit ZIP64 archives automatically when classic
+  entry-count, member-size, or offset fields overflow.
 
 ### Tests
 
-- 477 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 490 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned

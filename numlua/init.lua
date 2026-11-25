@@ -517,6 +517,91 @@ function numlua.stack(tensors, axis)
   return torch.stack(tensors, axis)
 end
 
+-- vstack/hstack/dstack/column_stack are thin wrappers over concatenate that
+-- follow NumPy's rank promotion rules.  `row_stack` is NumPy's alias of
+-- vstack.
+function numlua.vstack(tensors)
+  check_tensor_list(tensors, "vstack")
+  local promoted = {}
+  for index = 1, #tensors do promoted[index] = numlua.atleast_2d(tensors[index]) end
+  return numlua.concatenate(promoted, 1)
+end
+
+numlua.row_stack = numlua.vstack
+
+function numlua.hstack(tensors)
+  check_tensor_list(tensors, "hstack")
+  local promoted = {}
+  local all_vectors = true
+  for index = 1, #tensors do
+    promoted[index] = numlua.atleast_1d(tensors[index])
+    if promoted[index]:dim() ~= 1 then all_vectors = false end
+  end
+  if all_vectors then
+    return numlua.concatenate(promoted, 1)
+  end
+  for index = 1, #promoted do
+    if promoted[index]:dim() < 2 then
+      error("numlua.hstack: mixed 1-D and N-D inputs are not supported", 2)
+    end
+  end
+  return numlua.concatenate(promoted, 2)
+end
+
+function numlua.dstack(tensors)
+  check_tensor_list(tensors, "dstack")
+  local promoted = {}
+  for index = 1, #tensors do promoted[index] = numlua.atleast_3d(tensors[index]) end
+  return numlua.concatenate(promoted, 3)
+end
+
+function numlua.column_stack(tensors)
+  check_tensor_list(tensors, "column_stack")
+  local columns = {}
+  for index = 1, #tensors do
+    local value = tensors[index]
+    if value:dim() == 0 then
+      columns[index] = value:reshape(1, 1)
+    elseif value:dim() == 1 then
+      columns[index] = value:reshape(value:numel(), 1)
+    elseif value:dim() == 2 then
+      columns[index] = value
+    else
+      error("numlua.column_stack expects inputs with rank at most 2", 2)
+    end
+  end
+  return numlua.concatenate(columns, 2)
+end
+
+-- append(arr, values[, axis]) always returns a new tensor.  With no axis both
+-- operands are flattened first; values are cast to the input dtype.
+function numlua.append(arr, values, axis)
+  check_tensor(arr, "append")
+  local extra
+  if torch.is_tensor(values) then
+    extra = values
+  elseif type(values) == "table" then
+    local ok, converted = pcall(torch.tensor, values)
+    if not ok then
+      error("numlua.append: values are not numeric: " .. tostring(converted), 2)
+    end
+    extra = converted
+  elseif type(values) == "number" then
+    extra = torch.tensor(values)
+  else
+    error("numlua.append expects values to be a tensor, table, or number", 2)
+  end
+  if axis == nil then
+    local left = arr:reshape(-1)
+    local right = extra:reshape(-1)
+    if right:dtype() ~= left:dtype() then right = right:to(left:dtype()) end
+    return torch.cat({ left, right }, 1)
+  end
+  check_axis(axis, "append")
+  if extra:dtype() ~= arr:dtype() then extra = extra:to(arr:dtype()) end
+  return torch.cat({ arr, extra }, axis)
+end
+
 -- ---------------------------------------------------------------------------
 -- reductions
 -- ---------------------------------------------------------------------------
@@ -1844,6 +1929,51 @@ function numlua.select(condlist, choicelist, default)
     result = selected
   end
   return result
+end
+
+-- piecewise evaluates a function (or uses a constant) per condition and folds
+-- the results with select.  A trailing funclist entry is the default.  Extra
+-- positional arguments are forwarded to every callback.
+function numlua.piecewise(x, condlist, funclist, ...)
+  check_tensor(x, "piecewise")
+  if type(condlist) ~= "table" or #condlist == 0 then
+    error("numlua.piecewise expects a non-empty condition list", 2)
+  end
+  if type(funclist) ~= "table" or #funclist == 0 then
+    error("numlua.piecewise expects a non-empty function/value list", 2)
+  end
+  if #funclist ~= #condlist and #funclist ~= #condlist + 1 then
+    error(string.format(
+      "numlua.piecewise: funclist must have %d or %d entries",
+      #condlist, #condlist + 1), 2)
+  end
+  local conditions, choices = {}, {}
+  for index = 1, #condlist do
+    local condition = condlist[index]
+    if type(condition) == "number" or type(condition) == "boolean" then
+      condition = torch.tensor(condition)
+    end
+    if torch.is_tensor(condition) and condition:dim() == 0 then
+      condition = condition:expand(x:sizes())
+    end
+    conditions[index] = condition
+    local entry = funclist[index]
+    if type(entry) == "function" then
+      choices[index] = entry(x, ...)
+    else
+      choices[index] = entry
+    end
+  end
+  local default
+  if #funclist == #condlist + 1 then
+    local entry = funclist[#funclist]
+    if type(entry) == "function" then
+      default = entry(x, ...)
+    else
+      default = entry
+    end
+  end
+  return numlua.select(conditions, choices, default)
 end
 
 local function check_clip_bound(value, name)

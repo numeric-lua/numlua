@@ -24,6 +24,7 @@ M._writer_limits = {
   max_entries = 0xffff,
   max_u16 = 0xffff,
   max_u32 = 0xffffffff,
+  force_zip64 = false,
 }
 
 local function u16(value)
@@ -33,6 +34,10 @@ end
 local function u32(value)
   return string.char(value % 256, math.floor(value / 256) % 256,
     math.floor(value / 65536) % 256, math.floor(value / 16777216) % 256)
+end
+
+local function u64(value)
+  return u32(value % 4294967296) .. u32(math.floor(value / 4294967296))
 end
 
 local function read_slice(data, offset, count, what)
@@ -487,12 +492,6 @@ local function write_archive(path, arrays, function_name, compressed,
   local names = {}
   for name in pairs(arrays) do names[#names + 1] = name end
   table.sort(names)
-  if #names > max_entries then
-    error(string.format(
-      "numlua.%s: ZIP32 archives hold at most %d entries (got %d); " ..
-      "ZIP64 writing is not supported", function_name, max_entries,
-      #names), 2)
-  end
 
   -- Keys that already end in .npy are written verbatim; every other key gains
   -- the suffix.  Validate the normalized member names in a pre-pass so a
@@ -504,9 +503,8 @@ local function write_archive(path, arrays, function_name, compressed,
     local file_name = name:match("%.npy$") and name or name .. ".npy"
     if #file_name > max_u16 then
       error(string.format(
-        "numlua.%s: member name is %d bytes; ZIP32 names are limited to " ..
-        "%d bytes (ZIP64 writing is not supported)", function_name,
-        #file_name, max_u16), 2)
+        "numlua.%s: member name is %d bytes; ZIP member names are limited " ..
+        "to %d bytes", function_name, #file_name, max_u16), 2)
     end
     local owner = member_owner[file_name]
     if owner ~= nil then
@@ -523,8 +521,9 @@ local function write_archive(path, arrays, function_name, compressed,
     members[#members + 1] = { key = name, file_name = file_name }
   end
 
-  local local_parts, central_parts = {}, {}
-  local offset = 0
+  -- Materialize every member before choosing the header layout so ZIP64 can
+  -- be selected once for the whole archive.
+  local prepared = {}
   for _, member in ipairs(members) do
     local name, file_name = member.key, member.file_name
     local temp = os.tmpname()
@@ -542,46 +541,92 @@ local function write_archive(path, arrays, function_name, compressed,
           name .. "': " .. tostring(deflate_error), 2)
       end
       method, stored = 8, deflated
-      if #stored > max_u32 then
-        error(string.format(
-          "numlua.%s: compressed entry '%s' is %d bytes; ZIP32 entries " ..
-          "are limited to %d bytes (ZIP64 writing is not supported)",
-          function_name, name, #stored, max_u32), 2)
-      end
     end
-    if #payload > max_u32 then
-      error(string.format(
-        "numlua.%s: entry '%s' is %d bytes; ZIP32 entries are limited to " ..
-        "%d bytes (ZIP64 writing is not supported)", function_name, name,
-        #payload, max_u32), 2)
+    prepared[#prepared + 1] = {
+      key = name,
+      file_name = file_name,
+      payload = payload,
+      stored = stored,
+      method = method,
+      crc = crc,
+    }
+  end
+
+  -- Select ZIP64 once.  The internal limits let tests exercise the transition
+  -- without allocating multi-gigabyte payloads; normal archives remain
+  -- byte-identical to the ZIP32 writer.
+  local zip64 = limits.force_zip64 or #names > max_entries or
+    #names > 0xffff
+  local offset_estimate, central_estimate = 0, 0
+  for _, member in ipairs(prepared) do
+    local local_size = 30 + #member.file_name + #member.stored
+    local central_size = 46 + #member.file_name
+    if #member.payload > max_u32 or #member.stored > max_u32 or
+        #member.payload > 0xffffffff or #member.stored > 0xffffffff or
+        offset_estimate > max_u32 or offset_estimate > 0xffffffff then
+      zip64 = true
     end
-    local local_header = "PK\003\004" .. u16(20) .. u16(0) .. u16(method) ..
-      u16(0) .. u16(0) .. u32(crc) .. u32(#stored) .. u32(#payload) ..
-      u16(#file_name) .. u16(0) .. file_name
+    offset_estimate = offset_estimate + local_size
+    central_estimate = central_estimate + central_size
+  end
+  if central_estimate > max_u32 or central_estimate > 0xffffffff then
+    zip64 = true
+  end
+
+  local local_parts, central_parts = {}, {}
+  local offset = 0
+  for _, member in ipairs(prepared) do
+    local local_header, central_header
+    if zip64 then
+      local local_extra = u16(0x0001) .. u16(16) ..
+        u64(#member.payload) .. u64(#member.stored)
+      local_header = "PK\003\004" .. u16(45) .. u16(0) ..
+        u16(member.method) .. u16(0) .. u16(0) .. u32(member.crc) ..
+        u32(0xffffffff) .. u32(0xffffffff) .. u16(#member.file_name) ..
+        u16(#local_extra) .. member.file_name .. local_extra
+      local central_extra = u16(0x0001) .. u16(24) ..
+        u64(#member.payload) .. u64(#member.stored) .. u64(offset)
+      central_header = "PK\001\002" .. u16(45) .. u16(45) .. u16(0) ..
+        u16(member.method) .. u16(0) .. u16(0) .. u32(member.crc) ..
+        u32(0xffffffff) .. u32(0xffffffff) .. u16(#member.file_name) ..
+        u16(#central_extra) .. u16(0) .. u16(0) .. u16(0) .. u32(0) ..
+        u32(0xffffffff) .. member.file_name .. central_extra
+    else
+      local_header = "PK\003\004" .. u16(20) .. u16(0) ..
+        u16(member.method) .. u16(0) .. u16(0) .. u32(member.crc) ..
+        u32(#member.stored) .. u32(#member.payload) ..
+        u16(#member.file_name) .. u16(0) .. member.file_name
+      central_header = "PK\001\002" .. u16(20) .. u16(20) .. u16(0) ..
+        u16(member.method) .. u16(0) .. u16(0) .. u32(member.crc) ..
+        u32(#member.stored) .. u32(#member.payload) ..
+        u16(#member.file_name) .. u16(0) .. u16(0) .. u16(0) ..
+        u16(0) .. u32(0) .. u32(offset) .. member.file_name
+    end
     local_parts[#local_parts + 1] = local_header
-    local_parts[#local_parts + 1] = stored
-    central_parts[#central_parts + 1] = "PK\001\002" .. u16(20) ..
-      u16(20) .. u16(0) .. u16(method) .. u16(0) .. u16(0) .. u32(crc) ..
-      u32(#stored) .. u32(#payload) .. u16(#file_name) .. u16(0) ..
-      u16(0) .. u16(0) .. u16(0) .. u32(0) .. u32(offset) .. file_name
-    offset = offset + #local_header + #stored
-    if offset > max_u32 then
-      error(string.format(
-        "numlua.%s: archive data is %d bytes; ZIP32 central-directory " ..
-        "offsets are limited to %d bytes (ZIP64 writing is not supported)",
-        function_name, offset, max_u32), 2)
-    end
+    local_parts[#local_parts + 1] = member.stored
+    central_parts[#central_parts + 1] = central_header
+    offset = offset + #local_header + #member.stored
   end
+
+  local local_data = table.concat(local_parts)
   local central = table.concat(central_parts)
-  if #central > max_u32 then
-    error(string.format(
-      "numlua.%s: central directory is %d bytes; ZIP32 limits it to %d " ..
-      "bytes (ZIP64 writing is not supported)", function_name, #central,
-      max_u32), 2)
+  local body
+  if zip64 then
+    local zip64_eocd_offset = #local_data + #central
+    local zip64_eocd = "PK\006\006" .. u64(44) .. u16(45) .. u16(45) ..
+      u32(0) .. u32(0) .. u64(#names) .. u64(#names) ..
+      u64(#central) .. u64(#local_data)
+    local locator = "PK\006\007" .. u32(0) .. u64(zip64_eocd_offset) ..
+      u32(1)
+    local eocd = "PK\005\006" .. u16(0) .. u16(0) .. u16(0xffff) ..
+      u16(0xffff) .. u32(0xffffffff) .. u32(0xffffffff) .. u16(0)
+    body = local_data .. central .. zip64_eocd .. locator .. eocd
+  else
+    local eocd = "PK\005\006" .. u16(0) .. u16(0) .. u16(#names) ..
+      u16(#names) .. u32(#central) .. u32(#local_data) .. u16(0)
+    body = local_data .. central .. eocd
   end
-  local body = table.concat(local_parts) .. central
-  local eocd = "PK\005\006" .. u16(0) .. u16(0) .. u16(#names) ..
-    u16(#names) .. u32(#central) .. u32(#body - #central) .. u16(0)
+
   local is_handle = archive_target(path, function_name)
   local handle, open_error = path, nil
   local owns_handle = not is_handle
@@ -594,7 +639,7 @@ local function write_archive(path, arrays, function_name, compressed,
   end
   local label = owns_handle and ("'" .. path .. "'") or "file handle"
 
-  local ok, write_error = handle:write(body, eocd)
+  local ok, write_error = handle:write(body)
   local close_ok, close_error = true, nil
   if owns_handle then
     close_ok, close_error = handle:close()

@@ -71,6 +71,11 @@ print(numlua.select({ values:lt(0), values:gt(0) }, { -1, 1 }, 0):format())
 print(numlua.count_nonzero(values):item(), numlua.any(values:gt(0)):item())
 ```
 
+`numlua.piecewise(x, condlist, funclist[, ...])` evaluates a callback or
+constant per condition and folds the results with `select`; a trailing
+funclist entry supplies the default, and extra arguments are forwarded to every
+callback.
+
 Closeness predicates follow NumPy's defaults and semantics for infinities and
 NaN; `array_equal` requires matching shapes while `array_equiv` broadcasts:
 
@@ -102,6 +107,11 @@ local rows = numlua.split(numlua.arange(6):reshape(3, 2), 3, 1)
 print(rows[1]:format(), rows[2]:format(), rows[3]:format())
 local left, right = table.unpack(numlua.hsplit(rows[1]:reshape(1, 2), 2))
 ```
+
+`numlua.vstack`, `numlua.hstack`, `numlua.dstack`, and `numlua.column_stack`
+wrap `concatenate` with NumPy's rank promotion; `numlua.row_stack` aliases
+`vstack`. `numlua.append` flattens when no axis is given and always returns a
+new tensor.
 
 `numlua.take` uses the same 1-based indices and accepts scalar (0-D) or N-D
 integer index tensors. Negative indices count from the end, so `-1` selects the
@@ -275,13 +285,13 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | --- | --- |
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
-| Combine | `concatenate`, `stack`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
-| Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `ravel_multi_index`, `unravel_index` |
+| Combine | `concatenate`, `stack`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `rollaxis`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `msort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `ravel_multi_index`, `unravel_index` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod` |
 | Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `cov`, `corrcoef` |
 | Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges` |
-| Predicates/selection | `where`, `select`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
+| Predicates/selection | `where`, `select`, `piecewise`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
@@ -351,7 +361,9 @@ flattens both operands before forming the product, and `numlua.cross` computes
 allocate independent storage (`rot90(t, 0)` returns the input); see
 [docs/api.md](docs/api.md#view-and-copy-boundaries) for the full boundary.
 `numlua.rot90` rotates in a 1-based axis plane (with `fliplr`/`flipud` as the
-axis-specific flips); `numlua.diagonal` returns a writable view for non-empty
+axis-specific flips); `numlua.rollaxis` moves one axis to a 1-based destination
+and returns a view; `numlua.msort` is the first-axis sort alias.
+`numlua.diagonal` returns a writable view for non-empty
 numeric input, while `numlua.trace` sums that diagonal and returns a 0-D tensor
 for 2-D input or the batch shape for higher-rank input.
 `numlua.gradient` follows NumPy's edge and central interior differences. It
@@ -424,8 +436,8 @@ tools. If zlib is absent, `savez_compressed` fails before creating a file (or
 falls back to stored when requested), and a deflate entry encountered by
 `loadz` fails with an error naming the entry and explaining that zlib is
 required. Encrypted, multi-disk, and other compression methods are rejected
-explicitly. ZIP64 archives are read, including ZIP64 extra fields and the
-ZIP64 end-of-central-directory record; writing remains ZIP32-only. A declared
+explicitly. ZIP64 archives are both read and written, including ZIP64 extra
+fields, the ZIP64 end-of-central-directory record, and its locator. A declared
 deflate output size beyond DEFLATE's 1032:1
 expansion bound is rejected before allocating a buffer, so a tiny corrupt
 archive cannot request a multi-gigabyte allocation. Stored archives continue to
@@ -433,12 +445,12 @@ work without zlib.
 Set `NUMLUA_DISABLE_ZLIB=1` to exercise the no-zlib path in tests; the
 zlib-unavailable error names that variable when it is the cause.
 
-Writing is limited to ZIP32 fields: at most 65535 members, member names of at
-most 65535 bytes, 32-bit member sizes, and a 32-bit central-directory offset.
-Archives that would overflow any of these limits raise a `numlua.savez:` or
-`numlua.savez_compressed:` error before the output file is created, instead of
-silently truncating ZIP fields. ZIP64 writing is not supported; split very
-large arrays across multiple archives. An empty `arrays` table produces a valid
+Writing starts in ZIP32 form and switches to ZIP64 when entry counts, member
+sizes, or central-directory offsets exceed the classic fields. Member names are
+still limited to 65535 bytes (ZIP64 uses the same 16-bit name-length field).
+An archive that would overflow a ZIP64 64-bit field raises a `numlua.savez:` or
+`numlua.savez_compressed:` error instead of silently truncating it. An empty
+`arrays` table produces a valid
 empty archive, and keys already ending in `.npy` are stored without a second
 suffix (as in NumPy). Keys that normalize to the same member name (`x` and
 `x.npy`, for example) are rejected before any file is created instead of
@@ -631,7 +643,8 @@ trapezoidal integration, linear interpolation, phase unwrapping, weighted
 averages, covariance/correlation, polynomial evaluation/fitting, histograms,
 coordinate/flat-index conversion, partition/sorting contracts, index-grid
 constructors, second-order gradient edges, negative-index selection,
-digitize bins, NaN-aware arg reductions, additional ufuncs and NaN helpers,
+digitize bins, stacking/append and rollaxis helpers, piecewise selection,
+ZIP64 writing, NaN-aware arg reductions, additional ufuncs and NaN helpers,
 difference edges, broadcast-shape arithmetic, quoted/bool text fields, meshgrid,
 gradients, closeness predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
@@ -641,7 +654,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 477 tests.
+It currently contains 490 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -749,15 +762,14 @@ This is an MVP, not a complete NumPy replacement:
   `loadtxt`/`savetxt` accept open Lua file handles and leave them open;
   `loadz` reads from the current position to EOF;
 - `.npz` writing is stored by default and deflate through `savez_compressed`;
-  reading supports stored and deflate entries plus ZIP64 archives. Deflate
+  reading and writing support stored, deflate, and ZIP64 archives. Deflate
   needs a system zlib
   library loaded through FFI, while stored archives remain dependency-free.
   Deflate writing without zlib raises a clear error unless the stored fallback
   is requested. Both writers choose the member NPY header version with
-  `{ version = 2 }`/`{ version = 3 }`; the default remains v1.0. Writer output
-  is ZIP32-only and rejects entry counts above
-  65535, names above 65535 bytes, or member/archive sizes that do not fit
-  32-bit fields; ZIP64 writing is not supported.
+  `{ version = 2 }`/`{ version = 3 }`; the default remains v1.0. Archives switch
+  to ZIP64 when the classic entry-count, size, or offset fields overflow;
+  member names remain limited to 65535 bytes.
 - text I/O is intentionally simple: it does not store shape/dtype metadata or
   write quoted fields, or parse header metadata (`savetxt` header/footer lines
   are comments to `loadtxt`). Bool is supported with `True`/`False`/`0`/`1`
