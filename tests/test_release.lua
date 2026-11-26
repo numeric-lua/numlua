@@ -90,7 +90,10 @@ test("new public API and format support are documented", function()
       "numlua.trim_zeros", "numlua.nanmedian", "numlua.nanquantile",
       "numlua.nanpercentile", "numlua.histogram2d", "numlua.fromiter",
       "numlua.packbits", "numlua.unpackbits", "numlua.mask_indices",
-      "numlua.polyadd", "numlua.polysub", "numlua.polymul",
+      "numlua.poly", "numlua.polyadd", "numlua.polysub",
+      "numlua.polymul", "numlua.fromstring", "numlua.intersect1d",
+      "numlua.union1d", "numlua.setdiff1d", "numlua.setxor1d",
+      "numlua.isin", "numlua.in1d",
       "numlua.polydiv", "numlua.polyder", "numlua.polyint",
       "numlua.deg2rad", "numlua.rad2deg", "numlua.radians",
       "numlua.degrees", "numlua.sinc", "numlua.heaviside", "numlua.iqr",
@@ -344,6 +347,15 @@ test("new public API and format support are documented", function()
     "README.md does not document angle/sinc/heaviside")
   assert_true(readme:find("numlua.iqr", 1, true) ~= nil,
     "README.md does not document iqr")
+  assert_true(readme:find("numlua.intersect1d", 1, true) ~= nil and
+      readme:find("numlua.isin", 1, true) ~= nil,
+    "README.md does not document set/membership helpers")
+  assert_true(readme:find("numlua.fromstring", 1, true) ~= nil,
+    "README.md does not document fromstring")
+  assert_true(readme:find("numlua.poly` builds", 1, true) ~= nil,
+    "README.md does not document poly roots")
+  assert_true(readme:find("interpolation method", 1, true) ~= nil,
+    "README.md does not document quantile methods")
   assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
     "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,

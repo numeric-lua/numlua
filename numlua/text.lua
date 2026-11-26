@@ -1255,4 +1255,53 @@ function text.savetxt(path, tensor, options)
   return true
 end
 
+-- fromstring parses numeric text into a 1-D tensor.  Binary mode (an empty
+-- separator) is intentionally unsupported; pass a text separator.
+function text.fromstring(data, dtype, count, sep)
+  if type(data) ~= "string" then
+    error("numlua.fromstring expects a string", 2)
+  end
+  dtype = dtype or "float64"
+  if not SUPPORTED_DTYPES[dtype] then
+    error("numlua.fromstring: unsupported dtype '" .. tostring(dtype) .. "'", 2)
+  end
+  if count == -1 then count = nil end
+  if count ~= nil and (type(count) ~= "number" or count % 1 ~= 0 or
+      count < 0) then
+    error("numlua.fromstring: count must be a non-negative integer or nil", 2)
+  end
+  if type(sep) ~= "string" or sep == "" then
+    error("numlua.fromstring requires a non-empty text separator", 2)
+  end
+  local delimiter = sep:match("^%s+$") and nil or sep
+  if count == 0 then
+    return torch.tensor({}, { dtype = dtype })
+  end
+
+  local values = {}
+  local line_number = 0
+  for line in (data .. "\n"):gmatch("(.-)\n") do
+    line_number = line_number + 1
+    line = line:gsub("\r$", "")
+    if line ~= "" then
+      local fields = split_fields(line, delimiter, nil, "fromstring")
+      for column = 1, #fields do
+        local value = dtype == "bool" and parse_bool(fields[column])
+          or parse_number(fields[column])
+        if value == nil then
+          error(string.format(
+            "numlua.fromstring: cannot parse '%s' on line %d column %d",
+            fields[column], line_number, column), 2)
+        end
+        if dtype == "bool" then value = value ~= 0 end
+        values[#values + 1] = value
+        if count ~= nil and #values >= count then
+          return torch.tensor(values, { dtype = dtype })
+        end
+      end
+    end
+  end
+  return torch.tensor(values, { dtype = dtype })
+end
+
 return text

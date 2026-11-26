@@ -212,7 +212,9 @@ print(numlua.argwhere(a:eq(1)):format())    -- {{1, 2}, {2, 3}}
 
 `numlua.unique` also accepts `{ axis = ... }` to deduplicate slices along one
 1-based axis, returning the same optional index/inverse/count arrays as the
-flat form.
+flat form. `numlua.intersect1d`, `numlua.union1d`, `numlua.setdiff1d`, and
+`numlua.setxor1d` return sorted 1-D set results; `numlua.isin` keeps the input
+shape and `numlua.in1d` returns a flat membership mask.
 
 ## Requirements
 
@@ -297,8 +299,9 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod`, `deg2rad`, `radians`, `rad2deg`, `degrees`, `sinc`, `heaviside` |
 | Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `nanmedian`, `nanquantile`, `nanpercentile`, `iqr`, `cov`, `corrcoef` |
-| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `packbits`, `unpackbits`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
-| Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
+| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
+| Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isin`, `in1d`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
+| Sets | `intersect1d`, `union1d`, `setdiff1d`, `setxor1d` |
 | Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
@@ -331,8 +334,10 @@ returns `max - min` over the same axis (bool input becomes `int64`).
 return the sum of weights; `numlua.nanargmin`/`numlua.nanargmax` ignore NaNs
 and reject all-NaN slices, while `numlua.nanmedian`,
 `numlua.nanquantile`, and `numlua.nanpercentile` return NaN for all-NaN
-slices; `numlua.iqr` is the q75 - q25 range. `numlua.cov` computes sample
-covariance matrices and
+slices; `numlua.iqr` is the q75 - q25 range. `numlua.quantile` and
+`numlua.percentile` accept a trailing interpolation method (`"linear"`,
+`"lower"`, `"higher"`, `"midpoint"`, or `"nearest"`). `numlua.cov` computes
+sample covariance matrices and
 `numlua.corrcoef` normalizes them to correlations.
 `numlua.trapezoid` (with `numlua.trapz` as its historical alias) integrates
 along one axis with uniform `dx` or coordinate arrays; the default axis is the
@@ -341,9 +346,9 @@ increasing 1-D grid and keeps the shape of its coordinate input. `numlua.unwrap`
 removes phase jumps along a 1-based axis with a configurable period and
 discontinuity threshold. `numlua.polyval` evaluates descending-degree
 coefficients and `numlua.polyfit` performs an SVD least-squares fit.
+`numlua.poly` builds descending coefficients from roots, and
 `numlua.polyadd`/`polysub`/`polymul`/`polydiv` add descending-coefficient
-arithmetic, and `numlua.polyder`/`polyint` differentiate or integrate
-polynomials.
+arithmetic; `numlua.polyder`/`polyint` differentiate or integrate polynomials.
 `numlua.histogram`/`numlua.histogram_bin_edges` provide counts, explicit or
 integer bin edges, weights, and density normalization; `numlua.histogram2d`
 adds the two-sample form with per-axis edges. `numlua.packbits` and
@@ -418,6 +423,9 @@ may be a number, a `{before, after}` pair broadcast over every axis, or a table
 with one entry per axis (each a number or pair), matching NumPy's
 `constant_values`, `end_values`, and `stat_length` forms.
 
+`numlua.isin(element, test_elements[, invert])` returns a boolean membership
+mask with the input shape, while `numlua.in1d` is its flattened form.
+
 `numlua.compress(condition, t[, axis])` now supports axis-aligned selection in
 addition to flattened selection. A short condition is used as a prefix and a
 longer one is an error, matching `np.compress`; numeric conditions are
@@ -433,6 +441,13 @@ scalar or match the input rank and non-axis dimensions.
 
 `numlua` arrays are ordinary luatorch tensors, so luaplotlib can plot them
 directly through its tensor adapter. See `examples/plot.lua`.
+
+## Text parsing helpers
+
+`numlua.fromstring(data, dtype, count, sep)` parses already-loaded numeric text
+into a 1-D tensor. It requires a non-empty text separator (binary mode is not
+implemented), supports the same numeric/bool spellings as `loadtxt`, and
+stops after `count` values when supplied.
 
 ## `.npz` I/O
 
@@ -682,9 +697,10 @@ constructors, second-order gradient edges, negative-index selection,
 digitize bins, stacking/append and rollaxis helpers, piecewise selection,
 ZIP64 writing, NaN-aware median/arg reductions, put_along_axis/delete/insert,
 axis-aware unique, choose/extract/trim_zeros, shape-derived index helpers,
-NaN-aware quantiles and IQR, 2-D histograms, bit packing, iterator construction,
-polynomial arithmetic/calculus, angle/sinc/heaviside ufuncs, searchsorted
-sorters, additional ufuncs and NaN helpers, difference edges,
+NaN-aware quantiles and IQR, quantile methods, 2-D histograms, bit packing,
+iterator construction, polynomial arithmetic/calculus, set/membership helpers,
+text parsing, angle/sinc/heaviside ufuncs, searchsorted sorters, additional
+ufuncs and NaN helpers, difference edges,
 broadcast-shape arithmetic, quoted/bool text fields,
 meshgrid, gradients, closeness predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
@@ -694,7 +710,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 545 tests.
+It currently contains 559 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -738,13 +754,18 @@ This is an MVP, not a complete NumPy replacement:
   be finite, and all-NaN slices return NaN without NumPy's runtime warning.
   `nanmedian`/`nanquantile`/`nanpercentile` materialize per-slice valid values;
   the median follows `median`'s integer-input dtype behavior, q tables stack
-  along the first result axis, and `iqr` is `quantile(0.75) - quantile(0.25)`;
+  along the first result axis, and `iqr` is `quantile(0.75) - quantile(0.25)`.
+  `quantile`/`percentile` support linear/lower/higher/midpoint/nearest
+  interpolation; `nanquantile` remains linear-only;
 - `put_along_axis` broadcasts singleton non-axis input dimensions but requires
   values to be scalar or match the indices/broadcast size; `delete` accepts
   integer indices/tables, not Python-style slice objects; `insert` supports one
   scalar 1-based position at a time;
 - `choose` uses 0-based integer indices; `extract` flattens both operands and
   permits a shorter condition prefix; `trim_zeros` is 1-D only;
+- set helpers return sorted 1-D unique results; `isin` preserves the input
+  shape while `in1d` flattens; `fromstring` requires a non-empty text
+  separator and does not implement binary parsing;
 - `searchsorted` sorters are 1-based and must be a permutation of the sorted
   axis; `*_indices_from` derive 1-based coordinates from the input shape;
 - `meshgrid` requires 1-D inputs, keeps each input's dtype instead of applying
@@ -774,9 +795,9 @@ This is an MVP, not a complete NumPy replacement:
   `rowvar = false`, and optional `y` observations; `corrcoef` uses unit sample
   covariance and clips round-off to `[-1, 1]`;
 - `polyval`/`polyfit` use descending-degree coefficients; `polyfit` returns
-  `float64` and requires fewer degrees than data points. Polynomial
-  arithmetic/calculus also uses descending coefficients, returns `float64`,
-  and trims exact leading zeros;
+  `float64` and requires fewer degrees than data points. `poly` builds
+  coefficients from roots; polynomial arithmetic/calculus also uses descending
+  coefficients, returns `float64`, and trims exact leading zeros;
 - `deg2rad`/`rad2deg` and `sinc` promote non-floating input to `float64`;
   `heaviside` treats NaN as the `x2` branch;
 - `histogram` edges are `float64`; explicit edges must be strictly increasing,

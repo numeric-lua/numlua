@@ -583,6 +583,11 @@ Least-squares polynomial fit of 1-D `x`/`y`, returning descending-degree
 `linalg.lstsq`; `degree` must be a non-negative integer smaller than the number
 of points.
 
+### `numlua.poly(roots)`
+
+Builds descending-degree `float64` coefficients for the monic polynomial with
+the given 1-D roots. An empty root sequence returns `{1}`.
+
 ### `numlua.polyadd(left, right)`, `numlua.polysub`, `numlua.polymul`, `numlua.polydiv`
 
 Descending-coefficient polynomial arithmetic. `numlua.polyadd`/`numlua.polysub` align the
@@ -608,13 +613,14 @@ Returns the median. With no axis this is a Lua number; with an axis it returns
 a tensor with the reduced axis removed unless `keepdims` is true (when
 supported by the underlying luatorch median path).
 
-### `numlua.quantile(t, q[, axis[, keepdims]])`
+### `numlua.quantile(t, q[, axis[, keepdims[, method]]])`
 
-Returns the `q`-quantile using linear interpolation between order statistics.
-`q` may be a number in `[0, 1]` or a non-empty table of probabilities; a table
-returns a tensor with the quantile axis first. With no axis the input is flattened and a Lua number
-is returned. With an axis the reduced axis is removed unless `keepdims` is
-true.
+Returns the `q`-quantile using the selected interpolation method. `q` may be a
+number in `[0, 1]` or a non-empty table of probabilities; a table returns a
+tensor with the quantile axis first. With no axis the input is flattened and a
+Lua number is returned. With an axis the reduced axis is removed unless
+`keepdims` is true. `method` is `"linear"` (default), `"lower"`, `"higher"`,
+`"midpoint"`, or `"nearest"`; `percentile` accepts the same trailing method.
 
 ### `numlua.iqr(t[, axis[, keepdims]])`
 
@@ -1255,6 +1261,11 @@ local values, index, inverse, counts = numlua.unique(a, {
 -- counts  = {2, 2, 2}
 ```
 
+`numlua.intersect1d`, `numlua.union1d`, `numlua.setdiff1d`, and
+`numlua.setxor1d` return sorted 1-D unique set results. `numlua.isin(element,
+test_elements[, invert])` returns a boolean mask with `element`'s shape;
+`numlua.in1d` is the flattened form.
+
 `numlua.nonzero(t)` returns one `int64` coordinate tensor per input axis,
 matching `np.nonzero` with 1-based coordinates. The input must be at least 1-D;
 columns are enumerated in C order. Because the number of return values depends
@@ -1470,8 +1481,9 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `repeat_`, `flip`, `fliplr`,
 `flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
 `interp`, `digitize`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`,
-`polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint`, `iqr`,
-`deg2rad`, `rad2deg`, `sinc`, `heaviside`,
+`poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint`,
+`iqr`, `intersect1d`, `union1d`, `setdiff1d`, `setxor1d`, `isin`, `in1d`,
+`fromstring`, `deg2rad`, `rad2deg`, `sinc`, `heaviside`,
 `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`,
 `insert`, `choose`, `extract`, `piecewise`, `msort`,
 `histogram`, `histogram_bin_edges`, `histogram2d`, `packbits`, `unpackbits`,
@@ -1770,6 +1782,12 @@ the real size mismatch instead.
 
 ## Text and CSV I/O
 
+### `numlua.fromstring(data, dtype, count, sep)`
+
+Parses already-loaded numeric text into a 1-D tensor. A non-empty text
+separator is required; binary mode is not implemented. `count` truncates the
+result when supplied. Numeric and bool spellings match `loadtxt`.
+
 ### `numlua.loadtxt(path_or_file[, options])`
 
 Reads a whitespace- or delimiter-separated numeric text file and returns a
@@ -2064,9 +2082,13 @@ dtype, or backend constraints are forwarded as-is.
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D input,
   `rowvar = false`, and optional `y`; `corrcoef` clips round-off to `[-1, 1]`.
 - `polyval`/`polyfit` use descending-degree coefficients; `polyfit` uses the
-  SVD least-squares helper and returns `float64`. Polynomial arithmetic and
-  calculus also use descending coefficients, return `float64`, and trim exact
-  leading zeros; `iqr` is `quantile(0.75) - quantile(0.25)`.
+  SVD least-squares helper and returns `float64`. `poly` builds coefficients
+  from roots; polynomial arithmetic and calculus also use descending
+  coefficients, return `float64`, and trim exact leading zeros; `iqr` is
+  `quantile(0.75) - quantile(0.25)`.
+- Set helpers return sorted 1-D unique results; `isin` preserves the input
+  shape while `in1d` flattens. `fromstring` requires a non-empty text separator
+  and does not implement binary parsing.
 - `deg2rad`/`rad2deg` and `sinc` promote non-floating input to `float64`;
   `heaviside` uses the `x2` branch for zero and NaN.
 - `histogram` edges are `float64`; explicit edges must be strictly increasing,
@@ -2110,6 +2132,8 @@ dtype, or backend constraints are forwarded as-is.
 - `nanmedian`/`nanquantile`/`nanpercentile` materialize each slice's valid
   values; the median follows `median`'s integer-input dtype behavior, q tables
   stack along the first result axis, and all-NaN slices return NaN.
+  `quantile`/`percentile` support linear/lower/higher/midpoint/nearest
+  interpolation; `nanquantile` remains linear-only.
 - `searchsorted` sorters are 1-based permutations of the sorted axis, and
   `*_indices_from` derive 1-based coordinates from the input shape.
 - `partition`/`argpartition` return a fully sorted result, which satisfies the

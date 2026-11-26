@@ -111,6 +111,8 @@ print("nanargmin/nanargmax: " ..
 print("nanmedian: " .. tostring(numlua.nanmedian(nan_values):item()))
 print("nanquantile: " .. tostring(numlua.nanquantile(nan_values, 0.5):item()))
 print("iqr: " .. tostring(numlua.iqr(numlua.array({ 1, 2, 3, 4 })):item()))
+print("quantile lower: " .. tostring(numlua.quantile(
+  numlua.array({ 1, 2, 3, 4 }), 0.5, nil, false, "lower")))
 print("broadcast_shapes: " ..
   table.concat(numlua.broadcast_shapes({ 2, 1, 3 }, { 1, 4, 1 }), " x "))
 print("diff with edges: " .. table.concat(numlua.diff(
@@ -135,6 +137,7 @@ print("polyadd: " .. table.concat(numlua.polyadd({ 1, 2 }, { 1 }):totable(),
 print("polymul: " .. table.concat(numlua.polymul({ 1, 1 }, { 1, -1 })
   :totable(), ", "))
 print("polyder: " .. table.concat(numlua.polyder({ 1, 2, 3 }):totable(), ", "))
+print("poly roots: " .. table.concat(numlua.poly({ 1, 2 }):totable(), ", "))
 local counts, edges = numlua.histogram(numlua.array({ 0, 1, 2, 3, 4 }),
   { bins = 2 })
 print("histogram counts: " .. table.concat(counts:totable(), ", ") ..
@@ -280,6 +283,8 @@ local unique_values, unique_counts = numlua.unique(
 print("unique values:\n" .. unique_values:format())
 print("unique counts:\n" .. unique_counts:format())
 assert(unique_values:equal(numlua.array({ 1, 2, 3 })))
+print("intersect1d: " .. table.concat(numlua.intersect1d(
+  { 3, 1, 2 }, { 2, 3, 4 }):totable(), ", "))
 print("unique axis 1:\n" .. numlua.unique(
   numlua.array({ { 1, 2 }, { 1, 2 }, { 3, 4 } }), { axis = 1 }):format())
 
@@ -411,6 +416,8 @@ print("bool text:\n" .. bool_loaded:format())
 assert(bool_loaded:equal(bool_values))
 os.remove(bool_path)
 
+print("fromstring: " .. table.concat(numlua.fromstring(
+  "1 2 3", "int64", nil, " "):totable(), ", "))
 local genfromtxt_path = root .. "/examples/.basic-demo-missing.csv"
 local missing_handle = assert(io.open(genfromtxt_path, "w"))
 assert(missing_handle:write("1,NA\n2,3\n"))

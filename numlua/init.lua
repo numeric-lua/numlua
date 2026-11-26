@@ -1417,13 +1417,33 @@ function numlua.nanpercentile(t, q, axis, keepdims)
   return numlua.nanquantile(t, q / 100, axis, keepdims)
 end
 
-local function quantile_scalar(sorted, q, axis, keepdims)
+local QUANTILE_METHODS = {
+  linear = true, lower = true, higher = true, midpoint = true,
+  nearest = true,
+}
+
+local function quantile_scalar(sorted, q, axis, keepdims, method)
   local n = axis == nil and sorted:numel() or sorted:size(axis)
   if n == 0 then error("numlua.quantile: empty input", 2) end
   local position = q * (n - 1) + 1
   local lower = math.floor(position)
   local upper = math.min(n, lower + 1)
   local fraction = position - lower
+  if method == "lower" then
+    upper, fraction = lower, 0
+  elseif method == "higher" then
+    if fraction > 0 then lower = upper end
+    upper, fraction = lower, 0
+  elseif method == "midpoint" then
+    if fraction > 0 then
+      fraction = 0.5
+    else
+      upper, fraction = lower, 0
+    end
+  elseif method == "nearest" then
+    local nearest = math.min(n, math.max(1, math.floor(position + 0.5)))
+    lower, upper, fraction = nearest, nearest, 0
+  end
   if axis == nil then
     local a = sorted:get(lower)
     local b = sorted:get(upper)
@@ -1436,16 +1456,21 @@ local function quantile_scalar(sorted, q, axis, keepdims)
   return value
 end
 
-function numlua.quantile(t, q, axis, keepdims)
+function numlua.quantile(t, q, axis, keepdims, method)
   check_tensor(t, "quantile")
   check_axis(axis, "quantile")
   check_keepdims(keepdims, "quantile")
+  method = method or "linear"
+  if not QUANTILE_METHODS[method] then
+    error("numlua.quantile: unknown interpolation method '" ..
+      tostring(method) .. "'", 2)
+  end
   if type(q) == "number" then
     if q ~= q or q < 0 or q > 1 then
       error("numlua.quantile: q must be in [0, 1]", 2)
     end
     local sorted = axis == nil and t:reshape(-1):sort() or t:sort(axis)
-    return quantile_scalar(sorted, q, axis, keepdims)
+    return quantile_scalar(sorted, q, axis, keepdims, method)
   end
   if type(q) ~= "table" or #q == 0 then
     error("numlua.quantile: q must be a number or non-empty table", 2)
@@ -1458,13 +1483,15 @@ function numlua.quantile(t, q, axis, keepdims)
   local sorted = axis == nil and t:reshape(-1):sort() or t:sort(axis)
   if axis == nil then
     local values = {}
-    for i, value in ipairs(q) do values[i] = quantile_scalar(sorted, value) end
+    for i, value in ipairs(q) do
+      values[i] = quantile_scalar(sorted, value, nil, false, method)
+    end
     local dtype = t:is_floating_point() and t:dtype() or "float64"
     return torch.tensor(values, { dtype = dtype })
   end
   local parts = {}
   for i, value in ipairs(q) do
-    parts[i] = quantile_scalar(sorted, value, axis, keepdims)
+    parts[i] = quantile_scalar(sorted, value, axis, keepdims, method)
   end
   return torch.stack(parts, 1)
 end
@@ -2360,6 +2387,124 @@ function numlua.polyint(coefficients, constant)
   return torch.tensor(trimmed_coefficients(result), { dtype = "float64" })
 end
 
+function numlua.poly(roots)
+  if torch.is_tensor(roots) then
+    if roots:numel() == 0 then
+      return torch.tensor({ 1 }, { dtype = "float64" })
+    end
+  elseif type(roots) == "table" and #roots == 0 then
+    return torch.tensor({ 1 }, { dtype = "float64" })
+  end
+  local values = polynomial_values(roots, "poly")
+  local result = { 1 }
+  for index = 1, #values do
+    local factor = { 1, -values[index] }
+    local next = {}
+    for position = 1, #result + 1 do next[position] = 0 end
+    for i = 1, #result do
+      for j = 1, #factor do
+        next[i + j - 1] = next[i + j - 1] + result[i] * factor[j]
+      end
+    end
+    result = next
+  end
+  return torch.tensor(result, { dtype = "float64" })
+end
+
+local function set_sequence(value, name)
+  if torch.is_tensor(value) then return value:reshape(-1) end
+  if type(value) == "table" then
+    local ok, converted = pcall(torch.tensor, value)
+    if not ok then
+      error("numlua." .. name .. ": values are not numeric: " ..
+        tostring(converted), 2)
+    end
+    return converted:reshape(-1)
+  end
+  error("numlua." .. name .. " expects a tensor or table", 2)
+end
+
+local function set_lookup(values)
+  local lookup = {}
+  for index = 1, #values do lookup[values[index]] = true end
+  return lookup
+end
+
+local function set_result(values, dtype)
+  return torch.tensor(values, { dtype = dtype })
+end
+
+function numlua.intersect1d(left, right, assume_unique)
+  if assume_unique ~= nil and type(assume_unique) ~= "boolean" then
+    error("numlua.intersect1d: assume_unique must be a boolean or nil", 2)
+  end
+  local a = numlua.unique(set_sequence(left, "intersect1d"))
+  local b = numlua.unique(set_sequence(right, "intersect1d"))
+  local lookup = set_lookup(b:totable())
+  local result = {}
+  for _, value in ipairs(a:totable()) do
+    if lookup[value] then result[#result + 1] = value end
+  end
+  return set_result(result, a:dtype())
+end
+
+function numlua.union1d(left, right)
+  local a = numlua.unique(set_sequence(left, "union1d"))
+  local b = numlua.unique(set_sequence(right, "union1d")):to(a:dtype())
+  return numlua.unique(torch.cat({ a, b }, 1))
+end
+
+function numlua.setdiff1d(left, right, assume_unique)
+  if assume_unique ~= nil and type(assume_unique) ~= "boolean" then
+    error("numlua.setdiff1d: assume_unique must be a boolean or nil", 2)
+  end
+  local a = numlua.unique(set_sequence(left, "setdiff1d"))
+  local b = set_lookup(numlua.unique(set_sequence(right, "setdiff1d")):totable())
+  local result = {}
+  for _, value in ipairs(a:totable()) do
+    if not b[value] then result[#result + 1] = value end
+  end
+  return set_result(result, a:dtype())
+end
+
+function numlua.setxor1d(left, right, assume_unique)
+  if assume_unique ~= nil and type(assume_unique) ~= "boolean" then
+    error("numlua.setxor1d: assume_unique must be a boolean or nil", 2)
+  end
+  local a = numlua.unique(set_sequence(left, "setxor1d"))
+  local b = numlua.unique(set_sequence(right, "setxor1d")):to(a:dtype())
+  local a_values, b_values = a:totable(), b:totable()
+  local a_set, b_set = set_lookup(a_values), set_lookup(b_values)
+  local result = {}
+  for _, value in ipairs(a_values) do
+    if not b_set[value] then result[#result + 1] = value end
+  end
+  for _, value in ipairs(b_values) do
+    if not a_set[value] then result[#result + 1] = value end
+  end
+  return numlua.unique(torch.tensor(result, { dtype = a:dtype() }))
+end
+
+function numlua.isin(element, test_elements, invert)
+  check_tensor(element, "isin")
+  if invert ~= nil and type(invert) ~= "boolean" then
+    error("numlua.isin: invert must be a boolean or nil", 2)
+  end
+  local lookup = set_lookup(
+    numlua.unique(set_sequence(test_elements, "isin")):totable())
+  local mask = {}
+  for _, value in ipairs(element:reshape(-1):totable()) do
+    mask[#mask + 1] = lookup[value] == true
+  end
+  local result = torch.tensor(mask, { dtype = "bool" })
+  if invert then result = result:logical_not() end
+  return result:reshape(element:sizes())
+end
+
+function numlua.in1d(element, test_elements, invert)
+  return numlua.isin(set_sequence(element, "in1d"), test_elements, invert)
+end
+
 function numlua.flatnonzero(t)
   check_tensor(t, "flatnonzero")
   local coords = t:reshape(-1):nonzero()
@@ -2569,7 +2714,7 @@ function numlua.argwhere(t)
   return nonzero_coordinates(t, "argwhere")
 end
 
-function numlua.percentile(t, q, axis, keepdims)
+function numlua.percentile(t, q, axis, keepdims, method)
   if type(q) == "table" then
     local scaled = {}
     for i, value in ipairs(q) do
@@ -2578,12 +2723,12 @@ function numlua.percentile(t, q, axis, keepdims)
       end
       scaled[i] = value / 100
     end
-    return numlua.quantile(t, scaled, axis, keepdims)
+    return numlua.quantile(t, scaled, axis, keepdims, method)
   end
   if type(q) ~= "number" or q < 0 or q > 100 then
     error("numlua.percentile: q must be in [0, 100]", 2)
   end
-  return numlua.quantile(t, q / 100, axis, keepdims)
+  return numlua.quantile(t, q / 100, axis, keepdims, method)
 end
 
 local function compress_condition(value)
@@ -3282,6 +3427,7 @@ numlua.loadz = npz.loadz
 -- whitespace / CSV text I/O
 -- ---------------------------------------------------------------------------
 
+numlua.fromstring = text.fromstring
 numlua.loadtxt = text.loadtxt
 numlua.savetxt = text.savetxt
 numlua.genfromtxt = text.genfromtxt

@@ -61,10 +61,16 @@
 - `numlua.deg2rad`/`radians`/`rad2deg`/`degrees`, `numlua.sinc`, and
   `numlua.heaviside` extend the elementwise surface.
 - `numlua.iqr` adds the interquartile range.
+- `numlua.intersect1d`/`union1d`/`setdiff1d`/`setxor1d` add set operations,
+  and `numlua.isin`/`in1d` add membership masks.
+- `numlua.poly` builds coefficients from roots.
+- `numlua.fromstring` parses numeric text into a 1-D tensor.
+- `numlua.quantile`/`numlua.percentile` accept lower/higher/midpoint/nearest
+  interpolation methods.
 
 ### Tests
 
-- 545 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 559 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -80,7 +86,11 @@
   validation; `test_gradient_edge2.lua` covers uniform/non-uniform and 2-D
   second-order edges; `test_negative_indices.lua` covers negative take and
   take_along_axis indices; `test_digitize.lua` covers left/right bin positions,
-  shapes, and errors.
+  shapes, and errors; `test_set_ops.lua` covers set results and validation;
+  `test_isin.lua` covers shaped/flat membership masks; `test_poly_roots.lua`
+  covers coefficient construction; `test_fromstring.lua` covers separators,
+  multiline/count/bool parsing, and errors; `test_quantile_methods.lua` covers
+  all interpolation modes and axis/table forms.
 
 ## 0.26.0 — 2026-11-24
 
