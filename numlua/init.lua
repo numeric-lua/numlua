@@ -107,6 +107,96 @@ function numlua.asarray(value, opts)
   return torch.tensor(value, opts)
 end
 
+function numlua.fromiter(iterator, dtype, count)
+  if type(iterator) ~= "function" then
+    error("numlua.fromiter expects an iterator function", 2)
+  end
+  if type(dtype) ~= "string" then
+    error("numlua.fromiter expects a dtype string", 2)
+  end
+  if count ~= nil and (type(count) ~= "number" or count % 1 ~= 0 or
+      count < 0) then
+    error("numlua.fromiter: count must be a non-negative integer or nil", 2)
+  end
+  local values = {}
+  while count == nil or #values < count do
+    local value = iterator()
+    if value == nil then break end
+    if type(value) ~= "number" and type(value) ~= "boolean" then
+      error("numlua.fromiter: iterator must return numbers, booleans, or nil",
+        2)
+    end
+    values[#values + 1] = value
+  end
+  local ok, result = pcall(torch.tensor, values, { dtype = dtype })
+  if not ok then
+    error("numlua.fromiter: cannot create " .. dtype .. " tensor: " ..
+      tostring(result), 2)
+  end
+  return result
+end
+
+-- packbits/unpackbits operate on flattened 1-D data and return uint8 tensors.
+-- The default bit order is most-significant-bit first.
+function numlua.packbits(t, bitorder)
+  check_tensor(t, "packbits")
+  bitorder = bitorder or "big"
+  if bitorder ~= "big" and bitorder ~= "little" then
+    error("numlua.packbits: bitorder must be 'big' or 'little'", 2)
+  end
+  local values = t:reshape(-1):totable()
+  local result = {}
+  for start = 1, #values, 8 do
+    local byte = 0
+    for offset = 0, 7 do
+      local index = start + offset
+      if index <= #values then
+        local value = values[index]
+        if value ~= 0 and value ~= false then
+          byte = byte + (bitorder == "big" and 2 ^ (7 - offset)
+            or 2 ^ offset)
+        end
+      end
+    end
+    result[#result + 1] = byte
+  end
+  return torch.tensor(result, { dtype = "uint8" })
+end
+
+function numlua.unpackbits(t, count, bitorder)
+  check_tensor(t, "unpackbits")
+  bitorder = bitorder or "big"
+  if bitorder ~= "big" and bitorder ~= "little" then
+    error("numlua.unpackbits: bitorder must be 'big' or 'little'", 2)
+  end
+  if count ~= nil and (type(count) ~= "number" or count % 1 ~= 0 or
+      count < 0) then
+    error("numlua.unpackbits: count must be a non-negative integer or nil", 2)
+  end
+  local values = t:reshape(-1):totable()
+  local total = count or #values * 8
+  local result = {}
+  for index = 1, #values do
+    local byte = values[index]
+    if type(byte) ~= "number" or byte % 1 ~= 0 or byte < 0 or byte > 255 then
+      error("numlua.unpackbits: input bytes must be integers in 0..255", 2)
+    end
+    for offset = 0, 7 do
+      if #result >= total then break end
+      local bit
+      if bitorder == "big" then
+        bit = math.floor(byte / 2 ^ (7 - offset)) % 2
+      else
+        bit = math.floor(byte / 2 ^ offset) % 2
+      end
+      result[#result + 1] = bit
+    end
+    if #result >= total then break end
+  end
+  while #result < total do result[#result + 1] = 0 end
+  return torch.tensor(result, { dtype = "uint8" })
+end
+
 function numlua.zeros(...)
   return torch.zeros(...)
 end
@@ -1210,6 +1300,123 @@ function numlua.nanmedian(t, axis, keepdims)
   return result
 end
 
+local function quantile_of_sorted(sorted, q)
+  local count = sorted:numel()
+  local position = q * (count - 1) + 1
+  local lower = math.floor(position)
+  local upper = math.min(count, lower + 1)
+  local fraction = position - lower
+  local a, b = sorted:get(lower), sorted:get(upper)
+  return a + (b - a) * fraction
+end
+
+local function check_nanquantile_q(q, name)
+  if type(q) == "number" then
+    if q ~= q or q < 0 or q > 1 then
+      error("numlua." .. name .. ": q must be in [0, 1]", 3)
+    end
+    return
+  end
+  if type(q) ~= "table" or #q == 0 then
+    error("numlua." .. name .. ": q must be a number or non-empty table", 3)
+  end
+  for index = 1, #q do
+    local value = q[index]
+    if type(value) ~= "number" or value ~= value or value < 0 or value > 1 then
+      error("numlua." .. name .. ": every q entry must be in [0, 1]", 3)
+    end
+  end
+end
+
+local function nanquantile_scalar(t, q, axis, keepdims)
+  if not t:is_floating_point() or not t:ne(t):any():item() then
+    local result = numlua.quantile(t, q, axis, keepdims)
+    if type(result) == "number" then
+      local dtype = t:is_floating_point() and t:dtype() or "float64"
+      result = torch.tensor(result, { dtype = dtype })
+    end
+    return result
+  end
+
+  if axis == nil then
+    local flat = t:reshape(-1)
+    local valid = flat:masked_select(flat:eq(flat))
+    if valid:numel() == 0 then
+      return torch.tensor(0 / 0, { dtype = t:dtype() })
+    end
+    return torch.tensor(quantile_of_sorted(valid:sort(), q),
+      { dtype = t:dtype() })
+  end
+
+  local ndim = t:dim()
+  local dim = axis > 0 and axis or ndim + axis + 1
+  if dim < 1 or dim > ndim then
+    error(string.format(
+      "numlua.nanquantile: axis %d is out of range for a %d-D tensor",
+      axis, ndim), 2)
+  end
+  local moved = numlua.moveaxis(t, dim, ndim)
+  local size = moved:size(ndim)
+  if size == 0 then
+    error("numlua.nanquantile: cannot reduce an empty axis", 2)
+  end
+  local rows = 1
+  for index = 1, ndim - 1 do rows = rows * moved:size(index) end
+  local slices = moved:reshape(rows, size)
+  local values = {}
+  for row = 1, rows do
+    local slice = slices:select(1, row)
+    local valid = slice:masked_select(slice:eq(slice))
+    if valid:numel() == 0 then
+      values[row] = 0 / 0
+    else
+      values[row] = quantile_of_sorted(valid:sort(), q)
+    end
+  end
+  local shape = {}
+  for index = 1, ndim - 1 do shape[index] = moved:size(index) end
+  if keepdims then shape[#shape + 1] = 1 end
+  local result = torch.tensor(values, { dtype = t:dtype() }):reshape(shape)
+  if keepdims then
+    result = numlua.moveaxis(result, result:dim(), dim)
+  end
+  return result
+end
+
+function numlua.nanquantile(t, q, axis, keepdims)
+  check_tensor(t, "nanquantile")
+  check_axis(axis, "nanquantile")
+  check_keepdims(keepdims, "nanquantile")
+  check_nanquantile_q(q, "nanquantile")
+  if type(q) == "number" then
+    return nanquantile_scalar(t, q, axis, keepdims)
+  end
+  local parts = {}
+  for index = 1, #q do
+    parts[index] = nanquantile_scalar(t, q[index], axis, keepdims)
+  end
+  return torch.stack(parts, 1)
+end
+
+function numlua.nanpercentile(t, q, axis, keepdims)
+  check_tensor(t, "nanpercentile")
+  if type(q) == "table" then
+    local scaled = {}
+    for index = 1, #q do
+      local value = q[index]
+      if type(value) ~= "number" or value < 0 or value > 100 then
+        error("numlua.nanpercentile: q entries must be in [0, 100]", 2)
+      end
+      scaled[index] = value / 100
+    end
+    return numlua.nanquantile(t, scaled, axis, keepdims)
+  end
+  if type(q) ~= "number" or q < 0 or q > 100 then
+    error("numlua.nanpercentile: q must be in [0, 100]", 2)
+  end
+  return numlua.nanquantile(t, q / 100, axis, keepdims)
+end
+
 local function quantile_scalar(sorted, q, axis, keepdims)
   local n = axis == nil and sorted:numel() or sorted:size(axis)
   if n == 0 then error("numlua.quantile: empty input", 2) end
@@ -1509,6 +1716,168 @@ function numlua.histogram(t, options)
     counts = counts:to("float64"):div(total:mul(widths))
   end
   return counts, edges
+end
+
+local HISTOGRAM2D_OPTIONS = {
+  bins = true, range = true, weights = true, density = true,
+}
+
+local function histogram2d_edges(values, bins, range_value, name)
+  if bins == nil then bins = 10 end
+  if type(bins) == "number" then
+    local options = { bins = bins }
+    if range_value ~= nil then options.range = range_value end
+    return numlua.histogram_bin_edges(values, options)
+  end
+  if torch.is_tensor(bins) then
+    local edges = bins:to("float64")
+    if edges:dim() ~= 1 or edges:numel() < 2 then
+      error("numlua." .. name .. ": bin edges must be 1-D with at least " ..
+        "two entries", 2)
+    end
+    if not numlua.diff(edges):gt(0):all():item() then
+      error("numlua." .. name .. ": bin edges must be strictly increasing", 2)
+    end
+    return edges
+  end
+  if type(bins) ~= "table" then
+    error("numlua." .. name .. ": bins must be an integer, edge table, or " ..
+      "tensor", 2)
+  end
+  local ok, converted = pcall(torch.tensor, bins, { dtype = "float64" })
+  if not ok then
+    error("numlua." .. name .. ": bin edges are not numeric: " ..
+      tostring(converted), 2)
+  end
+  if converted:dim() ~= 1 or converted:numel() < 2 then
+    error("numlua." .. name .. ": bin edges must be 1-D with at least two " ..
+      "entries", 2)
+  end
+  if not numlua.diff(converted):gt(0):all():item() then
+    error("numlua." .. name .. ": bin edges must be strictly increasing", 2)
+  end
+  return converted
+end
+
+-- histogram2d follows np.histogram2d for 1-D x/y samples.  `bins` may be one
+-- integer for both axes, {nx, ny}, a shared edge tensor, or {xedges, yedges}.
+function numlua.histogram2d(x, y, options)
+  check_tensor(x, "histogram2d")
+  check_tensor(y, "histogram2d")
+  if x:dim() ~= 1 or y:dim() ~= 1 then
+    error("numlua.histogram2d expects 1-D x and y samples", 2)
+  end
+  if x:numel() ~= y:numel() then
+    error("numlua.histogram2d: x and y must have the same length", 2)
+  end
+  if options ~= nil and type(options) ~= "table" then
+    error("numlua.histogram2d: options must be a table or nil", 2)
+  end
+  options = options or {}
+  for key in pairs(options) do
+    if not HISTOGRAM2D_OPTIONS[key] then
+      error("numlua.histogram2d: unknown option '" .. tostring(key) .. "'", 2)
+    end
+  end
+  if options.density ~= nil and type(options.density) ~= "boolean" then
+    error("numlua.histogram2d: density must be a boolean or nil", 2)
+  end
+  local range_value = options.range
+  if range_value ~= nil and (type(range_value) ~= "table" or
+      #range_value ~= 2) then
+    error("numlua.histogram2d: range must be a table of two {min, max} pairs", 2)
+  end
+
+  local bins = options.bins
+  local xedges, yedges
+  if bins == nil or type(bins) == "number" then
+    local count = bins == nil and 10 or bins
+    xedges = histogram2d_edges(x, count,
+      range_value and range_value[1] or nil, "histogram2d")
+    yedges = histogram2d_edges(y, count,
+      range_value and range_value[2] or nil, "histogram2d")
+  elseif torch.is_tensor(bins) then
+    if range_value ~= nil then
+      error("numlua.histogram2d: range cannot be combined with explicit bins", 2)
+    end
+    xedges = histogram2d_edges(x, bins, nil, "histogram2d")
+    yedges = histogram2d_edges(y, bins, nil, "histogram2d")
+  elseif type(bins) == "table" and #bins > 2 then
+    if range_value ~= nil then
+      error("numlua.histogram2d: range cannot be combined with explicit bins", 2)
+    end
+    xedges = histogram2d_edges(x, bins, nil, "histogram2d")
+    yedges = histogram2d_edges(y, bins, nil, "histogram2d")
+  elseif type(bins) == "table" and #bins == 2 then
+    if type(bins[1]) == "number" and type(bins[2]) == "number" then
+      xedges = histogram2d_edges(x, bins[1],
+        range_value and range_value[1] or nil, "histogram2d")
+      yedges = histogram2d_edges(y, bins[2],
+        range_value and range_value[2] or nil, "histogram2d")
+    else
+      if range_value ~= nil then
+        error("numlua.histogram2d: range cannot be combined with explicit " ..
+          "bins", 2)
+      end
+      xedges = histogram2d_edges(x, bins[1], nil, "histogram2d")
+      yedges = histogram2d_edges(y, bins[2], nil, "histogram2d")
+    end
+  else
+    error("numlua.histogram2d: bins must be an integer, {nx, ny}, shared " ..
+      "edges, or {xedges, yedges}", 2)
+  end
+
+  local count_x, count_y = xedges:numel() - 1, yedges:numel() - 1
+  local weights = nil
+  if options.weights ~= nil then
+    if torch.is_tensor(options.weights) then
+      weights = options.weights
+    elseif type(options.weights) == "table" then
+      local ok, converted = pcall(torch.tensor, options.weights)
+      if not ok then
+        error("numlua.histogram2d: weights are not numeric: " ..
+          tostring(converted), 2)
+      end
+      weights = converted
+    else
+      error("numlua.histogram2d: weights must be a tensor, table, or nil", 2)
+    end
+    weights = weights:reshape(-1):to("float64")
+    if weights:numel() ~= x:numel() then
+      error("numlua.histogram2d: weights must match the input size", 2)
+    end
+  end
+
+  local xpos = numlua.digitize(x, xedges, true)
+  local ypos = numlua.digitize(y, yedges, true)
+  local counts = {}
+  for i = 1, count_x do
+    counts[i] = {}
+    for j = 1, count_y do counts[i][j] = 0 end
+  end
+  local total = 0
+  for index = 1, x:numel() do
+    local i, j = xpos:get(index) - 1, ypos:get(index) - 1
+    if i >= 1 and i <= count_x and j >= 1 and j <= count_y then
+      local weight = weights ~= nil and weights:get(index) or 1
+      counts[i][j] = counts[i][j] + weight
+      total = total + weight
+    end
+  end
+  if options.density then
+    if total == 0 then
+      error("numlua.histogram2d: density requires a non-zero total weight", 2)
+    end
+    for i = 1, count_x do
+      local dx = xedges:get(i + 1) - xedges:get(i)
+      for j = 1, count_y do
+        local dy = yedges:get(j + 1) - yedges:get(j)
+        counts[i][j] = counts[i][j] / (total * dx * dy)
+      end
+    end
+  end
+  local result = torch.tensor(counts, { dtype = "float64" })
+  return result, xedges, yedges
 end
 
 -- trapezoid integrates along one axis with the trapezoidal rule, following

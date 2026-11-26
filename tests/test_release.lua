@@ -87,7 +87,10 @@ test("new public API and format support are documented", function()
       "numlua.tril_indices", "numlua.triu_indices", "numlua.digitize",
       "numlua.searchsorted", "numlua.put_along_axis", "numlua.delete",
       "numlua.insert", "numlua.choose", "numlua.extract",
-      "numlua.trim_zeros", "numlua.nanmedian", "numlua.diag_indices_from",
+      "numlua.trim_zeros", "numlua.nanmedian", "numlua.nanquantile",
+      "numlua.nanpercentile", "numlua.histogram2d", "numlua.fromiter",
+      "numlua.packbits", "numlua.unpackbits", "numlua.mask_indices",
+      "numlua.diag_indices_from",
       "numlua.tril_indices_from", "numlua.triu_indices_from",
       "numlua.vstack", "numlua.hstack", "numlua.dstack",
       "numlua.column_stack", "numlua.row_stack", "numlua.append",
@@ -319,6 +322,15 @@ test("new public API and format support are documented", function()
       readme:find("numlua.extract", 1, true) ~= nil and
       readme:find("numlua.trim_zeros", 1, true) ~= nil,
     "README.md does not document insert/choose/extract/trim_zeros")
+  assert_true(readme:find("numlua.nanquantile", 1, true) ~= nil and
+      readme:find("numlua.nanpercentile", 1, true) ~= nil,
+    "README.md does not document nanquantile/nanpercentile")
+  assert_true(readme:find("numlua.histogram2d", 1, true) ~= nil and
+      readme:find("numlua.packbits", 1, true) ~= nil,
+    "README.md does not document histogram2d/packbits")
+  assert_true(readme:find("numlua.fromiter", 1, true) ~= nil and
+      readme:find("numlua.mask_indices", 1, true) ~= nil,
+    "README.md does not document fromiter/mask_indices")
   assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
     "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,

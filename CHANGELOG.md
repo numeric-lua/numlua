@@ -51,10 +51,15 @@
 - `numlua.insert` adds scalar-position insertion, `numlua.choose` adds
   index-based choice selection, and `numlua.extract`/`numlua.trim_zeros` add
   flattened selection and edge trimming.
+- `numlua.nanquantile` and `numlua.nanpercentile` add NaN-aware quantiles.
+- `numlua.histogram2d` adds two-sample histograms.
+- `numlua.fromiter` adds iterator-backed 1-D construction.
+- `numlua.packbits`/`numlua.unpackbits` add bit packing, and
+  `numlua.mask_indices` adds callback-derived mask coordinates.
 
 ### Tests
 
-- 518 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 533 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned

@@ -2638,6 +2638,38 @@ function M.triu_indices_from(t, k)
   return M.triu_indices(t:size(1), k, t:size(2))
 end
 
+function M.mask_indices(n, mask_func, k)
+  if type(n) ~= "number" or n % 1 ~= 0 or n < 0 then
+    error("numlua.mask_indices: n must be a non-negative integer", 2)
+  end
+  if type(mask_func) ~= "function" then
+    error("numlua.mask_indices expects a mask function", 2)
+  end
+  local ones = torch.ones(n, n, { dtype = "uint8" })
+  local mask = k == nil and mask_func(ones) or mask_func(ones, k)
+  if type(mask) == "table" then
+    local ok, converted = pcall(torch.tensor, mask)
+    if not ok then
+      error("numlua.mask_indices: mask function returned an invalid table", 2)
+    end
+    mask = converted
+  end
+  if not torch.is_tensor(mask) then
+    error("numlua.mask_indices: mask function must return a tensor or table", 2)
+  end
+  if mask:dtype() ~= "bool" then mask = mask:ne(0) end
+  if mask:dim() ~= 2 or mask:size(1) ~= n or mask:size(2) ~= n then
+    error("numlua.mask_indices: mask function must return an n by n mask", 2)
+  end
+  local coords = mask:nonzero()
+  if coords:numel() == 0 then
+    local empty = torch.empty({ 0 }, { dtype = "int64" })
+    return empty, empty:clone()
+  end
+  return coords:narrow(2, 1, 1):squeeze(2),
+    coords:narrow(2, 2, 1):squeeze(2)
+end
+
 local function integer_vector(value, name, label)
   if torch.is_tensor(value) then
     if not INDEX_DTYPES[value:dtype()] then

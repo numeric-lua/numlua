@@ -45,6 +45,12 @@ numlua.array({ { 1, 2 }, { 3, 4 } }, { dtype = "int64" })
 Like `array`, but an existing tensor is returned unchanged unless
 `opts.dtype` requests a conversion. Lua values are converted as in `array`.
 
+### `numlua.fromiter(iterator, dtype[, count])`
+
+Builds a 1-D tensor by calling a zero-argument Lua `iterator` until it returns
+`nil` or `count` values have been collected. `dtype` is required. A short
+iterator is accepted and simply returns fewer than `count` values.
+
 ### `numlua.zeros(...)`
 
 `zeros(d1, d2, ...[, opts])` or `zeros(shape_table[, opts])`. Default dtype is
@@ -481,6 +487,14 @@ and follows the ordinary `median`/reduction shape rules. With an axis the
 reduced dimension is removed unless `keepdims` is true; integer input follows
 `median`'s dtype behavior, while floating input keeps its dtype.
 
+### `numlua.nanquantile(t, q[, axis[, keepdims]])`, `numlua.nanpercentile`
+
+NaN-aware quantiles. `q` is a number in `[0, 1]` or a non-empty table; NaN
+values are removed per slice and an all-NaN slice yields NaN. A scalar q with
+no axis returns a 0-D tensor; with an axis the reduced dimension follows the
+usual `keepdims` rules. A q table stacks results along the first result axis.
+`nanpercentile` accepts `0..100` and delegates to `nanquantile`.
+
 ### `numlua.nan_to_num(t[, nan[, posinf[, neginf]]])`
 
 Replaces NaN and infinities with finite values. With no replacement arguments,
@@ -623,6 +637,20 @@ Explicit edges must be strictly increasing and cannot be combined with
 numlua.histogram(numlua.array({ 0, 1, 2, 3, 4 }), { bins = 2 })
 -- counts {2, 3}, edges {0, 2, 4}
 ```
+
+### `numlua.histogram2d(x, y[, options])`
+
+Two-sample histogram returning counts, x edges, and y edges. `x` and `y` must
+be equal-length 1-D tensors. `bins` may be one integer for both axes, `{nx,
+ny}`, a shared explicit edge tensor/table, or `{xedges, yedges}`. `range`,
+`weights`, and `density` follow `histogram`; explicit edges cannot be combined
+with `range`. Counts are `float64`.
+
+### `numlua.packbits(t[, bitorder])`, `numlua.unpackbits(t[, count[, bitorder]])`
+
+Pack flattened truthy values into `uint8` bytes, or expand `uint8` bytes into
+0/1 elements. `bitorder` is `"big"` (default, most-significant bit first) or
+`"little"`. `unpackbits` uses `count` to truncate or zero-pad the output.
 
 ### `numlua.percentile(t, q[, axis[, keepdims]])`
 
@@ -1108,6 +1136,9 @@ triangular positions; `opts.dtype` selects an integer dtype.
 `numlua.triu_indices_from(t[, k])` derive those coordinates from the input
 shape; `diag_indices_from` uses the smallest dimension and works for N-D
 inputs, while the triangular variants require a 2-D input.
+`numlua.mask_indices(n, mask_func[, k])` calls `mask_func` on an `n x n` ones
+tensor (passing `k` when supplied), truth-tests the returned mask, and returns
+the selected row/column coordinates.
 
 `numlua.digitize(x, bins[, right])` returns 1-based insertion positions
 relative to a sorted 1-D `bins` tensor; `right = true` uses right-side
@@ -1417,11 +1448,13 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `interp`, `digitize`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`,
 `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`,
 `insert`, `choose`, `extract`, `piecewise`, `msort`,
-`histogram`, `histogram_bin_edges`, `nanargmin`, `nanargmax`, `nanmedian`,
-`nan_to_num`, `nancumsum`, `nancumprod`, `cumsum`, `cumprod`, `argsort`,
+`histogram`, `histogram_bin_edges`, `histogram2d`, `packbits`, `unpackbits`,
+`fromiter`, `nanargmin`, `nanargmax`, `nanmedian`, `nanquantile`,
+`nanpercentile`, `nan_to_num`, `nancumsum`, `nancumprod`, `cumsum`, `cumprod`,
+`argsort`,
 `sort`, `partition`, `argpartition`, `indices`, `diag_indices`,
 `tril_indices`, `triu_indices`, `diag_indices_from`, `tril_indices_from`,
-`triu_indices_from`, `unique`, `nonzero`, `argwhere`, `take`,
+`triu_indices_from`, `mask_indices`, `unique`, `nonzero`, `argwhere`, `take`,
 `take_along_axis`, `delete`, `ravel_multi_index`, `unravel_index`, and
 `apply_along_axis`. `rot90(t, 0)` is the one exception and returns its input
 unchanged. `reshape` and
@@ -2007,7 +2040,11 @@ dtype, or backend constraints are forwarded as-is.
 - `polyval`/`polyfit` use descending-degree coefficients; `polyfit` uses the
   SVD least-squares helper and returns `float64`.
 - `histogram` edges are `float64`; explicit edges must be strictly increasing,
-  and `range` cannot be combined with explicit edges.
+  and `range` cannot be combined with explicit edges. `histogram2d` accepts
+  integer/shared/per-axis bins and normalizes density by in-range total weight.
+- `packbits`/`unpackbits` flatten their input and use `uint8` output;
+  `fromiter` requires a dtype and stops early at `nil`; `mask_indices` requires
+  an `n x n` mask callback.
 - `ravel_multi_index`/`unravel_index` use 1-based coordinates and flat indices,
   support `"C"`/`"F"` order, and return `int64` tensors.
 - `nan_to_num` uses ATen's dtype-maximum defaults when replacement values are
@@ -2040,8 +2077,9 @@ dtype, or backend constraints are forwarded as-is.
   supports one scalar 1-based position at a time.
 - `choose` uses 0-based integer indices; `extract` flattens both operands and
   permits a shorter condition prefix; `trim_zeros` is 1-D only.
-- `nanmedian` materializes each slice's valid values and follows `median`'s
-  integer-input dtype behavior; all-NaN slices return NaN.
+- `nanmedian`/`nanquantile`/`nanpercentile` materialize each slice's valid
+  values; the median follows `median`'s integer-input dtype behavior, q tables
+  stack along the first result axis, and all-NaN slices return NaN.
 - `searchsorted` sorters are 1-based permutations of the sorted axis, and
   `*_indices_from` derive 1-based coordinates from the input shape.
 - `partition`/`argpartition` return a fully sorted result, which satisfies the

@@ -157,6 +157,8 @@ end
 
 local files = {
   "test_constructors.lua",
+  "test_fromiter.lua",
+  "test_packbits.lua",
   "test_logspace.lua",
   "test_meshgrid.lua",
   "test_like.lua",
@@ -176,9 +178,11 @@ local files = {
   "test_average.lua",
   "test_cov.lua",
   "test_histogram.lua",
+  "test_histogram2d.lua",
   "test_nan_reductions.lua",
   "test_nan_utils.lua",
   "test_nanmedian.lua",
+  "test_nanquantile.lua",
   "test_nan_arg.lua",
   "test_predicates.lua",
   "test_close.lua",
@@ -208,6 +212,7 @@ local files = {
   "test_partition.lua",
   "test_indices.lua",
   "test_indices_from.lua",
+  "test_mask_indices.lua",
   "test_digitize.lua",
   "test_searchsorted_sorter.lua",
   "test_index_conversion.lua",

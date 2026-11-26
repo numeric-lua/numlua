@@ -109,6 +109,7 @@ print("nanargmin/nanargmax: " ..
   tostring(numlua.nanargmin(nan_values):item()) .. "/" ..
   tostring(numlua.nanargmax(nan_values):item()))
 print("nanmedian: " .. tostring(numlua.nanmedian(nan_values):item()))
+print("nanquantile: " .. tostring(numlua.nanquantile(nan_values, 0.5):item()))
 print("broadcast_shapes: " ..
   table.concat(numlua.broadcast_shapes({ 2, 1, 3 }, { 1, 4, 1 }), " x "))
 print("diff with edges: " .. table.concat(numlua.diff(
@@ -132,6 +133,16 @@ local counts, edges = numlua.histogram(numlua.array({ 0, 1, 2, 3, 4 }),
   { bins = 2 })
 print("histogram counts: " .. table.concat(counts:totable(), ", ") ..
   " edges: " .. table.concat(edges:totable(), ", "))
+local histogram2d = numlua.histogram2d(numlua.array({ 0.5, 1.5 }),
+  numlua.array({ 0.5, 1.5 }), { bins = 2, range = { { 0, 2 }, { 0, 2 } } })
+print("histogram2d:\n" .. histogram2d:format())
+local counter = 0
+print("fromiter: " .. table.concat(numlua.fromiter(function()
+  counter = counter + 1
+  if counter <= 3 then return counter end
+end, "int64"):totable(), ", "))
+print("packbits: " .. table.concat(numlua.packbits(
+  numlua.array({ 1, 0, 1, 0, 0, 0, 0, 1 })):totable(), ", "))
 print("ravel: " .. table.concat(numlua.ravel_multi_index(
   { { 1, 2 }, { 2, 3 } }, { 2, 3 }):totable(), ", "))
 local row, column = numlua.unravel_index(
@@ -236,6 +247,11 @@ print("tril rows: " .. table.concat(lower_rows:totable(), ", ") ..
 local from_rows, from_columns = numlua.tril_indices_from(matrix)
 print("tril_indices_from shape: " ..
   tostring(from_rows:numel()) .. "/" .. tostring(from_columns:numel()))
+local mask_rows, mask_columns = numlua.mask_indices(3, function(mask, k)
+  return numlua.triu(mask, k):ne(0)
+end)
+print("mask_indices shape: " ..
+  tostring(mask_rows:numel()) .. "/" .. tostring(mask_columns:numel()))
 local negative_take = numlua.take(matrix,
   numlua.array({ -1 }, { dtype = "int64" }))
 print("take last flat element: " .. tostring(negative_take:item()))
