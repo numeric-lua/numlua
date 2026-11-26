@@ -583,6 +583,19 @@ Least-squares polynomial fit of 1-D `x`/`y`, returning descending-degree
 `linalg.lstsq`; `degree` must be a non-negative integer smaller than the number
 of points.
 
+### `numlua.polyadd(left, right)`, `numlua.polysub`, `numlua.polymul`, `numlua.polydiv`
+
+Descending-coefficient polynomial arithmetic. `numlua.polyadd`/`numlua.polysub` align the
+leading degrees, `numlua.polymul` convolves coefficients, and `numlua.polydiv`
+returns quotient and remainder. Inputs are 1-D tensors or tables; results are
+`float64` and trim exact leading zeros. A zero divisor raises an error.
+
+### `numlua.polyder(coefficients[, order])`, `numlua.polyint(coefficients[, constant])`
+
+Differentiate or integrate descending-degree coefficients. `order` is a
+non-negative integer (default `1`); `constant` is the integration constant
+(default `0`). Results are `float64` with exact leading zeros trimmed.
+
 ### `numlua.argmax(t[, axis[, keepdims]])`
 
 Returns an `int64` tensor of 1-based indices. If `axis` is omitted, the result
@@ -602,6 +615,11 @@ Returns the `q`-quantile using linear interpolation between order statistics.
 returns a tensor with the quantile axis first. With no axis the input is flattened and a Lua number
 is returned. With an axis the reduced axis is removed unless `keepdims` is
 true.
+
+### `numlua.iqr(t[, axis[, keepdims]])`
+
+Interquartile range, `quantile(0.75) - quantile(0.25)`, using the same axis and
+`keepdims` rules as `quantile`. A no-axis scalar result is a 0-D tensor.
 
 ### `numlua.searchsorted(sorted, values[, side[, sorter]])`
 
@@ -896,6 +914,10 @@ numbers produces a 0-D tensor.
 | `numlua.remainder(a, b)` / `numlua.mod(a, b)` | Python-style elementwise remainder |
 | `numlua.logical_not(t)` | boolean negation |
 | `numlua.logical_and(a, b)` / `numlua.logical_or(a, b)` / `numlua.logical_xor(a, b)` | boolean logic over truth-tested operands |
+| `numlua.deg2rad(t)` / `numlua.radians(t)` | degrees to radians |
+| `numlua.rad2deg(t)` / `numlua.degrees(t)` | radians to degrees |
+| `numlua.sinc(t)` | normalized sinc, `sin(pi*x)/(pi*x)` with `1` at zero |
+| `numlua.heaviside(x1, x2)` | `0` for negative, `1` for positive, `x2` for zero/NaN |
 
 ```lua
 local a = numlua.array({ 1, 2, 3 })
@@ -906,6 +928,8 @@ numlua.divide(a, 2)           -- {0.5, 1, 1.5}
 numlua.power(a, 2)            -- {1, 4, 9}
 numlua.maximum(a, 2)          -- {2, 2, 3}
 numlua.sqrt(numlua.array({ 1, 4, 9 })) -- {1, 2, 3}
+numlua.deg2rad(numlua.array({ 0, 180 })) -- {0, pi}
+numlua.sinc(numlua.array({ 0, 1 }))      -- {1, 0}
 ```
 
 Lua booleans are not accepted as scalar operands by the arithmetic and
@@ -1446,6 +1470,8 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `repeat_`, `flip`, `fliplr`,
 `flipud`, `rot90`, `roll`, `diff`, `ediff1d`, `gradient`, `unwrap`,
 `interp`, `digitize`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`,
+`polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint`, `iqr`,
+`deg2rad`, `rad2deg`, `sinc`, `heaviside`,
 `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`,
 `insert`, `choose`, `extract`, `piecewise`, `msort`,
 `histogram`, `histogram_bin_edges`, `histogram2d`, `packbits`, `unpackbits`,
@@ -2038,7 +2064,11 @@ dtype, or backend constraints are forwarded as-is.
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D input,
   `rowvar = false`, and optional `y`; `corrcoef` clips round-off to `[-1, 1]`.
 - `polyval`/`polyfit` use descending-degree coefficients; `polyfit` uses the
-  SVD least-squares helper and returns `float64`.
+  SVD least-squares helper and returns `float64`. Polynomial arithmetic and
+  calculus also use descending coefficients, return `float64`, and trim exact
+  leading zeros; `iqr` is `quantile(0.75) - quantile(0.25)`.
+- `deg2rad`/`rad2deg` and `sinc` promote non-floating input to `float64`;
+  `heaviside` uses the `x2` branch for zero and NaN.
 - `histogram` edges are `float64`; explicit edges must be strictly increasing,
   and `range` cannot be combined with explicit edges. `histogram2d` accepts
   integer/shared/per-axis bins and normalizes density by in-range total weight.

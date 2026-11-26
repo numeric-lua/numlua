@@ -1880,6 +1880,68 @@ function numlua.histogram2d(x, y, options)
   return result, xedges, yedges
 end
 
+local function angle_scale(t, factor, name)
+  check_tensor(t, name)
+  if not t:is_floating_point() then t = t:to("float64") end
+  return t:mul(factor)
+end
+
+function numlua.deg2rad(t)
+  return angle_scale(t, math.pi / 180, "deg2rad")
+end
+
+numlua.radians = numlua.deg2rad
+
+function numlua.rad2deg(t)
+  return angle_scale(t, 180 / math.pi, "rad2deg")
+end
+
+numlua.degrees = numlua.rad2deg
+
+function numlua.sinc(t)
+  check_tensor(t, "sinc")
+  if not t:is_floating_point() then t = t:to("float64") end
+  local scaled = t:mul(math.pi)
+  local ratio = scaled:sin():div(scaled)
+  local one = scaled:mul(0):add(1)
+  return torch.where(scaled:eq(0), one, ratio)
+end
+
+function numlua.heaviside(x1, x2)
+  check_tensor(x1, "heaviside")
+  local second
+  if torch.is_tensor(x2) then
+    second = x2
+  elseif type(x2) == "table" then
+    local ok, converted = pcall(torch.tensor, x2)
+    if not ok then
+      error("numlua.heaviside: x2 is not numeric: " .. tostring(converted), 2)
+    end
+    second = converted
+  elseif type(x2) == "number" then
+    second = x2
+  else
+    error("numlua.heaviside expects x2 to be a tensor, table, or number", 2)
+  end
+  local result = numlua.where(x1:eq(0), second, 1)
+  result = numlua.where(x1:lt(0), 0, result)
+  result = numlua.where(x1:gt(0), 1, result)
+  return numlua.where(x1:ne(x1), second, result)
+end
+
+function numlua.iqr(t, axis, keepdims)
+  check_tensor(t, "iqr")
+  check_axis(axis, "iqr")
+  check_keepdims(keepdims, "iqr")
+  local upper = numlua.quantile(t, 0.75, axis, keepdims)
+  local lower = numlua.quantile(t, 0.25, axis, keepdims)
+  if type(upper) == "number" then
+    local dtype = t:is_floating_point() and t:dtype() or "float64"
+    return torch.tensor(upper - lower, { dtype = dtype })
+  end
+  return upper:sub(lower)
+end
+
 -- trapezoid integrates along one axis with the trapezoidal rule, following
 -- np.trapezoid (formerly np.trapz).  `x` may be a 1-D coordinate vector for
 -- the selected axis or an array with the input's shape; when it is omitted,
@@ -2180,6 +2242,122 @@ function numlua.polyfit(x, y, degree)
   local design = numlua.vander(x, degree + 1, true)
   local ascending = linalg.lstsq(design, y)
   return numlua.flip(ascending, 1)
+end
+
+local function polynomial_values(value, name)
+  local p = polynomial_coefficients(value, name)
+  if p:numel() == 0 then
+    error("numlua." .. name .. " expects at least one coefficient", 2)
+  end
+  return p:to("float64"):totable()
+end
+
+local function trimmed_coefficients(values)
+  local first = 1
+  while first < #values and values[first] == 0 do first = first + 1 end
+  local result = {}
+  for index = first, #values do result[#result + 1] = values[index] end
+  if #result == 0 then result[1] = 0 end
+  return result
+end
+
+function numlua.polyadd(left, right)
+  local a = polynomial_values(left, "polyadd")
+  local b = polynomial_values(right, "polyadd")
+  local count = math.max(#a, #b)
+  local result = {}
+  for index = 1, count do
+    local ai = index - (count - #a)
+    local bi = index - (count - #b)
+    result[index] = (ai >= 1 and a[ai] or 0) + (bi >= 1 and b[bi] or 0)
+  end
+  return torch.tensor(trimmed_coefficients(result), { dtype = "float64" })
+end
+
+function numlua.polysub(left, right)
+  local a = polynomial_values(left, "polysub")
+  local b = polynomial_values(right, "polysub")
+  local count = math.max(#a, #b)
+  local result = {}
+  for index = 1, count do
+    local ai = index - (count - #a)
+    local bi = index - (count - #b)
+    result[index] = (ai >= 1 and a[ai] or 0) - (bi >= 1 and b[bi] or 0)
+  end
+  return torch.tensor(trimmed_coefficients(result), { dtype = "float64" })
+end
+
+function numlua.polymul(left, right)
+  local a = polynomial_values(left, "polymul")
+  local b = polynomial_values(right, "polymul")
+  local result = {}
+  for index = 1, #a + #b - 1 do result[index] = 0 end
+  for i = 1, #a do
+    for j = 1, #b do
+      result[i + j - 1] = result[i + j - 1] + a[i] * b[j]
+    end
+  end
+  return torch.tensor(trimmed_coefficients(result), { dtype = "float64" })
+end
+
+function numlua.polydiv(dividend, divisor)
+  local a = trimmed_coefficients(polynomial_values(dividend, "polydiv"))
+  local b = trimmed_coefficients(polynomial_values(divisor, "polydiv"))
+  local zero = true
+  for index = 1, #b do
+    if b[index] ~= 0 then zero = false break end
+  end
+  if zero then error("numlua.polydiv: divisor must not be zero", 2) end
+
+  local quotient = {}
+  local remainder = {}
+  for index = 1, #a do remainder[index] = a[index] end
+  local count = math.max(0, #a - #b + 1)
+  for index = 1, count do quotient[index] = 0 end
+  for index = 1, count do
+    local coefficient = remainder[index] / b[1]
+    quotient[index] = coefficient
+    for j = 1, #b do
+      remainder[index + j - 1] = remainder[index + j - 1] - coefficient * b[j]
+    end
+  end
+  if #quotient == 0 then quotient[1] = 0 end
+  return torch.tensor(trimmed_coefficients(quotient), { dtype = "float64" }),
+    torch.tensor(trimmed_coefficients(remainder), { dtype = "float64" })
+end
+
+function numlua.polyder(coefficients, order)
+  local values = polynomial_values(coefficients, "polyder")
+  order = order == nil and 1 or order
+  if type(order) ~= "number" or order % 1 ~= 0 or order < 0 then
+    error("numlua.polyder: order must be a non-negative integer", 2)
+  end
+  for _ = 1, order do
+    if #values <= 1 then
+      values = { 0 }
+      break
+    end
+    local next = {}
+    for index = 1, #values - 1 do
+      next[index] = values[index] * (#values - index)
+    end
+    values = next
+  end
+  return torch.tensor(trimmed_coefficients(values), { dtype = "float64" })
+end
+
+function numlua.polyint(coefficients, constant)
+  local values = polynomial_values(coefficients, "polyint")
+  constant = constant == nil and 0 or constant
+  if type(constant) ~= "number" then
+    error("numlua.polyint: constant must be a number or nil", 2)
+  end
+  local result = {}
+  for index = 1, #values do
+    result[index] = values[index] / (#values - index + 1)
+  end
+  result[#result + 1] = constant
+  return torch.tensor(trimmed_coefficients(result), { dtype = "float64" })
 end
 
 function numlua.flatnonzero(t)

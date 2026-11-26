@@ -56,10 +56,15 @@
 - `numlua.fromiter` adds iterator-backed 1-D construction.
 - `numlua.packbits`/`numlua.unpackbits` add bit packing, and
   `numlua.mask_indices` adds callback-derived mask coordinates.
+- `numlua.polyadd`/`polysub`/`polymul`/`polydiv` add polynomial arithmetic;
+  `numlua.polyder`/`polyint` add polynomial calculus.
+- `numlua.deg2rad`/`radians`/`rad2deg`/`degrees`, `numlua.sinc`, and
+  `numlua.heaviside` extend the elementwise surface.
+- `numlua.iqr` adds the interquartile range.
 
 ### Tests
 
-- 533 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 545 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned

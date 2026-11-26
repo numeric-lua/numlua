@@ -295,9 +295,9 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Combine | `concatenate`, `stack`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `rollaxis`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `msort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `put_along_axis`, `delete`, `insert`, `trim_zeros`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `diag_indices_from`, `tril_indices_from`, `triu_indices_from`, `mask_indices`, `ravel_multi_index`, `unravel_index` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
-| Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod` |
-| Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `nanmedian`, `nanquantile`, `nanpercentile`, `cov`, `corrcoef` |
-| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `packbits`, `unpackbits` |
+| Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod`, `deg2rad`, `radians`, `rad2deg`, `degrees`, `sinc`, `heaviside` |
+| Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `nanmedian`, `nanquantile`, `nanpercentile`, `iqr`, `cov`, `corrcoef` |
+| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `packbits`, `unpackbits`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
 | Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
@@ -331,7 +331,8 @@ returns `max - min` over the same axis (bool input becomes `int64`).
 return the sum of weights; `numlua.nanargmin`/`numlua.nanargmax` ignore NaNs
 and reject all-NaN slices, while `numlua.nanmedian`,
 `numlua.nanquantile`, and `numlua.nanpercentile` return NaN for all-NaN
-slices. `numlua.cov` computes sample covariance matrices and
+slices; `numlua.iqr` is the q75 - q25 range. `numlua.cov` computes sample
+covariance matrices and
 `numlua.corrcoef` normalizes them to correlations.
 `numlua.trapezoid` (with `numlua.trapz` as its historical alias) integrates
 along one axis with uniform `dx` or coordinate arrays; the default axis is the
@@ -340,6 +341,9 @@ increasing 1-D grid and keeps the shape of its coordinate input. `numlua.unwrap`
 removes phase jumps along a 1-based axis with a configurable period and
 discontinuity threshold. `numlua.polyval` evaluates descending-degree
 coefficients and `numlua.polyfit` performs an SVD least-squares fit.
+`numlua.polyadd`/`polysub`/`polymul`/`polydiv` add descending-coefficient
+arithmetic, and `numlua.polyder`/`polyint` differentiate or integrate
+polynomials.
 `numlua.histogram`/`numlua.histogram_bin_edges` provide counts, explicit or
 integer bin edges, weights, and density normalization; `numlua.histogram2d`
 adds the two-sample form with per-axis edges. `numlua.packbits` and
@@ -353,7 +357,9 @@ The elementwise surface also includes `numlua.isinf`, `numlua.isfinite`,
 `numlua.logical_and`, `numlua.logical_or`, `numlua.logical_xor`, and
 `numlua.logical_not`. The newer additions are `numlua.isposinf`,
 `numlua.isneginf`, `numlua.hypot`, `numlua.remainder`, and its `numlua.mod`
-alias.
+alias. Angle helpers are `numlua.deg2rad`/`numlua.radians` and
+`numlua.rad2deg`/`numlua.degrees`; `numlua.sinc` and `numlua.heaviside` cover
+the corresponding special ufuncs.
 `numlua.nan_to_num` replaces NaN/infinity values, while `numlua.nancumsum` and
 `numlua.nancumprod` skip NaNs in cumulative reductions.
 
@@ -676,8 +682,9 @@ constructors, second-order gradient edges, negative-index selection,
 digitize bins, stacking/append and rollaxis helpers, piecewise selection,
 ZIP64 writing, NaN-aware median/arg reductions, put_along_axis/delete/insert,
 axis-aware unique, choose/extract/trim_zeros, shape-derived index helpers,
-NaN-aware quantiles, 2-D histograms, bit packing, iterator construction,
-searchsorted sorters, additional ufuncs and NaN helpers, difference edges,
+NaN-aware quantiles and IQR, 2-D histograms, bit packing, iterator construction,
+polynomial arithmetic/calculus, angle/sinc/heaviside ufuncs, searchsorted
+sorters, additional ufuncs and NaN helpers, difference edges,
 broadcast-shape arithmetic, quoted/bool text fields,
 meshgrid, gradients, closeness predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
@@ -687,7 +694,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 533 tests.
+It currently contains 545 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -730,8 +737,8 @@ This is an MVP, not a complete NumPy replacement:
 - `var`/`std` and the `nan*` reductions accept one axis at a time; `ddof` must
   be finite, and all-NaN slices return NaN without NumPy's runtime warning.
   `nanmedian`/`nanquantile`/`nanpercentile` materialize per-slice valid values;
-  the median follows `median`'s integer-input dtype behavior, and q tables
-  stack along the first result axis;
+  the median follows `median`'s integer-input dtype behavior, q tables stack
+  along the first result axis, and `iqr` is `quantile(0.75) - quantile(0.25)`;
 - `put_along_axis` broadcasts singleton non-axis input dimensions but requires
   values to be scalar or match the indices/broadcast size; `delete` accepts
   integer indices/tables, not Python-style slice objects; `insert` supports one
@@ -767,7 +774,11 @@ This is an MVP, not a complete NumPy replacement:
   `rowvar = false`, and optional `y` observations; `corrcoef` uses unit sample
   covariance and clips round-off to `[-1, 1]`;
 - `polyval`/`polyfit` use descending-degree coefficients; `polyfit` returns
-  `float64` and requires fewer degrees than data points;
+  `float64` and requires fewer degrees than data points. Polynomial
+  arithmetic/calculus also uses descending coefficients, returns `float64`,
+  and trims exact leading zeros;
+- `deg2rad`/`rad2deg` and `sinc` promote non-floating input to `float64`;
+  `heaviside` treats NaN as the `x2` branch;
 - `histogram` edges are `float64`; explicit edges must be strictly increasing,
   and `range` cannot be combined with explicit edges. `histogram2d` accepts
   integer/shared/per-axis bins and normalizes density by in-range total weight;

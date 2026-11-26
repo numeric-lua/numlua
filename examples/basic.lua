@@ -110,6 +110,7 @@ print("nanargmin/nanargmax: " ..
   tostring(numlua.nanargmax(nan_values):item()))
 print("nanmedian: " .. tostring(numlua.nanmedian(nan_values):item()))
 print("nanquantile: " .. tostring(numlua.nanquantile(nan_values, 0.5):item()))
+print("iqr: " .. tostring(numlua.iqr(numlua.array({ 1, 2, 3, 4 })):item()))
 print("broadcast_shapes: " ..
   table.concat(numlua.broadcast_shapes({ 2, 1, 3 }, { 1, 4, 1 }), " x "))
 print("diff with edges: " .. table.concat(numlua.diff(
@@ -129,6 +130,11 @@ local fit = numlua.polyfit(numlua.array({ 0, 1, 2, 3 }),
   numlua.array({ 3, 5, 7, 9 }), 1)
 print("polyfit: " .. table.concat(fit:totable(), ", "))
 print("polyval at 2: " .. tostring(numlua.polyval(fit, 2):item()))
+print("polyadd: " .. table.concat(numlua.polyadd({ 1, 2 }, { 1 }):totable(),
+  ", "))
+print("polymul: " .. table.concat(numlua.polymul({ 1, 1 }, { 1, -1 })
+  :totable(), ", "))
+print("polyder: " .. table.concat(numlua.polyder({ 1, 2, 3 }):totable(), ", "))
 local counts, edges = numlua.histogram(numlua.array({ 0, 1, 2, 3, 4 }),
   { bins = 2 })
 print("histogram counts: " .. table.concat(counts:totable(), ", ") ..
@@ -293,6 +299,10 @@ print("scaled and shifted:\n" ..
   numlua.add(numlua.multiply(roots, 2), 1):format())
 print("maximum with scalar 2.5:\n" .. numlua.maximum(roots, 2.5):format())
 assert(numlua.dtype(numlua.sqrt(numlua.arange(1, 4))) == "float32")
+print("deg2rad: " .. table.concat(numlua.deg2rad(
+  numlua.array({ 0, 180 })):totable(), ", "))
+print("sinc: " .. table.concat(numlua.sinc(
+  numlua.array({ 0, 1 })):totable(), ", "))
 
 local special = numlua.array({ 1, math.huge, -math.huge, 0 / 0 })
 print("isinf:\n" .. numlua.isinf(special):format())
@@ -313,6 +323,8 @@ print("hypot: " .. table.concat(numlua.hypot(
   numlua.array({ 3, 5 }), numlua.array({ 4, 12 })):totable(), ", "))
 print("remainder: " .. table.concat(numlua.remainder(
   numlua.array({ 5, -5 }), 2):totable(), ", "))
+print("heaviside: " .. table.concat(numlua.heaviside(
+  numlua.array({ -1, 0, 1 }), 0.5):totable(), ", "))
 print("unwrap:\n" .. numlua.unwrap(numlua.array({ 0, 3.5, 7 })):format())
 print("interp: " .. tostring(numlua.interp(2,
   numlua.array({ 1, 3, 5 }), numlua.array({ 10, 30, 50 })):item()))
