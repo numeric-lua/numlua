@@ -90,6 +90,8 @@ test("new public API and format support are documented", function()
       "numlua.trim_zeros", "numlua.nanmedian", "numlua.nanquantile",
       "numlua.nanpercentile", "numlua.histogram2d", "numlua.fromiter",
       "numlua.packbits", "numlua.unpackbits", "numlua.mask_indices",
+      "numlua.mgrid", "numlua.ogrid", "numlua.ndindex",
+      "numlua.block", "numlua.histogramdd",
       "numlua.poly", "numlua.polyadd", "numlua.polysub",
       "numlua.polymul", "numlua.fromstring", "numlua.intersect1d",
       "numlua.union1d", "numlua.setdiff1d", "numlua.setxor1d",
@@ -356,6 +358,14 @@ test("new public API and format support are documented", function()
     "README.md does not document poly roots")
   assert_true(readme:find("interpolation method", 1, true) ~= nil,
     "README.md does not document quantile methods")
+  assert_true(readme:find("numlua.mgrid", 1, true) ~= nil and
+      readme:find("numlua.ndindex", 1, true) ~= nil,
+    "README.md does not document grids/iterators")
+  assert_true(readme:find("numlua.block", 1, true) ~= nil and
+      readme:find("numlua.histogramdd", 1, true) ~= nil,
+    "README.md does not document block/histogramdd")
+  assert_true(readme:find("invalid_raise = false", 1, true) ~= nil,
+    "README.md does not document genfromtxt invalid_raise")
   assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
     "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,

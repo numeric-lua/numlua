@@ -44,7 +44,9 @@ print(numlua.add(numlua.multiply(values, 2), 1):format()) -- {3, 9, 19}
 ```
 
 `numlua.fromiter(iterator, dtype[, count])` builds a 1-D tensor from a Lua
-iterator, stopping at `nil` or after `count` values.
+iterator, stopping at `nil` or after `count` values. `numlua.mgrid`/`numlua.ogrid`
+take `{start, stop[, step]}` slices and return dense or broadcastable coordinate
+grids; `numlua.ndindex` returns a C-order coordinate iterator.
 
 Use the returned tensors directly with the luatorch API for anything not
 covered here:
@@ -113,7 +115,7 @@ local left, right = table.unpack(numlua.hsplit(rows[1]:reshape(1, 2), 2))
 
 `numlua.vstack`, `numlua.hstack`, `numlua.dstack`, and `numlua.column_stack`
 wrap `concatenate` with NumPy's rank promotion; `numlua.row_stack` aliases
-`vstack`. `numlua.append` flattens when no axis is given and always returns a
+`vstack`, and `numlua.block` assembles nested rows of 2-D tiles. `numlua.append` flattens when no axis is given and always returns a
 new tensor.
 
 `numlua.take` uses the same 1-based indices and accepts scalar (0-D) or N-D
@@ -292,14 +294,14 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 
 | Group | Functions |
 | --- | --- |
-| Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `fromiter`, `meshgrid`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
+| Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `fromiter`, `meshgrid`, `mgrid`, `ogrid`, `ndindex`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
-| Combine | `concatenate`, `stack`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
+| Combine | `concatenate`, `stack`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `block`, `append`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `rollaxis`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `msort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `put_along_axis`, `delete`, `insert`, `trim_zeros`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `diag_indices_from`, `tril_indices_from`, `triu_indices_from`, `mask_indices`, `ravel_multi_index`, `unravel_index` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod`, `deg2rad`, `radians`, `rad2deg`, `degrees`, `sinc`, `heaviside` |
 | Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `nanmedian`, `nanquantile`, `nanpercentile`, `iqr`, `cov`, `corrcoef` |
-| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
+| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
 | Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isin`, `in1d`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Sets | `intersect1d`, `union1d`, `setdiff1d`, `setxor1d` |
 | Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
@@ -351,7 +353,8 @@ coefficients and `numlua.polyfit` performs an SVD least-squares fit.
 arithmetic; `numlua.polyder`/`polyint` differentiate or integrate polynomials.
 `numlua.histogram`/`numlua.histogram_bin_edges` provide counts, explicit or
 integer bin edges, weights, and density normalization; `numlua.histogram2d`
-adds the two-sample form with per-axis edges. `numlua.packbits` and
+adds the two-sample form with per-axis edges; `numlua.histogramdd` generalizes
+that to an arbitrary number of sample dimensions. `numlua.packbits` and
 `numlua.unpackbits` convert flattened binary data to/from `uint8` bytes with
 big- or little-endian bit order. `numlua.searchsorted`
 accepts an optional 1-based `sorter` permutation as a fourth argument.
@@ -447,7 +450,8 @@ directly through its tensor adapter. See `examples/plot.lua`.
 `numlua.fromstring(data, dtype, count, sep)` parses already-loaded numeric text
 into a 1-D tensor. It requires a non-empty text separator (binary mode is not
 implemented), supports the same numeric/bool spellings as `loadtxt`, and
-stops after `count` values when supplied.
+stops after `count` values when supplied. `genfromtxt` accepts
+`invalid_raise = false` to skip malformed rows instead of raising.
 
 ## `.npz` I/O
 
@@ -697,10 +701,11 @@ constructors, second-order gradient edges, negative-index selection,
 digitize bins, stacking/append and rollaxis helpers, piecewise selection,
 ZIP64 writing, NaN-aware median/arg reductions, put_along_axis/delete/insert,
 axis-aware unique, choose/extract/trim_zeros, shape-derived index helpers,
-NaN-aware quantiles and IQR, quantile methods, 2-D histograms, bit packing,
+NaN-aware quantiles and IQR, quantile methods, 2-D/N-D histograms, bit packing,
 iterator construction, polynomial arithmetic/calculus, set/membership helpers,
-text parsing, angle/sinc/heaviside ufuncs, searchsorted sorters, additional
-ufuncs and NaN helpers, difference edges,
+text parsing, invalid-row skipping, angle/sinc/heaviside ufuncs, coordinate
+grids and iterators, block assembly, searchsorted sorters, additional ufuncs
+and NaN helpers, difference edges,
 broadcast-shape arithmetic, quoted/bool text fields,
 meshgrid, gradients, closeness predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
@@ -710,7 +715,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 559 tests.
+It currently contains 573 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -791,6 +796,9 @@ This is an MVP, not a complete NumPy replacement:
   (or be numbers, which fill one slice); `ediff1d` always flattens;
 - `broadcast_shapes(...)` returns a Lua shape table and does not allocate a
   tensor;
+- `mgrid`/`ogrid` accept `{start, stop[, step]}` slice tables rather than
+  Python's slice syntax; `ndindex` yields 1-based C-order coordinate tables;
+  `block` assembles nested rows of 2-D tiles only;
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D inputs,
   `rowvar = false`, and optional `y` observations; `corrcoef` uses unit sample
   covariance and clips round-off to `[-1, 1]`;
@@ -802,7 +810,8 @@ This is an MVP, not a complete NumPy replacement:
   `heaviside` treats NaN as the `x2` branch;
 - `histogram` edges are `float64`; explicit edges must be strictly increasing,
   and `range` cannot be combined with explicit edges. `histogram2d` accepts
-  integer/shared/per-axis bins and normalizes density by in-range total weight;
+  integer/shared/per-axis bins and normalizes density by in-range total weight.
+  `histogramdd` accepts a `(N, D)` sample tensor or D 1-D column tensors;
 - `packbits`/`unpackbits` flatten their input, use `uint8` output, and default
   to most-significant-bit-first order; `fromiter` requires a dtype and stops
   early at `nil`; `mask_indices` requires an `n x n` mask callback;
@@ -865,10 +874,11 @@ This is an MVP, not a complete NumPy replacement:
   `.npy` for those). All three text functions accept caller-owned file handles
   at their current position and leave them open;
 - `genfromtxt` stays numeric/bool-only: it has no structured dtypes, `names`, string
-  columns, masked output, `usemask`, `loose`, `invalid_raise`, or `skiprows`
-  alias. Missing/filling/converters use 1-based physical columns, default dtype
-  is `float32`, a malformed non-missing field is an error, and `max_rows`
-  cannot be combined with `skip_footer`;
+  columns, masked output, `usemask`, `loose`, or a `skiprows` alias.
+  Missing/filling/converters use 1-based physical columns, default dtype is
+  `float32`, a malformed non-missing field is an error unless
+  `invalid_raise = false`, and `max_rows` cannot be combined with
+  `skip_footer`;
 - LuaRocks packaging is provided by `numlua-0.26.0-1.rockspec`; the native
   luatorch shim must still be built separately.
 

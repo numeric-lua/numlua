@@ -136,6 +136,97 @@ function numlua.fromiter(iterator, dtype, count)
   return result
 end
 
+local function grid_specs(...)
+  local specs = { ... }
+  if #specs == 1 and type(specs[1]) == "table" and
+      type(specs[1][1]) == "table" then
+    specs = specs[1]
+  end
+  if #specs == 0 then
+    error("numlua.mgrid expects at least one {start, stop[, step]} slice", 2)
+  end
+  return specs
+end
+
+local function grid_vectors(specs, name)
+  local vectors, dims = {}, {}
+  for index = 1, #specs do
+    local spec = specs[index]
+    if type(spec) ~= "table" or (#spec ~= 2 and #spec ~= 3) then
+      error("numlua." .. name ..
+        ": each slice must be {start, stop[, step]}", 2)
+    end
+    local start, stop = spec[1], spec[2]
+    local step = spec[3] == nil and 1 or spec[3]
+    if type(start) ~= "number" or type(stop) ~= "number" or
+        type(step) ~= "number" or step == 0 then
+      error("numlua." .. name .. ": slice bounds must be numbers and step " ..
+        "must be non-zero", 2)
+    end
+    local vector = numlua.arange(start, stop, step):to("float64")
+    vectors[index] = vector
+    dims[index] = vector:numel()
+  end
+  return vectors, dims
+end
+
+function numlua.mgrid(...)
+  local vectors, dims = grid_vectors(grid_specs(...), "mgrid")
+  local results = {}
+  for index = 1, #vectors do
+    local shape = {}
+    for dimension = 1, #dims do shape[dimension] = 1 end
+    shape[index] = dims[index]
+    results[index] = vectors[index]:reshape(shape):expand(dims):clone()
+  end
+  return unpack(results, 1, #results)
+end
+
+function numlua.ogrid(...)
+  local vectors, dims = grid_vectors(grid_specs(...), "ogrid")
+  local results = {}
+  for index = 1, #vectors do
+    local shape = {}
+    for dimension = 1, #dims do shape[dimension] = 1 end
+    shape[index] = dims[index]
+    results[index] = vectors[index]:reshape(shape)
+  end
+  return unpack(results, 1, #results)
+end
+
+function numlua.ndindex(...)
+  local dims
+  if select("#", ...) == 1 and type((...)) == "table" then
+    dims = ...
+  else
+    dims = { ... }
+  end
+  if type(dims) ~= "table" or #dims == 0 then
+    error("numlua.ndindex expects one or more dimensions", 2)
+  end
+  local total = 1
+  for index = 1, #dims do
+    local dimension = dims[index]
+    if type(dimension) ~= "number" or dimension % 1 ~= 0 or
+        dimension < 0 then
+      error("numlua.ndindex: dimensions must be non-negative integers", 2)
+    end
+    total = total * dimension
+  end
+  local counter = 0
+  return function()
+    if counter >= total then return nil end
+    local value = counter
+    counter = counter + 1
+    local coordinates = {}
+    for index = #dims, 1, -1 do
+      coordinates[index] = value % dims[index] + 1
+      value = math.floor(value / dims[index])
+    end
+    return coordinates
+  end
+end
+
 -- packbits/unpackbits operate on flattened 1-D data and return uint8 tensors.
 -- The default bit order is most-significant-bit first.
 function numlua.packbits(t, bitorder)
@@ -661,6 +752,46 @@ function numlua.column_stack(tensors)
     end
   end
   return numlua.concatenate(columns, 2)
+end
+
+-- block assembles nested rows of 2-D tensors: inner rows concatenate on axis
+-- 2, then the rows concatenate on axis 1.
+function numlua.block(rows)
+  if type(rows) ~= "table" or #rows == 0 then
+    error("numlua.block expects a non-empty nested table", 2)
+  end
+  if torch.is_tensor(rows[1]) then
+    for index = 1, #rows do
+      if not torch.is_tensor(rows[index]) or rows[index]:dim() ~= 2 then
+        error("numlua.block expects 2-D blocks", 2)
+      end
+    end
+    return numlua.concatenate(rows, 2)
+  end
+  local row_blocks = {}
+  local width = nil
+  for index = 1, #rows do
+    local row = rows[index]
+    if type(row) ~= "table" or #row == 0 then
+      error("numlua.block expects non-empty block rows", 2)
+    end
+    for block = 1, #row do
+      if not torch.is_tensor(row[block]) or row[block]:dim() ~= 2 then
+        error("numlua.block expects 2-D blocks", 2)
+      end
+    end
+    local part = numlua.concatenate(row, 2)
+    if part:dim() ~= 2 then
+      error("numlua.block expects 2-D blocks", 2)
+    end
+    if width == nil then
+      width = part:size(2)
+    elseif part:size(2) ~= width then
+      error("numlua.block: every row must have the same total width", 2)
+    end
+    row_blocks[index] = part
+  end
+  return numlua.concatenate(row_blocks, 1)
 end
 
 -- append(arr, values[, axis]) always returns a new tensor.  With no axis both
@@ -1905,6 +2036,180 @@ function numlua.histogram2d(x, y, options)
   end
   local result = torch.tensor(counts, { dtype = "float64" })
   return result, xedges, yedges
+end
+
+local HISTOGRAMDD_OPTIONS = { bins = true, range = true, weights = true, density = true }
+
+function numlua.histogramdd(samples, options)
+  if options ~= nil and type(options) ~= "table" then
+    error("numlua.histogramdd: options must be a table or nil", 2)
+  end
+  options = options or {}
+  for key in pairs(options) do
+    if not HISTOGRAMDD_OPTIONS[key] then
+      error("numlua.histogramdd: unknown option '" .. tostring(key) .. "'", 2)
+    end
+  end
+  if options.density ~= nil and type(options.density) ~= "boolean" then
+    error("numlua.histogramdd: density must be a boolean or nil", 2)
+  end
+
+  local columns, count
+  if torch.is_tensor(samples) then
+    if samples:dim() ~= 2 then
+      error("numlua.histogramdd expects a 2-D sample tensor", 2)
+    end
+    count = samples:size(1)
+    columns = {}
+    for index = 1, samples:size(2) do
+      columns[index] = samples:narrow(2, index, 1):squeeze(2)
+    end
+  elseif type(samples) == "table" and #samples > 0 then
+    if torch.is_tensor(samples[1]) then
+      columns = samples
+      for index = 1, #columns do
+        if not torch.is_tensor(columns[index]) or columns[index]:dim() ~= 1 then
+          error("numlua.histogramdd expects 1-D sample columns", 2)
+        end
+        if index == 1 then count = columns[index]:numel()
+        elseif columns[index]:numel() ~= count then
+          error("numlua.histogramdd: sample columns must have the same length", 2)
+        end
+      end
+    else
+      local ok, converted = pcall(torch.tensor, samples)
+      if not ok or converted:dim() ~= 2 then
+        error("numlua.histogramdd expects a rectangular 2-D sample table", 2)
+      end
+      count = converted:size(1)
+      columns = {}
+      for index = 1, converted:size(2) do
+        columns[index] = converted:narrow(2, index, 1):squeeze(2)
+      end
+    end
+  else
+    error("numlua.histogramdd expects a 2-D sample tensor or table", 2)
+  end
+  local dimensions = #columns
+  if dimensions == 0 then
+    error("numlua.histogramdd expects at least one sample dimension", 2)
+  end
+  if options.range ~= nil and (type(options.range) ~= "table" or
+      #options.range ~= dimensions) then
+    error("numlua.histogramdd: range must have one {min, max} pair per axis", 2)
+  end
+
+  local bins = options.bins
+  if bins == nil then bins = 10 end
+  local per_axis = {}
+  if type(bins) == "number" then
+    for index = 1, dimensions do per_axis[index] = bins end
+  elseif torch.is_tensor(bins) then
+    for index = 1, dimensions do per_axis[index] = bins end
+  elseif type(bins) == "table" and #bins == dimensions then
+    per_axis = bins
+  else
+    error("numlua.histogramdd: bins must be an integer, shared edges, or " ..
+      "one entry per axis", 2)
+  end
+
+  local edges = {}
+  for index = 1, dimensions do
+    local bin = per_axis[index]
+    local axis_range = options.range and options.range[index] or nil
+    if type(bin) == "number" then
+      edges[index] = numlua.histogram_bin_edges(columns[index], {
+        bins = bin, range = axis_range,
+      })
+    else
+      if axis_range ~= nil then
+        error("numlua.histogramdd: range cannot be combined with explicit " ..
+          "bins", 2)
+      end
+      edges[index] = histogram2d_edges(columns[index], bin, nil,
+        "histogramdd")
+    end
+  end
+
+  local dims = {}
+  for index = 1, dimensions do dims[index] = edges[index]:numel() - 1 end
+  local function zero_counts(level)
+    local values = {}
+    for index = 1, dims[level] do
+      if level == dimensions then
+        values[index] = 0
+      else
+        values[index] = zero_counts(level + 1)
+      end
+    end
+    return values
+  end
+  local counts = zero_counts(1)
+  local positions = {}
+  for index = 1, dimensions do
+    positions[index] = numlua.digitize(columns[index], edges[index], true)
+  end
+  local weights = nil
+  if options.weights ~= nil then
+    if torch.is_tensor(options.weights) then
+      weights = options.weights
+    elseif type(options.weights) == "table" then
+      local ok, converted = pcall(torch.tensor, options.weights)
+      if not ok then
+        error("numlua.histogramdd: weights are not numeric: " ..
+          tostring(converted), 2)
+      end
+      weights = converted
+    else
+      error("numlua.histogramdd: weights must be a tensor, table, or nil", 2)
+    end
+    weights = weights:reshape(-1):to("float64")
+    if weights:numel() ~= count then
+      error("numlua.histogramdd: weights must match the sample count", 2)
+    end
+  end
+
+  local total = 0
+  local function add(node, coordinates, level, weight)
+    local coordinate = coordinates[level]
+    if level == dimensions then
+      node[coordinate] = node[coordinate] + weight
+    else
+      add(node[coordinate], coordinates, level + 1, weight)
+    end
+  end
+  local coordinates = {}
+  for sample = 1, count do
+    local inside = true
+    for index = 1, dimensions do
+      local coordinate = positions[index]:get(sample) - 1
+      coordinates[index] = coordinate
+      if coordinate < 1 or coordinate > dims[index] then inside = false end
+    end
+    if inside then
+      local weight = weights ~= nil and weights:get(sample) or 1
+      add(counts, coordinates, 1, weight)
+      total = total + weight
+    end
+  end
+
+  if options.density then
+    if total == 0 then
+      error("numlua.histogramdd: density requires a non-zero total weight", 2)
+    end
+    local function normalize(node, level, factor)
+      for index = 1, dims[level] do
+        local width = edges[level]:get(index + 1) - edges[level]:get(index)
+        if level == dimensions then
+          node[index] = node[index] / (total * factor * width)
+        else
+          normalize(node[index], level + 1, factor * width)
+        end
+      end
+    end
+    normalize(counts, 1, 1)
+  end
+  return torch.tensor(counts, { dtype = "float64" }), edges
 end
 
 local function angle_scale(t, factor, name)

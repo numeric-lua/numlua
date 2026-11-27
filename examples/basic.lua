@@ -63,6 +63,10 @@ assert(top:equal(a:narrow(1, 1, 1)) and bottom:equal(a:narrow(1, 2, 1)))
 local stacked = numlua.vstack({ numlua.array({ 1, 2 }),
   numlua.array({ 3, 4 }) })
 print("vstack:\n" .. stacked:format())
+print("block:\n" .. numlua.block({
+  { numlua.array({ { 1 } }), numlua.array({ { 2 } }) },
+  { numlua.array({ { 3 } }), numlua.array({ { 4 } }) },
+}):format())
 print("append: " .. table.concat(numlua.append(numlua.array({ 1, 2 }),
   { 3, 4 }):totable(), ", "))
 print("rollaxis shape: " ..
@@ -145,6 +149,15 @@ print("histogram counts: " .. table.concat(counts:totable(), ", ") ..
 local histogram2d = numlua.histogram2d(numlua.array({ 0.5, 1.5 }),
   numlua.array({ 0.5, 1.5 }), { bins = 2, range = { { 0, 2 }, { 0, 2 } } })
 print("histogram2d:\n" .. histogram2d:format())
+print("histogramdd:\n" .. numlua.histogramdd(numlua.array({
+  { 0.5, 0.5 }, { 1.5, 1.5 },
+}), { bins = 2, range = { { 0, 2 }, { 0, 2 } } }):format())
+local gx, gy = numlua.mgrid({ 0, 2 }, { 0, 2 })
+print("mgrid shape: " .. table.concat(numlua.shape(gx), " x ") .. "/" ..
+  table.concat(numlua.shape(gy), " x "))
+local ndindex = numlua.ndindex({ 2, 2 })
+local first_coordinates = ndindex()
+print("ndindex first: " .. table.concat(first_coordinates, ", "))
 local counter = 0
 print("fromiter: " .. table.concat(numlua.fromiter(function()
   counter = counter + 1

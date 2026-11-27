@@ -67,10 +67,15 @@
 - `numlua.fromstring` parses numeric text into a 1-D tensor.
 - `numlua.quantile`/`numlua.percentile` accept lower/higher/midpoint/nearest
   interpolation methods.
+- `numlua.mgrid`/`numlua.ogrid` add coordinate grids and `numlua.ndindex` adds
+  a C-order coordinate iterator.
+- `numlua.block` assembles nested rows of 2-D tiles.
+- `numlua.histogramdd` adds N-dimensional histograms.
+- `genfromtxt` accepts `invalid_raise = false` to skip malformed rows.
 
 ### Tests
 
-- 559 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 573 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -90,7 +95,12 @@
   `test_isin.lua` covers shaped/flat membership masks; `test_poly_roots.lua`
   covers coefficient construction; `test_fromstring.lua` covers separators,
   multiline/count/bool parsing, and errors; `test_quantile_methods.lua` covers
-  all interpolation modes and axis/table forms.
+  all interpolation modes and axis/table forms; `test_mgrid.lua` covers
+  dense/sparse grids and validation; `test_ndindex.lua` covers C-order
+  iteration; `test_block.lua` covers nested/single-row tiles;
+  `test_histogramdd.lua` covers 2-D samples, weights, density, and errors;
+  `test_genfromtxt_invalid.lua` covers invalid-row skipping and option
+  validation.
 
 ## 0.26.0 — 2026-11-24
 

@@ -84,6 +84,7 @@ local GENFROMTXT_OPTIONS = {
   missing_values = true,
   filling_values = true,
   quotechar = true,
+  invalid_raise = true,
 }
 
 local SAVE_OPTIONS = {
@@ -899,6 +900,11 @@ function text.genfromtxt(path, options)
   local converters = parse_converters(options.converters, "genfromtxt")
   local unpack = check_unpack(options.unpack, "genfromtxt")
   local ndmin = check_ndmin(options.ndmin, "genfromtxt")
+  local invalid_raise = options.invalid_raise
+  if invalid_raise ~= nil and type(invalid_raise) ~= "boolean" then
+    error("numlua.genfromtxt: invalid_raise must be a boolean or nil", 2)
+  end
+  if invalid_raise == nil then invalid_raise = true end
 
   local data = read_input(path, "genfromtxt")
   data = data:gsub("\r\n", "\n"):gsub("\r", "\n")
@@ -990,28 +996,42 @@ function text.genfromtxt(path, options)
     local line = strip_comments(lines[line_number], markers, quotechar)
     if trim(line) ~= "" then
       local fields = split_fields(line, delimiter, quotechar, "genfromtxt")
+      local skip_line = false
       if columns == nil then
         columns = #fields
         resolve_columns()
       elseif #fields ~= columns then
-        error(string.format(
+        local message = string.format(
           "numlua.genfromtxt: line %d has %d column(s), expected %d",
-          line_number, #fields, columns), 2)
+          line_number, #fields, columns)
+        if invalid_raise then error(message, 2) end
+        skip_line = true
       end
-      local row = {}
-      if selected ~= nil then
-        for output_column = 1, #selected do
-          local source_column = selected[output_column]
-          row[output_column] = parse_field(
-            fields[source_column], line_number, source_column)
+      if not skip_line then
+        local ok, row = pcall(function()
+          local values = {}
+          if selected ~= nil then
+            for output_column = 1, #selected do
+              local source_column = selected[output_column]
+              values[output_column] = parse_field(
+                fields[source_column], line_number, source_column)
+            end
+          else
+            for column = 1, #fields do
+              values[column] = parse_field(fields[column], line_number, column)
+            end
+          end
+          return values
+        end)
+        if not ok then
+          if invalid_raise then error(row, 0) end
+          skip_line = true
         end
-      else
-        for column = 1, #fields do
-          row[column] = parse_field(fields[column], line_number, column)
+        if not skip_line then
+          rows[#rows + 1] = row
+          if max_rows ~= nil and #rows >= max_rows then break end
         end
       end
-      rows[#rows + 1] = row
-      if max_rows ~= nil and #rows >= max_rows then break end
     end
   end
 

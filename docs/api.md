@@ -170,6 +170,19 @@ local gx, gy = unpack(numlua.meshgrid(x, y, { indexing = "ij" }))
 -- gx: 3x2, gy: 3x2
 ```
 
+### `numlua.mgrid(...)`, `numlua.ogrid(...)`
+
+Build coordinate grids from `{start, stop[, step]}` slice tables (one per
+dimension). `mgrid` returns dense `float64` grids with every dimension's full
+length; `ogrid` returns broadcastable views with size 1 on the other axes. A
+single table containing all slices is also accepted.
+
+### `numlua.ndindex(...)`
+
+Returns a Lua iterator over 1-based C-order coordinates for the given shape
+(either varargs or one dimension table). Each call returns a coordinate table,
+or `nil` when exhausted. Non-negative integer dimensions are required.
+
 ### `numlua.zeros_like(t[, opts])`, `numlua.ones_like`, `numlua.empty_like`, `numlua.full_like`
 
 The `*_like` constructors use `t` for shape and dtype unless `opts` overrides
@@ -377,6 +390,12 @@ NumPy-style stacking wrappers over `concatenate`. `numlua.vstack` promotes to at
 axis 1 and rank >= 2 inputs on axis 2; `numlua.dstack` promotes to at least 3-D
 and concatenates on axis 3; `numlua.column_stack` turns 1-D inputs into columns
 and concatenates on axis 2. `numlua.row_stack` is an alias of `numlua.vstack`.
+
+### `numlua.block(rows)`
+
+Assembles nested rows of 2-D tensors: each inner row concatenates on axis 2,
+then rows concatenate on axis 1. A flat table of 2-D tensors is treated as one
+row. All rows must have the same total width, and every block must be 2-D.
 
 ### `numlua.append(t, values[, axis])`
 
@@ -669,6 +688,14 @@ be equal-length 1-D tensors. `bins` may be one integer for both axes, `{nx,
 ny}`, a shared explicit edge tensor/table, or `{xedges, yedges}`. `range`,
 `weights`, and `density` follow `histogram`; explicit edges cannot be combined
 with `range`. Counts are `float64`.
+
+### `numlua.histogramdd(samples[, options])`
+
+N-dimensional histogram. `samples` is an `(N, D)` 2-D tensor, a table of D
+1-D column tensors, or a rectangular `N x D` Lua table. `bins` is an integer,
+a shared edge tensor, or a table with one integer/edge entry per axis;
+`range` has one `{min, max}` pair per axis; `weights` and `density` follow
+`histogram`. Returns counts plus a table of per-axis edges, all `float64`.
 
 ### `numlua.packbits(t[, bitorder])`, `numlua.unpackbits(t[, count[, bitorder]])`
 
@@ -1484,9 +1511,10 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint`,
 `iqr`, `intersect1d`, `union1d`, `setdiff1d`, `setxor1d`, `isin`, `in1d`,
 `fromstring`, `deg2rad`, `rad2deg`, `sinc`, `heaviside`,
-`vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `append`,
-`insert`, `choose`, `extract`, `piecewise`, `msort`,
-`histogram`, `histogram_bin_edges`, `histogram2d`, `packbits`, `unpackbits`,
+`mgrid`, `ogrid`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`,
+`block`, `append`, `insert`, `choose`, `extract`, `piecewise`, `msort`,
+`histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`,
+`packbits`, `unpackbits`,
 `fromiter`, `nanargmin`, `nanargmax`, `nanmedian`, `nanquantile`,
 `nanpercentile`, `nan_to_num`, `nancumsum`, `nancumprod`, `cumsum`, `cumprod`,
 `argsort`,
@@ -1934,6 +1962,7 @@ position and is never closed. Options:
 | `unpack` | `false` | transpose a 2-D result |
 | `ndmin` | `0` | minimum result rank: `0`, `1`, or `2` |
 | `quotechar` | none | single-character quote for fields containing delimiters or spaces |
+| `invalid_raise` | `true` | when `false`, skip malformed rows instead of raising |
 
 `missing_values` may be a string (commas split multiple markers), a number, a
 list of markers applied to every column, or a table mapping **1-based physical
@@ -2078,7 +2107,9 @@ dtype, or backend constraints are forwarded as-is.
 - `diff` prepend/append values must match the input rank and non-axis shape
   (numbers fill one slice); `ediff1d` always flattens.
 - `broadcast_shapes(...)` returns a Lua shape table and does not allocate a
-  tensor.
+  tensor. `mgrid`/`ogrid` use `{start, stop[, step]}` slice tables instead of
+  Python slice syntax; `ndindex` yields 1-based C-order coordinate tables;
+  `block` assembles 2-D tiles only.
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D input,
   `rowvar = false`, and optional `y`; `corrcoef` clips round-off to `[-1, 1]`.
 - `polyval`/`polyfit` use descending-degree coefficients; `polyfit` uses the
@@ -2094,6 +2125,7 @@ dtype, or backend constraints are forwarded as-is.
 - `histogram` edges are `float64`; explicit edges must be strictly increasing,
   and `range` cannot be combined with explicit edges. `histogram2d` accepts
   integer/shared/per-axis bins and normalizes density by in-range total weight.
+  `histogramdd` accepts an `(N, D)` sample tensor or D 1-D column tensors.
 - `packbits`/`unpackbits` flatten their input and use `uint8` output;
   `fromiter` requires a dtype and stops early at `nil`; `mask_indices` requires
   an `n x n` mask callback.
@@ -2202,11 +2234,11 @@ dtype, or backend constraints are forwarded as-is.
   exactly representable double range; use `.npy` when exact large integers
   matter.
 - `genfromtxt` keeps the numeric/bool-only text scope: no structured dtypes,
-  `names`, string columns, masked-array output, `usemask`, `loose`,
-  `invalid_raise`, or `skiprows` alias. Missing/filling/converters use 1-based
-  physical column numbers (NumPy uses 0-based keys), default dtype is `float32`,
-  and a malformed field that is neither converted nor missing is an error
-  rather than a default-filled value. `max_rows` and `skip_footer` cannot be
+  `names`, string columns, masked-array output, `usemask`, `loose`, or
+  `skiprows` alias. Missing/filling/converters use 1-based physical column
+  numbers (NumPy uses 0-based keys), default dtype is `float32`, and a
+  malformed field that is neither converted nor missing is an error unless
+  `invalid_raise = false` skips the row. `max_rows` and `skip_footer` cannot be
   combined.
 - `argsort` and `sort` accept a `descending` flag that is a numlua extension;
   NumPy has no descending argument. The flag must be a boolean or `nil`.
