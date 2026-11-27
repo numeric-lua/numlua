@@ -158,6 +158,10 @@ print("mgrid shape: " .. table.concat(numlua.shape(gx), " x ") .. "/" ..
 local ndindex = numlua.ndindex({ 2, 2 })
 local first_coordinates = ndindex()
 print("ndindex first: " .. table.concat(first_coordinates, ", "))
+local ndenumerate = numlua.ndenumerate(numlua.array({ { 10, 20 } }))
+local first_index, first_value = ndenumerate()
+print("ndenumerate first: " .. table.concat(first_index, ", ") .. "=" ..
+  tostring(first_value))
 local counter = 0
 print("fromiter: " .. table.concat(numlua.fromiter(function()
   counter = counter + 1
@@ -165,6 +169,7 @@ print("fromiter: " .. table.concat(numlua.fromiter(function()
 end, "int64"):totable(), ", "))
 print("packbits: " .. table.concat(numlua.packbits(
   numlua.array({ 1, 0, 1, 0, 0, 0, 0, 1 })):totable(), ", "))
+print("binary_repr: " .. numlua.binary_repr(-5, 8))
 print("ravel: " .. table.concat(numlua.ravel_multi_index(
   { { 1, 2 }, { 2, 3 } }, { 2, 3 }):totable(), ", "))
 local row, column = numlua.unravel_index(
@@ -191,6 +196,9 @@ local inner_product = numlua.inner(a, a)
 print("inner product shape: " ..
   table.concat(numlua.shape(inner_product), " x "))
 assert(inner_product:get(1, 1) == 14 and inner_product:get(2, 2) == 77)
+print("tensordot:\n" .. numlua.tensordot(a,
+  numlua.array({ { 1, 1 }, { 1, 1 }, { 1, 1 } }, { dtype = "int64" }), 1)
+  :format())
 local outer_product = numlua.outer(numlua.array({ 1, 2 }),
   numlua.array({ 3, 4 }))
 print("outer product:\n" .. outer_product:format())
@@ -271,6 +279,11 @@ numlua.put(edited, { 1, 6 }, { 10, 60 })
 numlua.put(edited, { 9 }, -1, "wrap")
 print("after put:\n" .. edited:format())
 assert(edited:get(1) == 10 and edited:get(3) == -1 and edited:get(6) == 60)
+local copied = numlua.zeros(2, 2)
+numlua.copyto(copied, numlua.array({ { 1, 2 } }))
+print("copyto:\n" .. copied:format())
+numlua.putmask(copied, copied:gt(1), 0)
+print("putmask:\n" .. copied:format())
 
 local matrix = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
 local sorted = numlua.take_along_axis(matrix, numlua.argsort(matrix, 2), 2)

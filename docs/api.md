@@ -183,6 +183,12 @@ Returns a Lua iterator over 1-based C-order coordinates for the given shape
 (either varargs or one dimension table). Each call returns a coordinate table,
 or `nil` when exhausted. Non-negative integer dimensions are required.
 
+### `numlua.ndenumerate(t)`
+
+Returns an iterator yielding `coordinates, value` for each element in C order;
+coordinates use 1-based indices. A 0-D input yields one empty coordinate table
+and its scalar value.
+
 ### `numlua.zeros_like(t[, opts])`, `numlua.ones_like`, `numlua.empty_like`, `numlua.full_like`
 
 The `*_like` constructors use `t` for shape and dtype unless `opts` overrides
@@ -703,6 +709,13 @@ Pack flattened truthy values into `uint8` bytes, or expand `uint8` bytes into
 0/1 elements. `bitorder` is `"big"` (default, most-significant bit first) or
 `"little"`. `unpackbits` uses `count` to truncate or zero-pad the output.
 
+### `numlua.binary_repr(value[, width])`
+
+Formats an integer in binary. Without `width`, negative values use a leading
+`-`; with `width` in `1..53`, negative values use two's-complement form and
+positive values are zero-padded. Values that do not fit the requested width
+raise an error.
+
 ### `numlua.percentile(t, q[, axis[, keepdims]])`
 
 Percent-scaled alias for `numlua.quantile`; `q` is in `[0, 100]` and may also
@@ -1024,6 +1037,14 @@ matrix/vector and matrix/matrix products behave like `matmul`, and N-D
 operands sum over the last axis of `a` and the second-to-last axis of `b`.
 ATen's `matmul` performs the multiplication, so mixed integer/floating dtypes
 follow ATen's matmul checks rather than NumPy promotion.
+
+### `numlua.tensordot(a, b, axes)`
+
+Contracts axes of `a` and `b`. A non-negative integer contracts the last
+`axes` dimensions of `a` with the first `axes` dimensions of `b`; a
+`{a_axes, b_axes}` pair contracts arbitrary 1-based axes (negative axes are
+normalized, duplicates are rejected). Free axes retain their original order,
+and the result shape is `free(a) .. free(b)`.
 
 ### `numlua.inner(a, b)`
 
@@ -1444,6 +1465,11 @@ numlua.put(t, { 8 }, -1, "wrap")               -- writes index 2
 numlua.put(t, { 99 }, 0, "clip")               -- writes index 6
 ```
 
+`numlua.copyto(destination, source)` broadcasts and casts `source` into the
+existing destination tensor and returns it. `numlua.putmask(t, mask, values)`
+writes `values` where `mask` is true (using `where` broadcasting), mutates `t`,
+and returns it.
+
 `numlua.put_along_axis(t, indices, values, axis)` is the per-slice counterpart
 of `put`: `indices` and `t` must have the same rank, non-axis dimensions may
 match or be 1 in either operand, and the selected axis length comes from
@@ -1532,6 +1558,7 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `fromstring`, `deg2rad`, `rad2deg`, `sinc`, `heaviside`,
 `mgrid`, `ogrid`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`,
 `block`, `append`, `insert`, `choose`, `extract`, `piecewise`, `msort`,
+`tensordot`,
 `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`,
 `packbits`, `unpackbits`,
 `fromiter`, `nanargmin`, `nanargmax`, `nanmedian`, `nanquantile`,
@@ -1548,7 +1575,8 @@ materialize a C-order layout first. Tests cover
 the view/copy boundary, including large arrays, so a regression cannot silently
 turn a view into a full-size copy or make an allocating helper alias its input.
 `take` and `take_along_axis` allocate independent results; `put` and
-`put_along_axis` instead mutate their input in place and return it.
+`put_along_axis`, `copyto`, and `putmask` instead mutate their input in place
+and return it.
 `trim_zeros` returns a view created with `narrow`.
 
 ## Dtype
@@ -2134,8 +2162,12 @@ dtype, or backend constraints are forwarded as-is.
   (numbers fill one slice); `ediff1d` always flattens.
 - `broadcast_shapes(...)` returns a Lua shape table and does not allocate a
   tensor. `mgrid`/`ogrid` use `{start, stop[, step]}` slice tables instead of
-  Python slice syntax; `ndindex` yields 1-based C-order coordinate tables;
-  `block` assembles 2-D tiles only.
+  Python slice syntax; `ndindex` yields 1-based C-order coordinate tables and
+  `ndenumerate` adds values; `block` assembles 2-D tiles only.
+- `tensordot` contracts trailing/leading axes or explicit axis pairs; free axes
+  retain their original order. `binary_repr` widths are limited to 1..53 bits.
+- `copyto`/`putmask` mutate their destination; `putmask` requires broadcastable
+  replacement values.
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D input,
   `rowvar = false`, and optional `y`; `corrcoef` clips round-off to `[-1, 1]`.
 - `polyval`/`polyfit` use descending-degree coefficients; `polyfit` uses the

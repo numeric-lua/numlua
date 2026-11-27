@@ -158,8 +158,12 @@ end
 local files = {
   "test_constructors.lua",
   "test_mgrid.lua",
+  "test_binary_repr.lua",
   "test_ndindex.lua",
+  "test_ndenumerate.lua",
   "test_block.lua",
+  "test_copyto_putmask.lua",
+  "test_tensordot.lua",
   "test_fromiter.lua",
   "test_fromstring.lua",
   "test_genfromtxt_invalid.lua",

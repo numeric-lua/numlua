@@ -91,6 +91,8 @@ test("new public API and format support are documented", function()
       "numlua.nanpercentile", "numlua.histogram2d", "numlua.fromiter",
       "numlua.packbits", "numlua.unpackbits", "numlua.mask_indices",
       "numlua.mgrid", "numlua.ogrid", "numlua.ndindex",
+      "numlua.tensordot", "numlua.ndenumerate",
+      "numlua.binary_repr", "numlua.copyto", "numlua.putmask",
       "numlua.linalg.cholesky", "numlua.linalg.eigh",
       "numlua.linalg.eigvalsh", "numlua.linalg.matrix_power",
       "numlua.linalg.cond", "numlua.linalg.vdot",
@@ -380,6 +382,12 @@ test("new public API and format support are documented", function()
       readme:find("numlua.linalg.matrix_power", 1, true) ~= nil and
       readme:find("numlua.linalg.cond", 1, true) ~= nil,
     "README.md does not document factorization/power/condition helpers")
+  assert_true(readme:find("numlua.tensordot", 1, true) ~= nil and
+      readme:find("numlua.ndenumerate", 1, true) ~= nil and
+      readme:find("numlua.binary_repr", 1, true) ~= nil and
+      readme:find("numlua.copyto", 1, true) ~= nil and
+      readme:find("numlua.putmask", 1, true) ~= nil,
+    "README.md does not document tensordot/ndenumerate/binary_repr/mutation")
   assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
     "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,

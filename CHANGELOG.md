@@ -76,10 +76,14 @@
   `numlua.linalg.kron` extend the linear-algebra surface.
 - `numlua.linalg.cholesky`, `eigh`/`eigvalsh`, `matrix_power`, and `cond` add
   factorization, symmetric eigenvalues, powers, and condition numbers.
+- `numlua.tensordot` adds flexible axis contractions.
+- `numlua.ndenumerate` adds coordinate/value iteration.
+- `numlua.binary_repr` adds binary integer formatting.
+- `numlua.copyto` and `numlua.putmask` add in-place assignment helpers.
 
 ### Tests
 
-- 583 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 592 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -106,7 +110,11 @@
   `test_genfromtxt_invalid.lua` covers invalid-row skipping and option
   validation; `test_linalg_extra.lua` covers vdot/multi_dot/matrix_rank/
   slogdet/kron and their validation; `test_linalg_more.lua` covers Cholesky,
-  symmetric eigenvalues, powers, condition numbers, and errors.
+  symmetric eigenvalues, powers, condition numbers, and errors;
+  `test_tensordot.lua` covers contractions and validation;
+  `test_ndenumerate.lua` covers coordinate/value iteration;
+  `test_binary_repr.lua` covers formatting and width errors;
+  `test_copyto_putmask.lua` covers broadcast assignment and masks.
 
 ## 0.26.0 — 2026-11-24
 

@@ -46,7 +46,8 @@ print(numlua.add(numlua.multiply(values, 2), 1):format()) -- {3, 9, 19}
 `numlua.fromiter(iterator, dtype[, count])` builds a 1-D tensor from a Lua
 iterator, stopping at `nil` or after `count` values. `numlua.mgrid`/`numlua.ogrid`
 take `{start, stop[, step]}` slices and return dense or broadcastable coordinate
-grids; `numlua.ndindex` returns a C-order coordinate iterator.
+grids; `numlua.ndindex` returns a C-order coordinate iterator and
+`numlua.ndenumerate` additionally yields each value.
 
 Use the returned tensors directly with the luatorch API for anything not
 covered here:
@@ -294,17 +295,18 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 
 | Group | Functions |
 | --- | --- |
-| Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `fromiter`, `meshgrid`, `mgrid`, `ogrid`, `ndindex`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
+| Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `fromiter`, `meshgrid`, `mgrid`, `ogrid`, `ndindex`, `ndenumerate`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `block`, `append`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `rollaxis`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `msort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `put_along_axis`, `delete`, `insert`, `trim_zeros`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `diag_indices_from`, `tril_indices_from`, `triu_indices_from`, `mask_indices`, `ravel_multi_index`, `unravel_index` |
 | Iteration | `apply_along_axis`, `apply_over_axes` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod`, `deg2rad`, `radians`, `rad2deg`, `degrees`, `sinc`, `heaviside` |
 | Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `nanmedian`, `nanquantile`, `nanpercentile`, `iqr`, `cov`, `corrcoef` |
-| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
+| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `binary_repr`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
 | Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isin`, `in1d`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Sets | `intersect1d`, `union1d`, `setdiff1d`, `setxor1d` |
-| Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.cholesky`, `linalg.eigh`, `linalg.eigvalsh`, `linalg.matrix_power`, `linalg.cond`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
+| Mutation | `copyto`, `putmask` |
+| Linear algebra | `dot`, `tensordot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.cholesky`, `linalg.eigh`, `linalg.eigvalsh`, `linalg.matrix_power`, `linalg.cond`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt`, `genfromtxt` |
@@ -356,7 +358,8 @@ integer bin edges, weights, and density normalization; `numlua.histogram2d`
 adds the two-sample form with per-axis edges; `numlua.histogramdd` generalizes
 that to an arbitrary number of sample dimensions. `numlua.packbits` and
 `numlua.unpackbits` convert flattened binary data to/from `uint8` bytes with
-big- or little-endian bit order. `numlua.searchsorted`
+big- or little-endian bit order. `numlua.binary_repr` formats an integer in
+binary, optionally with a fixed width/two's-complement field. `numlua.searchsorted`
 accepts an optional 1-based `sorter` permutation as a fourth argument.
 
 The elementwise surface also includes `numlua.isinf`, `numlua.isfinite`,
@@ -372,7 +375,8 @@ the corresponding special ufuncs.
 `numlua.nancumprod` skip NaNs in cumulative reductions.
 
 `numlua.dot` now follows NumPy's shape rules for vectors, matrices, and batched
-inputs. `numlua.inner` sums over the last axis of both operands, `numlua.outer`
+inputs. `numlua.tensordot` contracts trailing/leading axes by count or explicit
+pair tables. `numlua.inner` sums over the last axis of both operands, `numlua.outer`
 flattens both operands before forming the product, and `numlua.cross` computes
 3-vector cross products over a 1-based axis (ATen batch broadcasting).
 `numlua.linalg.vdot` flattens both operands before the inner product,
@@ -412,6 +416,8 @@ second-order one-sided edges.
 begin/end values. `numlua.broadcast_shapes(...)` exposes the same right-aligned
 shape arithmetic as `broadcast_arrays` without allocating tensors.
 
+`numlua.copyto` broadcasts and casts a source into a destination tensor, and
+`numlua.putmask` writes a replacement where a boolean/numeric mask is true.
 `numlua.put_along_axis` writes per-slice values in place (broadcasting singleton
 input dimensions and scalar or matching values). `numlua.delete` removes
 1-based or negative indices, flattening when no axis is given.
@@ -713,8 +719,9 @@ NaN-aware quantiles and IQR, quantile methods, 2-D/N-D histograms, bit packing,
 iterator construction, polynomial arithmetic/calculus, set/membership helpers,
 text parsing, invalid-row skipping, angle/sinc/heaviside ufuncs, coordinate
 grids and iterators, block assembly, extra linalg helpers (vdot/multi_dot/
-matrix_rank/slogdet/kron/powers/condition), searchsorted sorters, additional
-ufuncs and NaN
+matrix_rank/slogdet/kron/powers/condition), tensordot, mutation helpers,
+binary formatting, ndenumerate, searchsorted sorters, additional ufuncs and
+NaN
 helpers, difference edges,
 broadcast-shape arithmetic, quoted/bool text fields,
 meshgrid, gradients, closeness predicates,
@@ -725,7 +732,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 583 tests.
+It currently contains 592 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -814,8 +821,12 @@ This is an MVP, not a complete NumPy replacement:
 - `broadcast_shapes(...)` returns a Lua shape table and does not allocate a
   tensor;
 - `mgrid`/`ogrid` accept `{start, stop[, step]}` slice tables rather than
-  Python's slice syntax; `ndindex` yields 1-based C-order coordinate tables;
-  `block` assembles nested rows of 2-D tiles only;
+  Python's slice syntax; `ndindex` yields 1-based C-order coordinate tables and
+  `ndenumerate` adds values; `block` assembles nested rows of 2-D tiles only;
+- `tensordot` contracts an integer number of trailing/leading axes or explicit
+  axis pairs; free axes retain their original order;
+- `binary_repr` is limited to widths up to 53 bits; `copyto`/`putmask` mutate
+  their destination and `putmask` requires broadcastable replacement values;
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D inputs,
   `rowvar = false`, and optional `y` observations; `corrcoef` uses unit sample
   covariance and clips round-off to `[-1, 1]`;

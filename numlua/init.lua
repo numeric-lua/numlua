@@ -227,6 +227,71 @@ function numlua.ndindex(...)
   end
 end
 
+function numlua.ndenumerate(t)
+  check_tensor(t, "ndenumerate")
+  if t:dim() == 0 then
+    local done = false
+    return function()
+      if done then return nil end
+      done = true
+      return {}, t:item()
+    end
+  end
+  local flat = t:reshape(-1)
+  local iterator = numlua.ndindex(t:sizes())
+  local offset = 0
+  return function()
+    local coordinates = iterator()
+    if coordinates == nil then return nil end
+    offset = offset + 1
+    return coordinates, flat:get(offset)
+  end
+end
+
+function numlua.binary_repr(value, width)
+  if type(value) ~= "number" or value % 1 ~= 0 then
+    error("numlua.binary_repr expects an integer", 2)
+  end
+  if width ~= nil and (type(width) ~= "number" or width % 1 ~= 0 or
+      width <= 0 or width > 53) then
+    error("numlua.binary_repr: width must be an integer in 1..53 or nil", 2)
+  end
+  if value < 0 and width == nil then
+    return "-" .. numlua.binary_repr(-value)
+  end
+  if value < 0 then
+    local minimum = -2 ^ width
+    if value < minimum then
+      error("numlua.binary_repr: value does not fit in width", 2)
+    end
+    value = 2 ^ width + value
+  end
+  local digits = ""
+  repeat
+    digits = tostring(value % 2) .. digits
+    value = math.floor(value / 2)
+  until value == 0
+  if width ~= nil then
+    while #digits < width do digits = "0" .. digits end
+  end
+  return digits
+end
+
+function numlua.copyto(destination, source)
+  check_tensor(destination, "copyto")
+  check_tensor(source, "copyto")
+  destination:copy_(source)
+  return destination
+end
+
+function numlua.putmask(t, mask, values)
+  check_tensor(t, "putmask")
+  check_tensor(mask, "putmask")
+  local replacement = numlua.where(mask, values, t)
+  t:copy_(replacement)
+  return t
+end
+
 -- packbits/unpackbits operate on flattened 1-D data and return uint8 tensors.
 -- The default bit order is most-significant-bit first.
 function numlua.packbits(t, bitorder)
@@ -3558,6 +3623,125 @@ function numlua.dot(a, b)
     error("numlua.dot expects at least 1-D tensors", 2)
   end
   return a:matmul(b)
+end
+
+local function tensordot_axes(value, ndim, name)
+  if type(value) ~= "table" then
+    error("numlua." .. name .. ": axes must be a number or {a_axes, b_axes}",
+      3)
+  end
+  local result, seen = {}, {}
+  for index = 1, #value do
+    local axis = value[index]
+    if type(axis) ~= "number" or axis % 1 ~= 0 or axis == 0 then
+      error("numlua." .. name .. ": axes must be non-zero integers", 3)
+    end
+    local normalized = axis > 0 and axis or ndim + axis + 1
+    if normalized < 1 or normalized > ndim then
+      error(string.format(
+        "numlua.%s: axis %d is out of range for a %d-D tensor",
+        name, axis, ndim), 3)
+    end
+    if seen[normalized] then
+      error("numlua." .. name .. ": duplicate axis " .. axis, 3)
+    end
+    seen[normalized] = true
+    result[#result + 1] = normalized
+  end
+  return result
+end
+
+local function tensordot_permutation(ndim, contracted)
+  local remove, order, free_axes = {}, {}, {}
+  for index = 1, #contracted do remove[contracted[index]] = true end
+  for index = 1, ndim do
+    if not remove[index] then
+      order[#order + 1] = index
+      free_axes[#free_axes + 1] = index
+    end
+  end
+  local free = #order
+  for index = 1, #contracted do order[#order + 1] = contracted[index] end
+  return order, free, free_axes
+end
+
+-- tensordot contracts the last N axes of a with the first N of b (integer
+-- axes), or arbitrary axes supplied as {a_axes, b_axes}.  Free axes retain
+-- their original order, matching np.tensordot.
+function numlua.tensordot(a, b, axes)
+  check_tensor(a, "tensordot")
+  check_tensor(b, "tensordot")
+  local axes_a, axes_b
+  if type(axes) == "number" then
+    if axes % 1 ~= 0 or axes < 0 then
+      error("numlua.tensordot: axes must be a non-negative integer", 2)
+    end
+    if axes > math.min(a:dim(), b:dim()) then
+      error("numlua.tensordot: too many axes to contract", 2)
+    end
+    axes_a, axes_b = {}, {}
+    for index = 1, axes do
+      axes_a[#axes_a + 1] = a:dim() - axes + index
+      axes_b[#axes_b + 1] = index
+    end
+  elseif type(axes) == "table" and #axes == 2 then
+    axes_a = tensordot_axes(axes[1], a:dim(), "tensordot")
+    axes_b = tensordot_axes(axes[2], b:dim(), "tensordot")
+    if #axes_a ~= #axes_b then
+      error("numlua.tensordot: axis lists must have the same length", 2)
+    end
+  else
+    error("numlua.tensordot: axes must be a number or {a_axes, b_axes}", 2)
+  end
+  for index = 1, #axes_a do
+    if a:size(axes_a[index]) ~= b:size(axes_b[index]) then
+      error(string.format(
+        "numlua.tensordot: contracted dimensions differ (%d and %d)",
+        a:size(axes_a[index]), b:size(axes_b[index])), 2)
+    end
+  end
+
+  local order_a, free_a, free_axes_a = tensordot_permutation(a:dim(), axes_a)
+  local order_b, free_b, free_axes_b = tensordot_permutation(b:dim(), axes_b)
+  local contracted, free_a_size, free_b_size = 1, 1, 1
+  for index = 1, #axes_a do
+    contracted = contracted * a:size(axes_a[index])
+  end
+  for index = 1, free_a do
+    free_a_size = free_a_size * a:size(free_axes_a[index])
+  end
+  for index = 1, free_b do
+    free_b_size = free_b_size * b:size(free_axes_b[index])
+  end
+
+  local left, right
+  if a:dim() == 0 then
+    left = a:reshape(1, 1)
+  else
+    left = a:permute(order_a):reshape(free_a_size, contracted)
+  end
+  if b:dim() == 0 then
+    right = b:reshape(1, 1)
+  else
+    local order_b_contract = {}
+    for index = 1, #axes_b do
+      order_b_contract[#order_b_contract + 1] = axes_b[index]
+    end
+    for index = 1, free_b do
+      order_b_contract[#order_b_contract + 1] = free_axes_b[index]
+    end
+    right = b:permute(order_b_contract):reshape(contracted, free_b_size)
+  end
+  local product = left:matmul(right)
+  local shape = {}
+  for index = 1, free_a do
+    shape[#shape + 1] = a:size(free_axes_a[index])
+  end
+  for index = 1, free_b do
+    shape[#shape + 1] = b:size(free_axes_b[index])
+  end
+  if #shape == 0 then return product:reshape({}) end
+  return product:reshape(shape)
 end
 
 -- inner sums the product over the last axis of each operand and keeps the
