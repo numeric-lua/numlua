@@ -221,6 +221,16 @@ local u, s, vh = la.svd(square, false)
 print("svd shapes = " .. table.concat(numlua.shape(u), "x") .. ", " ..
   table.concat(numlua.shape(s), "x") .. ", " ..
   table.concat(numlua.shape(vh), "x"))
+print("vdot = " .. tostring(la.vdot(numlua.array({ 1, 2 }),
+  numlua.array({ 3, 4 })):item()))
+print("matrix_rank = " .. tostring(la.matrix_rank(square):item()))
+local sign, logdet = la.slogdet(square)
+print("slogdet = " .. tostring(sign) .. ", " .. tostring(logdet))
+print("multi_dot:\n" .. la.multi_dot({
+  numlua.array({ { 1.0, 2.0 } }), numlua.array({ { 1.0 }, { 2.0 } }),
+}):format())
+print("kron: " .. table.concat(la.kron(numlua.array({ 1, 2 }),
+  numlua.array({ 3, 4 })):totable(), ", "))
 
 heading("Predicates and selection")
 local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })

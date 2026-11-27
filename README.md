@@ -304,7 +304,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
 | Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isin`, `in1d`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Sets | `intersect1d`, `union1d`, `setdiff1d`, `setxor1d` |
-| Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
+| Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt`, `genfromtxt` |
@@ -375,6 +375,11 @@ the corresponding special ufuncs.
 inputs. `numlua.inner` sums over the last axis of both operands, `numlua.outer`
 flattens both operands before forming the product, and `numlua.cross` computes
 3-vector cross products over a 1-based axis (ATen batch broadcasting).
+`numlua.linalg.vdot` flattens both operands before the inner product,
+`numlua.linalg.multi_dot` chains 2-D matrices, `numlua.linalg.matrix_rank`
+counts significant singular values, and `numlua.linalg.slogdet` returns the
+determinant sign and log-absolute value. `numlua.linalg.kron` supports 1-D and
+2-D Kronecker products.
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
@@ -704,8 +709,9 @@ axis-aware unique, choose/extract/trim_zeros, shape-derived index helpers,
 NaN-aware quantiles and IQR, quantile methods, 2-D/N-D histograms, bit packing,
 iterator construction, polynomial arithmetic/calculus, set/membership helpers,
 text parsing, invalid-row skipping, angle/sinc/heaviside ufuncs, coordinate
-grids and iterators, block assembly, searchsorted sorters, additional ufuncs
-and NaN helpers, difference edges,
+grids and iterators, block assembly, extra linalg helpers (vdot/multi_dot/
+matrix_rank/slogdet/kron), searchsorted sorters, additional ufuncs and NaN
+helpers, difference edges,
 broadcast-shape arithmetic, quoted/bool text fields,
 meshgrid, gradients, closeness predicates,
 raw binary I/O, text file handles, deflate expansion guardrails, ZIP64 `.npz`
@@ -715,7 +721,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 573 tests.
+It currently contains 579 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -784,6 +790,10 @@ This is an MVP, not a complete NumPy replacement:
 - `cross` supports 3-component vectors only (not NumPy's 2-component form),
   requires the same rank for both operands, and broadcasts batch axes through
   ATen;
+- `linalg.vdot` flattens both operands; `linalg.multi_dot` chains 2-D matrices
+  left-to-right; `linalg.matrix_rank` uses the SVD and an optional absolute
+  tolerance; `linalg.slogdet` returns Lua sign/log numbers; `linalg.kron`
+  supports 1-D and 2-D operands and follows the right operand's dtype;
 - `trapezoid`/`trapz` default to the last axis, accept a 1-D coordinate vector
   or full-shape coordinates, and use ATen's arithmetic promotion (integer
   input becomes `float32`);

@@ -91,6 +91,9 @@ test("new public API and format support are documented", function()
       "numlua.nanpercentile", "numlua.histogram2d", "numlua.fromiter",
       "numlua.packbits", "numlua.unpackbits", "numlua.mask_indices",
       "numlua.mgrid", "numlua.ogrid", "numlua.ndindex",
+      "numlua.linalg.vdot", "numlua.linalg.multi_dot",
+      "numlua.linalg.matrix_rank", "numlua.linalg.slogdet",
+      "numlua.linalg.kron",
       "numlua.block", "numlua.histogramdd",
       "numlua.poly", "numlua.polyadd", "numlua.polysub",
       "numlua.polymul", "numlua.fromstring", "numlua.intersect1d",
@@ -366,6 +369,9 @@ test("new public API and format support are documented", function()
     "README.md does not document block/histogramdd")
   assert_true(readme:find("invalid_raise = false", 1, true) ~= nil,
     "README.md does not document genfromtxt invalid_raise")
+  assert_true(readme:find("numlua.linalg.vdot", 1, true) ~= nil and
+      readme:find("numlua.linalg.kron", 1, true) ~= nil,
+    "README.md does not document extra linalg helpers")
   assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
     "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,

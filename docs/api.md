@@ -1084,6 +1084,11 @@ local q, r = la.qr(a)
 | `linalg.solve(a, b)` | solves `a * x = b`; `b` is a vector or matrix |
 | `linalg.svd(t[, full_matrices])` | returns `U, S, Vh`; `full_matrices` defaults to `true` |
 | `linalg.qr(t[, mode])` | returns `Q, R`; `mode` is `"reduced"` (default), `"complete"`, or `"r"` |
+| `numlua.linalg.vdot(a, b)` | flattened inner product |
+| `numlua.linalg.multi_dot(arrays)` | left-to-right product of 2-D matrices |
+| `numlua.linalg.matrix_rank(t[, tolerance])` | SVD-based numerical rank (0-D int64 tensor) |
+| `numlua.linalg.slogdet(t)` | determinant sign and log-absolute value as Lua numbers |
+| `numlua.linalg.kron(a, b)` | 1-D/2-D Kronecker product, following `b`'s dtype |
 
 `svd` accepts rectangular matrices. `qr` returns the ATen shapes for the chosen
 mode. Invalid dtypes, singular systems, and shape errors are reported by
@@ -1103,6 +1108,10 @@ singular value), `ord=-2` the smallest singular value, and `"nuc"` the nuclear
 norm; all three use the SVD. `"fro"` is the default Frobenius norm, and the
 remaining orders follow NumPy's max/min absolute column- or row-sum rules.
 Unsupported orders raise a `numlua.linalg.matrix_norm:` error.
+`vdot` flattens both operands first. `multi_dot` accepts only 2-D matrices and
+multiplies left-to-right. `matrix_rank` uses the SVD with an optional absolute
+tolerance. `slogdet` returns `sign, logabsdet` as Lua numbers. `kron` supports
+1-D and 2-D operands and keeps the right operand's dtype.
 
 `lstsq` uses the SVD pseudoinverse; it is a convenience wrapper, not a LAPACK
 driver.
@@ -2092,6 +2101,10 @@ dtype, or backend constraints are forwarded as-is.
 - `inner`, `outer`, and `cross` delegate their arithmetic to ATen. `cross`
   supports 3-component vectors only (not NumPy's 2-component form), requires
   the same rank for both operands, and broadcasts batch axes through ATen.
+- `linalg.vdot` flattens both operands; `linalg.multi_dot` chains 2-D matrices
+  left-to-right; `linalg.matrix_rank` uses the SVD with an optional absolute
+  tolerance; `linalg.slogdet` returns Lua sign/log numbers; `linalg.kron`
+  supports 1-D/2-D operands and follows the right operand's dtype.
 - `trapezoid`/`trapz` integrate along one 1-based axis. A coordinate array may
   be 1-D for the selected axis or have the full input shape; integer input
   follows ATen's promotion to `float32`.

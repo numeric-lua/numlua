@@ -161,4 +161,95 @@ function linalg.qr(t, mode)
   return t:qr(mode)
 end
 
+function linalg.vdot(a, b)
+  tensor(a, "vdot")
+  tensor(b, "vdot")
+  if a:numel() ~= b:numel() then
+    error("numlua.linalg.vdot: operands must have the same number of " ..
+      "elements", 2)
+  end
+  return a:reshape({ a:numel() }):dot(b:reshape({ b:numel() }))
+end
+
+function linalg.multi_dot(arrays)
+  if type(arrays) ~= "table" or #arrays == 0 then
+    error("numlua.linalg.multi_dot expects a non-empty table", 2)
+  end
+  local result = matrix(arrays[1], "multi_dot")
+  for index = 2, #arrays do
+    local next_matrix = matrix(arrays[index], "multi_dot")
+    if result:size(2) ~= next_matrix:size(1) then
+      error(string.format(
+        "numlua.linalg.multi_dot: incompatible shapes %dx%d and %dx%d",
+        result:size(1), result:size(2), next_matrix:size(1),
+        next_matrix:size(2)), 2)
+    end
+    result = result:matmul(next_matrix)
+  end
+  return result
+end
+
+function linalg.matrix_rank(t, tolerance)
+  matrix(t, "matrix_rank")
+  if tolerance ~= nil and (type(tolerance) ~= "number" or tolerance < 0) then
+    error("numlua.linalg.matrix_rank: tolerance must be non-negative or nil", 2)
+  end
+  local _, singular = t:svd(false)
+  local values = singular:reshape(-1)
+  if values:numel() == 0 then
+    return torch.tensor(0, { dtype = "int64" })
+  end
+  local largest = values:max():item()
+  local eps = (t:dtype() == "float16" or t:dtype() == "float32")
+    and 1.1920929e-7 or 2.220446049250313e-16
+  local cutoff = tolerance or
+    largest * math.max(t:size(1), t:size(2)) * eps
+  local rank = 0
+  for index = 1, values:numel() do
+    if values:get(index) > cutoff then rank = rank + 1 end
+  end
+  return torch.tensor(rank, { dtype = "int64" })
+end
+
+function linalg.slogdet(t)
+  square(t, "slogdet")
+  local value = t:det()
+  if torch.is_tensor(value) then value = value:item() end
+  if value == 0 then return 0, -math.huge end
+  return value > 0 and 1 or -1, math.log(math.abs(value))
+end
+
+function linalg.kron(a, b)
+  tensor(a, "kron")
+  tensor(b, "kron")
+  if a:dim() > 2 or b:dim() > 2 then
+    error("numlua.linalg.kron supports 1-D and 2-D operands", 2)
+  end
+  if a:dim() == 1 and b:dim() == 1 then
+    if a:numel() == 0 or b:numel() == 0 then
+      return torch.empty({ 0 }, { dtype = b:dtype() })
+    end
+    local parts = {}
+    for index = 1, a:numel() do
+      parts[index] = b:mul(a:get(index))
+    end
+    return torch.cat(parts, 1)
+  elseif a:dim() == 2 and b:dim() == 2 then
+    local rows, columns = a:size(1) * b:size(1), a:size(2) * b:size(2)
+    if rows == 0 or columns == 0 then
+      return torch.empty({ rows, columns }, { dtype = b:dtype() })
+    end
+    local result_rows = {}
+    for i = 1, a:size(1) do
+      local pieces = {}
+      for j = 1, a:size(2) do
+        pieces[j] = b:mul(a:get(i, j))
+      end
+      result_rows[i] = torch.cat(pieces, 2)
+    end
+    return torch.cat(result_rows, 1)
+  end
+  error("numlua.linalg.kron requires both operands to have the same rank", 2)
+end
+
 return linalg
