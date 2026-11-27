@@ -239,6 +239,7 @@ local files = {
   "test_dtype_promotion.lua",
   "test_linalg.lua",
   "test_linalg_extra.lua",
+  "test_linalg_more.lua",
   "test_linalg_facade.lua",
   "test_dot.lua",
   "test_inner_outer.lua",

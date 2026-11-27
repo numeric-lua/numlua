@@ -161,6 +161,69 @@ function linalg.qr(t, mode)
   return t:qr(mode)
 end
 
+function linalg.cholesky(t)
+  return square(t, "cholesky"):cholesky()
+end
+
+function linalg.eigh(t)
+  return square(t, "eigh"):eigh()
+end
+
+function linalg.eigvalsh(t)
+  local values = square(t, "eigvalsh"):eigh()
+  return values
+end
+
+function linalg.matrix_power(t, exponent)
+  square(t, "matrix_power")
+  if type(exponent) ~= "number" or exponent % 1 ~= 0 then
+    error("numlua.linalg.matrix_power: exponent must be an integer", 2)
+  end
+  local base = t
+  if exponent < 0 then
+    base = t:inverse()
+    exponent = -exponent
+  end
+  local result = torch.eye(t:size(1), { dtype = t:dtype() })
+  while exponent > 0 do
+    if exponent % 2 == 1 then result = result:matmul(base) end
+    exponent = math.floor(exponent / 2)
+    if exponent > 0 then base = base:matmul(base) end
+  end
+  return result
+end
+
+function linalg.cond(t, p)
+  matrix(t, "cond")
+  p = p == nil and 2 or p
+  local dtype = t:is_floating_point() and t:dtype() or "float64"
+  if p == 2 or p == -2 then
+    local _, singular = t:svd(false)
+    local values = singular:reshape(-1)
+    if values:numel() == 0 then
+      return torch.tensor(0, { dtype = dtype })
+    end
+    local largest, smallest = values:max():item(), values:min():item()
+    if p == 2 then
+      return torch.tensor(smallest == 0 and math.huge or largest / smallest,
+        { dtype = dtype })
+    end
+    return torch.tensor(largest == 0 and math.huge or smallest / largest,
+      { dtype = dtype })
+  end
+  if p ~= 1 and p ~= math.huge and p ~= "fro" and p ~= "f" then
+    error("numlua.linalg.cond: unsupported p " .. tostring(p), 2)
+  end
+  local ok, inverse = pcall(function() return t:inverse() end)
+  if not ok then return torch.tensor(math.huge, { dtype = dtype }) end
+  local function norm_value(value)
+    if p == 1 then return value:abs():sum(1):max():item() end
+    if p == math.huge then return value:abs():sum(2):max():item() end
+    return value:norm(2):item()
+  end
+  return torch.tensor(norm_value(t) * norm_value(inverse), { dtype = dtype })
+end
+
 function linalg.vdot(a, b)
   tensor(a, "vdot")
   tensor(b, "vdot")

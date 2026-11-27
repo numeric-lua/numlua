@@ -91,7 +91,10 @@ test("new public API and format support are documented", function()
       "numlua.nanpercentile", "numlua.histogram2d", "numlua.fromiter",
       "numlua.packbits", "numlua.unpackbits", "numlua.mask_indices",
       "numlua.mgrid", "numlua.ogrid", "numlua.ndindex",
-      "numlua.linalg.vdot", "numlua.linalg.multi_dot",
+      "numlua.linalg.cholesky", "numlua.linalg.eigh",
+      "numlua.linalg.eigvalsh", "numlua.linalg.matrix_power",
+      "numlua.linalg.cond", "numlua.linalg.vdot",
+      "numlua.linalg.multi_dot",
       "numlua.linalg.matrix_rank", "numlua.linalg.slogdet",
       "numlua.linalg.kron",
       "numlua.block", "numlua.histogramdd",
@@ -372,6 +375,11 @@ test("new public API and format support are documented", function()
   assert_true(readme:find("numlua.linalg.vdot", 1, true) ~= nil and
       readme:find("numlua.linalg.kron", 1, true) ~= nil,
     "README.md does not document extra linalg helpers")
+  assert_true(readme:find("numlua.linalg.cholesky", 1, true) ~= nil and
+      readme:find("numlua.linalg.eigh", 1, true) ~= nil and
+      readme:find("numlua.linalg.matrix_power", 1, true) ~= nil and
+      readme:find("numlua.linalg.cond", 1, true) ~= nil,
+    "README.md does not document factorization/power/condition helpers")
   assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
     "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,

@@ -1084,6 +1084,11 @@ local q, r = la.qr(a)
 | `linalg.solve(a, b)` | solves `a * x = b`; `b` is a vector or matrix |
 | `linalg.svd(t[, full_matrices])` | returns `U, S, Vh`; `full_matrices` defaults to `true` |
 | `linalg.qr(t[, mode])` | returns `Q, R`; `mode` is `"reduced"` (default), `"complete"`, or `"r"` |
+| `numlua.linalg.cholesky(t)` | lower Cholesky factor |
+| `numlua.linalg.eigh(t)` | symmetric eigenvalues and eigenvectors |
+| `numlua.linalg.eigvalsh(t)` | symmetric eigenvalues only |
+| `numlua.linalg.matrix_power(t, n)` | integer matrix power |
+| `numlua.linalg.cond(t[, p])` | condition number (2/-2/1/inf/fro) |
 | `numlua.linalg.vdot(a, b)` | flattened inner product |
 | `numlua.linalg.multi_dot(arrays)` | left-to-right product of 2-D matrices |
 | `numlua.linalg.matrix_rank(t[, tolerance])` | SVD-based numerical rank (0-D int64 tensor) |
@@ -1112,6 +1117,11 @@ Unsupported orders raise a `numlua.linalg.matrix_norm:` error.
 multiplies left-to-right. `matrix_rank` uses the SVD with an optional absolute
 tolerance. `slogdet` returns `sign, logabsdet` as Lua numbers. `kron` supports
 1-D and 2-D operands and keeps the right operand's dtype.
+`cholesky` requires a positive-definite square matrix. `eigh` returns
+eigenvalues, eigenvectors and `eigvalsh` returns only the eigenvalues;
+both require symmetric input. `matrix_power` accepts integer exponents
+(including zero and negatives). `cond` supports `p = 2` (default), `-2`, `1`,
+`infinity`, and `"fro"`; singular matrices return `inf` for 1/inf/fro.
 
 `lstsq` uses the SVD pseudoinverse; it is a convenience wrapper, not a LAPACK
 driver.
@@ -2105,6 +2115,9 @@ dtype, or backend constraints are forwarded as-is.
   left-to-right; `linalg.matrix_rank` uses the SVD with an optional absolute
   tolerance; `linalg.slogdet` returns Lua sign/log numbers; `linalg.kron`
   supports 1-D/2-D operands and follows the right operand's dtype.
+  `linalg.cholesky` needs positive-definite input, `eigh`/`eigvalsh` need
+  symmetric input, `matrix_power` takes integer exponents, and `cond` supports
+  p = 2, -2, 1, infinity, or `"fro"`.
 - `trapezoid`/`trapz` integrate along one 1-based axis. A coordinate array may
   be 1-D for the selected axis or have the full input shape; integer input
   follows ATen's promotion to `float32`.

@@ -231,6 +231,17 @@ print("multi_dot:\n" .. la.multi_dot({
 }):format())
 print("kron: " .. table.concat(la.kron(numlua.array({ 1, 2 }),
   numlua.array({ 3, 4 })):totable(), ", "))
+print("cholesky:\n" .. la.cholesky(numlua.array({
+  { 4.0, 2.0 }, { 2.0, 3.0 },
+}, { dtype = "float64" })):format())
+local eigenvalues = la.eigvalsh(numlua.array({
+  { 1.0, 0.0 }, { 0.0, 3.0 },
+}, { dtype = "float64" }))
+print("eigvalsh: " .. table.concat(eigenvalues:totable(), ", "))
+print("matrix_power:\n" .. la.matrix_power(numlua.array({
+  { 1.0, 1.0 }, { 0.0, 1.0 },
+}, { dtype = "float64" }), 3):format())
+print("cond = " .. tostring(la.cond(square):item()))
 
 heading("Predicates and selection")
 local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })

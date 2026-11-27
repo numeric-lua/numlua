@@ -304,7 +304,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
 | Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isin`, `in1d`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Sets | `intersect1d`, `union1d`, `setdiff1d`, `setxor1d` |
-| Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
+| Linear algebra | `dot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.cholesky`, `linalg.eigh`, `linalg.eigvalsh`, `linalg.matrix_power`, `linalg.cond`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt`, `genfromtxt` |
@@ -379,7 +379,10 @@ flattens both operands before forming the product, and `numlua.cross` computes
 `numlua.linalg.multi_dot` chains 2-D matrices, `numlua.linalg.matrix_rank`
 counts significant singular values, and `numlua.linalg.slogdet` returns the
 determinant sign and log-absolute value. `numlua.linalg.kron` supports 1-D and
-2-D Kronecker products.
+2-D Kronecker products. `numlua.linalg.cholesky`, `numlua.linalg.eigh`, and
+`numlua.linalg.eigvalsh` expose factorization/eigenvalue helpers, while
+`numlua.linalg.matrix_power` and `numlua.linalg.cond` add powers and condition
+numbers.
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
@@ -710,7 +713,8 @@ NaN-aware quantiles and IQR, quantile methods, 2-D/N-D histograms, bit packing,
 iterator construction, polynomial arithmetic/calculus, set/membership helpers,
 text parsing, invalid-row skipping, angle/sinc/heaviside ufuncs, coordinate
 grids and iterators, block assembly, extra linalg helpers (vdot/multi_dot/
-matrix_rank/slogdet/kron), searchsorted sorters, additional ufuncs and NaN
+matrix_rank/slogdet/kron/powers/condition), searchsorted sorters, additional
+ufuncs and NaN
 helpers, difference edges,
 broadcast-shape arithmetic, quoted/bool text fields,
 meshgrid, gradients, closeness predicates,
@@ -721,7 +725,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 579 tests.
+It currently contains 583 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -794,6 +798,9 @@ This is an MVP, not a complete NumPy replacement:
   left-to-right; `linalg.matrix_rank` uses the SVD and an optional absolute
   tolerance; `linalg.slogdet` returns Lua sign/log numbers; `linalg.kron`
   supports 1-D and 2-D operands and follows the right operand's dtype;
+  `linalg.cholesky` requires positive-definite input, `eigh`/`eigvalsh` require
+  symmetric matrices, `matrix_power` takes integer exponents, and `cond`
+  supports p = 2, -2, 1, infinity, or `"fro"`;
 - `trapezoid`/`trapz` default to the last axis, accept a 1-D coordinate vector
   or full-shape coordinates, and use ATen's arithmetic promotion (integer
   input becomes `float32`);

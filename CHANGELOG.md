@@ -74,10 +74,12 @@
 - `genfromtxt` accepts `invalid_raise = false` to skip malformed rows.
 - `numlua.linalg.vdot`/`multi_dot`/`matrix_rank`/`slogdet` and
   `numlua.linalg.kron` extend the linear-algebra surface.
+- `numlua.linalg.cholesky`, `eigh`/`eigvalsh`, `matrix_power`, and `cond` add
+  factorization, symmetric eigenvalues, powers, and condition numbers.
 
 ### Tests
 
-- 579 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 583 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -103,7 +105,8 @@
   `test_histogramdd.lua` covers 2-D samples, weights, density, and errors;
   `test_genfromtxt_invalid.lua` covers invalid-row skipping and option
   validation; `test_linalg_extra.lua` covers vdot/multi_dot/matrix_rank/
-  slogdet/kron and their validation.
+  slogdet/kron and their validation; `test_linalg_more.lua` covers Cholesky,
+  symmetric eigenvalues, powers, condition numbers, and errors.
 
 ## 0.26.0 — 2026-11-24
 
