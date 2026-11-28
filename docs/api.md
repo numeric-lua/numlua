@@ -243,6 +243,15 @@ Zero- and one-dimensional inputs are returned unchanged when `axes` is omitted.
 Returns a C-order contiguous 1-D result with `numel(t)` elements. It is a view
 when the input is already C-contiguous and a materialized copy otherwise.
 
+### `numlua.copy(t)`
+
+Returns an independent clone of a tensor.
+
+### `numlua.ascontiguousarray(t)`
+
+Returns a C-contiguous tensor, reusing already-contiguous storage or
+materializing a contiguous copy otherwise.
+
 ### `numlua.squeeze(t[, axis])`
 
 With no `axis`, removes all size-1 dimensions. With `axis`, delegates one
@@ -1065,6 +1074,13 @@ Contracts axes of `a` and `b`. A non-negative integer contracts the last
 normalized, duplicates are rejected). Free axes retain their original order,
 and the result shape is `free(a) .. free(b)`.
 
+### `numlua.einsum(subscripts, a[, b])`
+
+Evaluates one- or two-operand letter-subscript expressions with an explicit
+`->` output, such as `"ij,jk->ik"`, `"i,i->"`, `"ij,ij->ij"`, or `"ij->ji"`.
+Subscripts within one operand must be distinct; ellipses, repeated labels, and
+implicit outputs are not supported. Free output axes retain the output order.
+
 ### `numlua.inner(a, b)`
 
 Sums the product over the last axis of both operands and returns the leading
@@ -1124,6 +1140,8 @@ local q, r = la.qr(a)
 | `linalg.solve(a, b)` | solves `a * x = b`; `b` is a vector or matrix |
 | `linalg.svd(t[, full_matrices])` | returns `U, S, Vh`; `full_matrices` defaults to `true` |
 | `linalg.qr(t[, mode])` | returns `Q, R`; `mode` is `"reduced"` (default), `"complete"`, or `"r"` |
+| `numlua.linalg.tensorinv(t[, ind])` | tensor pseudoinverse via reshape |
+| `numlua.linalg.tensorsolve(a, b)` | solve a reshaped tensor system |
 | `numlua.linalg.lu(t)` | returns `P, L, U` |
 | `numlua.linalg.lu_solve(p, l, u, b)` | solves using existing `P, L, U` factors |
 | `numlua.linalg.svdvals(t)` | singular-value vector |
@@ -1166,9 +1184,10 @@ eigenvalues, eigenvectors and `eigvalsh` returns only the eigenvalues;
 both require symmetric input. `matrix_power` accepts integer exponents
 (including zero and negatives). `cond` supports `p = 2` (default), `-2`, `1`,
 `infinity`, and `"fro"`; singular matrices return `inf` for 1/inf/fro.
-`lu` returns the ATen `P, L, U` factors, `lu_solve` solves a vector/matrix
-right-hand side from those factors, `svdvals` returns the singular-value vector,
-and `vector_norm` delegates to `norm`.
+`tensorinv`/`tensorsolve` reshape tensor systems into matrix pinv/solve
+operations. `lu` returns the ATen `P, L, U` factors, `lu_solve` solves a
+vector/matrix right-hand side from those factors, `svdvals` returns the
+singular-value vector, and `vector_norm` delegates to `norm`.
 
 `lstsq` uses the SVD pseudoinverse; it is a convenience wrapper, not a LAPACK
 driver.
@@ -1584,7 +1603,8 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `fromstring`, `fromregex`, `deg2rad`, `rad2deg`, `sinc`, `heaviside`,
 `mgrid`, `ogrid`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`,
 `block`, `append`, `insert`, `choose`, `extract`, `piecewise`, `msort`,
-`tensordot`,
+`tensordot`, `einsum`, `copy`, `ascontiguousarray`, `linalg.tensorinv`,
+`linalg.tensorsolve`,
 `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`,
 `packbits`, `unpackbits`,
 `fromiter`, `nanargmin`, `nanargmax`, `nanmedian`, `nanquantile`,
@@ -1683,7 +1703,9 @@ Lua file handle and returns a luatorch tensor.
 v2.0/v3.0 differ from v1.0 only in the 4-byte header-length field (and v3.0's
 UTF-8 header encoding), which `load` parses directly; `save` writes v1.0 by
 default and can emit v2.0/v3.0 when asked. Supports 1-D, 2-D, N-D, and 0-D
-arrays with the dtypes above.
+arrays with the dtypes above. For path inputs, `load` auto-detects ZIP magic
+and returns the `loadz` table for `.npz`/archive files; open handles always use
+the `.npy` reader.
 
 Native-endian `descr` values (`=f2`, `=f4`, `=f8`, `=i2`, `=i4`, `=i8`, and
 their byte-sized spellings) select the host byte order in NumPy. On the
@@ -2208,8 +2230,12 @@ dtype, or backend constraints are forwarded as-is.
   Python slice syntax; `ndindex` yields 1-based C-order coordinate tables and
   `ndenumerate` adds values; `block` assembles 2-D tiles only.
 - `tensordot` contracts trailing/leading axes or explicit axis pairs; free axes
-  retain their original order. `binary_repr` widths are limited to 1..53 bits;
-  `base_repr` supports bases 2..36.
+  retain their original order. `einsum` supports one/two operands with distinct
+  labels and an explicit `->`, but not ellipses or repeated labels.
+  `binary_repr` widths are limited to 1..53 bits; `base_repr` supports 2..36.
+- `copy` clones and `ascontiguousarray` may reuse already-contiguous storage;
+  `linalg.tensorinv`/`tensorsolve` reshape tensor systems and do not implement
+  the NumPy `axes` permutation.
 - `vectorize` broadcasts scalar/tensor/table arguments and applies a Lua
   callback per element; it does not implement `excluded` or full output
   signatures beyond `otypes`.

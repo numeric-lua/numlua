@@ -88,10 +88,14 @@
 - `numlua.linalg.lu_solve` solves from existing LU factors.
 - `numlua.isrealobj`/`iscomplexobj`/`isscalar`/`isfortran` add type predicates.
 - `numlua.nanquantile`/`nanpercentile` accept interpolation methods.
+- `numlua.copy` and `numlua.ascontiguousarray` add copy/contiguity helpers.
+- `numlua.load` auto-detects `.npz`/ZIP paths and returns a member table.
+- `numlua.linalg.tensorinv` and `tensorsolve` add reshaped tensor systems.
+- `numlua.einsum` adds one/two-operand letter-subscript contractions.
 
 ### Tests
 
-- 609 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 620 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -128,7 +132,10 @@
   singular values, and vector norms; `test_nanquantile_methods.lua` covers
   NaN-aware interpolation; `test_array2string.lua` covers formatting;
   `test_fromregex.lua` covers pattern extraction; `test_linalg_lu_solve.lua`
-  covers factor-based solves; `test_array_predicates.lua` covers predicates.
+  covers factor-based solves; `test_array_predicates.lua` covers predicates;
+  `test_copy_contiguous.lua` covers copy/contiguity; `test_load_npz.lua`
+  covers auto-detected archives; `test_tensorinv.lua`/`test_tensorsolve.lua`
+  cover reshaped systems; `test_einsum.lua` covers contractions and errors.
 
 ## 0.26.0 — 2026-11-24
 

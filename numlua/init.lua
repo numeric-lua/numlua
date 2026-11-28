@@ -436,6 +436,16 @@ function numlua.vectorize(func, otypes)
   end
 end
 
+function numlua.copy(t)
+  check_tensor(t, "copy")
+  return t:clone()
+end
+
+function numlua.ascontiguousarray(t)
+  check_tensor(t, "ascontiguousarray")
+  return t:contiguous()
+end
+
 function numlua.copyto(destination, source)
   check_tensor(destination, "copyto")
   check_tensor(source, "copyto")
@@ -3923,6 +3933,168 @@ function numlua.tensordot(a, b, axes)
   return product:reshape(shape)
 end
 
+local function einsum_labels(spec, ndim, name)
+  if #spec ~= ndim then
+    error(string.format(
+      "numlua.%s: subscript '%s' does not match a %d-D operand",
+      name, spec, ndim), 2)
+  end
+  local labels, seen = {}, {}
+  for index = 1, #spec do
+    local label = spec:sub(index, index)
+    if not label:match("%a") then
+      error("numlua." .. name .. ": subscripts must be letters", 2)
+    end
+    if seen[label] then
+      error("numlua." .. name .. ": repeated subscript '" .. label ..
+        "' is not supported", 2)
+    end
+    seen[label] = true
+    labels[index] = label
+  end
+  return labels
+end
+
+local function einsum_set(labels)
+  local set = {}
+  for index = 1, #labels do set[labels[index]] = true end
+  return set
+end
+
+local function einsum_reduce(t, labels, output, other)
+  local axes = {}
+  for index = 1, #labels do
+    local label = labels[index]
+    if not output[label] and not other[label] then axes[#axes + 1] = index end
+  end
+  for index = 1, #axes do t = numlua.sum(t, axes[index], true) end
+  for index = #axes, 1, -1 do t = t:squeeze(axes[index]) end
+  if #axes > 0 then
+    local kept = {}
+    for index = 1, #labels do
+      if output[labels[index]] then kept[#kept + 1] = labels[index] end
+    end
+    return t, kept
+  end
+  return t, labels
+end
+
+local function einsum_expand(t, labels, all_labels, sizes)
+  local positions = {}
+  for index = 1, #labels do positions[labels[index]] = index end
+  local order, shape, full = {}, {}, {}
+  for index = 1, #all_labels do
+    local label = all_labels[index]
+    full[index] = sizes[label]
+    if positions[label] then
+      order[#order + 1] = positions[label]
+      shape[index] = t:size(positions[label])
+    else
+      shape[index] = 1
+    end
+  end
+  return t:permute(order):reshape(shape):expand(full)
+end
+
+-- einsum supports one or two operands with distinct letter subscripts and an
+-- explicit `->` output. Ellipses and repeated labels within an operand are not
+-- implemented.
+function numlua.einsum(subscripts, a, b)
+  check_tensor(a, "einsum")
+  if type(subscripts) ~= "string" then
+    error("numlua.einsum expects a subscript string", 2)
+  end
+  local left, right, output_spec = subscripts:match(
+    "^([%a]*),([%a]*)%-%>([%a]*)$")
+  if left == nil then
+    left, output_spec = subscripts:match("^([%a]*)%-%>([%a]*)$")
+    if left == nil then
+      error("numlua.einsum expects 'input->output' or 'a,b->output'", 2)
+    end
+    local labels = einsum_labels(left, a:dim(), "einsum")
+    local output = einsum_labels(output_spec, #output_spec, "einsum")
+    local out_set = einsum_set(output)
+    for index = 1, #output do
+      local found = false
+      for label_index = 1, #labels do
+        if labels[label_index] == output[index] then found = true break end
+      end
+      if not found then
+        error("numlua.einsum: output label not present in input", 2)
+      end
+    end
+    local reduced, remaining = einsum_reduce(a, labels, out_set, {})
+    local order, positions = {}, {}
+    for index = 1, #remaining do positions[remaining[index]] = index end
+    for index = 1, #output do order[#order + 1] = positions[output[index]] end
+    if #order == 0 then return reduced:reshape({}) end
+    return reduced:permute(order)
+  end
+
+  if not torch.is_tensor(b) then
+    error("numlua.einsum expects a tensor as the second operand", 2)
+  end
+  local labels_a = einsum_labels(left, a:dim(), "einsum")
+  local labels_b = einsum_labels(right, b:dim(), "einsum")
+  local output = einsum_labels(output_spec, #output_spec, "einsum")
+  local out_set = einsum_set(output)
+  local set_a, set_b = einsum_set(labels_a), einsum_set(labels_b)
+  for index = 1, #output do
+    if not set_a[output[index]] and not set_b[output[index]] then
+      error("numlua.einsum: output label not present in inputs", 2)
+    end
+  end
+
+  a, labels_a = einsum_reduce(a, labels_a, out_set, set_b)
+  b, labels_b = einsum_reduce(b, labels_b, out_set, set_a)
+  set_a, set_b = einsum_set(labels_a), einsum_set(labels_b)
+
+  local contract = {}
+  for index = 1, #labels_a do
+    local label = labels_a[index]
+    if set_b[label] and not out_set[label] then
+      contract[#contract + 1] = label
+    end
+  end
+  local all_labels = {}
+  for index = 1, #output do all_labels[#all_labels + 1] = output[index] end
+  for index = 1, #contract do all_labels[#all_labels + 1] = contract[index] end
+
+  local sizes = {}
+  for index = 1, #labels_a do
+    local label = labels_a[index]
+    if sizes[label] ~= nil and sizes[label] ~= a:size(index) then
+      error("numlua.einsum: inconsistent size for label '" .. label .. "'", 2)
+    end
+    sizes[label] = a:size(index)
+  end
+  for index = 1, #labels_b do
+    local label = labels_b[index]
+    if sizes[label] ~= nil and sizes[label] ~= b:size(index) then
+      error("numlua.einsum: inconsistent size for label '" .. label .. "'", 2)
+    end
+    sizes[label] = b:size(index)
+  end
+  for index = 1, #all_labels do
+    if sizes[all_labels[index]] == nil then
+      error("numlua.einsum: missing size for label '" ..
+        all_labels[index] .. "'", 2)
+    end
+  end
+
+  local expanded_a = einsum_expand(a, labels_a, all_labels, sizes)
+  local expanded_b = einsum_expand(b, labels_b, all_labels, sizes)
+  local product = expanded_a:mul(expanded_b)
+  for index = 1, #contract do
+    product = numlua.sum(product, #output + index, true)
+  end
+  for index = #contract, 1, -1 do
+    product = product:squeeze(#output + index)
+  end
+  if #output == 0 then return product:reshape({}) end
+  return product
+end
+
 -- inner sums the product over the last axis of each operand and keeps the
 -- leading dimensions, matching np.inner.  The reshape/mul/sum path delegates
 -- the arithmetic to ATen and has no separate broadcast layer.
@@ -4084,7 +4256,21 @@ end
 -- ---------------------------------------------------------------------------
 
 numlua.save = npy.save
-numlua.load = npy.load
+
+local raw_npy_load = npy.load
+function numlua.load(source)
+  if type(source) == "string" then
+    if source:sub(-4):lower() == ".npz" then return npz.loadz(source) end
+    local handle = io.open(source, "rb")
+    if handle ~= nil then
+      local magic = handle:read(4)
+      handle:close()
+      if magic == "PK\003\004" then return npz.loadz(source) end
+    end
+  end
+  return raw_npy_load(source)
+end
+
 numlua.fromfile = npy.fromfile
 numlua.tofile = npy.tofile
 numlua.savez = npz.savez

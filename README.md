@@ -304,7 +304,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Group | Functions |
 | --- | --- |
 | Constructors | `array`, `asarray`, `zeros`, `ones`, `full`, `eye`, `identity`, `tri`, `vander`, `arange`, `linspace`, `logspace`, `geomspace`, `fromiter`, `meshgrid`, `mgrid`, `ogrid`, `ndindex`, `ndenumerate`, `zeros_like`, `ones_like`, `empty_like`, `full_like` |
-| Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
+| Shape | `shape`, `copy`, `ascontiguousarray`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `block`, `append`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `rollaxis`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `msort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `put_along_axis`, `delete`, `insert`, `trim_zeros`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `diag_indices_from`, `tril_indices_from`, `triu_indices_from`, `mask_indices`, `ravel_multi_index`, `unravel_index` |
 | Iteration | `apply_along_axis`, `apply_over_axes`, `vectorize` |
@@ -314,7 +314,7 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Predicates/selection | `where`, `isrealobj`, `iscomplexobj`, `isscalar`, `isfortran`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isin`, `in1d`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Sets | `intersect1d`, `union1d`, `setdiff1d`, `setxor1d` |
 | Mutation | `copyto`, `putmask` |
-| Linear algebra | `dot`, `tensordot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.lu`, `linalg.lu_solve`, `linalg.svdvals`, `linalg.vector_norm`, `linalg.cholesky`, `linalg.eigh`, `linalg.eigvalsh`, `linalg.matrix_power`, `linalg.cond`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
+| Linear algebra | `dot`, `tensordot`, `inner`, `outer`, `cross`, `matmul`, `einsum`, `kron`, `linalg.tensorinv`, `linalg.tensorsolve`, `linalg.lu`, `linalg.lu_solve`, `linalg.svdvals`, `linalg.vector_norm`, `linalg.cholesky`, `linalg.eigh`, `linalg.eigvalsh`, `linalg.matrix_power`, `linalg.cond`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt`, `genfromtxt` |
@@ -389,7 +389,7 @@ the corresponding special ufuncs.
 
 `numlua.dot` now follows NumPy's shape rules for vectors, matrices, and batched
 inputs. `numlua.tensordot` contracts trailing/leading axes by count or explicit
-pair tables. `numlua.inner` sums over the last axis of both operands, `numlua.outer`
+pair tables, and `numlua.einsum` supports one/two-operand letter subscripts. `numlua.inner` sums over the last axis of both operands, `numlua.outer`
 flattens both operands before forming the product, and `numlua.cross` computes
 3-vector cross products over a 1-based axis (ATen batch broadcasting).
 `numlua.linalg.vdot` flattens both operands before the inner product,
@@ -399,11 +399,15 @@ determinant sign and log-absolute value. `numlua.linalg.kron` supports 1-D and
 2-D Kronecker products. `numlua.linalg.cholesky`, `numlua.linalg.eigh`, and
 `numlua.linalg.eigvalsh` expose factorization/eigenvalue helpers, while
 `numlua.linalg.matrix_power` and `numlua.linalg.cond` add powers and condition
-numbers. `numlua.linalg.lu` returns `P, L, U`, `numlua.linalg.lu_solve` solves using
+numbers. `numlua.linalg.tensorinv` and `numlua.linalg.tensorsolve` reshape
+tensor systems into matrix operations. `numlua.linalg.lu` returns `P, L, U`,
+`numlua.linalg.lu_solve` solves using
 existing factors, `numlua.linalg.svdvals` returns the singular-value vector,
 and `numlua.linalg.vector_norm` mirrors `norm`.
 
-`transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
+`numlua.copy` clones a tensor and `numlua.ascontiguousarray` returns a
+contiguous layout. `transpose`, `swapaxes`, `moveaxis`, `atleast_*`,
+`broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
 `diagflat`, `tril`, `triu`, `tri`, `vander`, `compress`, `pad`, `tile`,
 `repeat_`, `flip`, `fliplr`,
@@ -486,7 +490,10 @@ stops after `count` values when supplied. `genfromtxt` accepts
 
 `numlua.savez(path_or_file, { arrays = tensor, ... })` writes a stored
 (uncompressed) ZIP archive of `.npy` members; `numlua.loadz(path_or_file)`
-returns a table keyed by array name. This matches the common `np.savez` output
+returns a table keyed by array name. `numlua.load(path)` also auto-detects
+ZIP magic and returns the same table for `.npz`/archive paths, while ordinary
+`.npy` files keep their existing tensor result. This matches the common
+`np.savez` output
 and needs no compression library. `numlua.savez_compressed` writes
 deflate-compressed members through the optional system zlib, matching
 `np.savez_compressed`; without zlib it raises a clear error unless
@@ -736,7 +743,8 @@ text parsing, invalid-row skipping, angle/sinc/heaviside ufuncs, coordinate
 grids and iterators, block assembly, extra linalg helpers (vdot/multi_dot/
 matrix_rank/slogdet/kron/powers/condition), tensordot, mutation helpers,
 binary/base/array formatting, ndenumerate, vectorize, regex extraction,
-LU/singular-value helpers, type predicates, nanquantile methods, searchsorted
+LU/singular-value helpers, tensor reshaped solves, einsum, auto-loaded `.npz`,
+copy/contiguity helpers, type predicates, nanquantile methods, searchsorted
 sorters, additional ufuncs and NaN
 helpers, difference edges,
 broadcast-shape arithmetic, quoted/bool text fields,
@@ -748,7 +756,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 609 tests.
+It currently contains 620 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -824,8 +832,9 @@ This is an MVP, not a complete NumPy replacement:
   `linalg.cholesky` requires positive-definite input, `eigh`/`eigvalsh` require
   symmetric matrices, `matrix_power` takes integer exponents, and `cond`
   supports p = 2, -2, 1, infinity, or `"fro"`; `linalg.lu` returns `P, L, U`,
-  `linalg.lu_solve` solves from those factors, `linalg.svdvals` returns a 1-D
-  vector, and `linalg.vector_norm` delegates to `norm`;
+  `linalg.lu_solve` solves from those factors, `linalg.tensorinv`/
+  `tensorsolve` reshape tensor systems into matrix operations, `linalg.svdvals`
+  returns a 1-D vector, and `linalg.vector_norm` delegates to `norm`;
 - `trapezoid`/`trapz` default to the last axis, accept a 1-D coordinate vector
   or full-shape coordinates, and use ATen's arithmetic promotion (integer
   input becomes `float32`);
@@ -842,7 +851,11 @@ This is an MVP, not a complete NumPy replacement:
   Python's slice syntax; `ndindex` yields 1-based C-order coordinate tables and
   `ndenumerate` adds values; `block` assembles nested rows of 2-D tiles only;
 - `tensordot` contracts an integer number of trailing/leading axes or explicit
-  axis pairs; free axes retain their original order;
+  axis pairs; free axes retain their original order. `einsum` supports one or
+  two operands with distinct letter labels and an explicit `->`; ellipses and
+  repeated labels within an operand are not supported;
+- `copy` clones its input and `ascontiguousarray` returns a contiguous layout
+  (which may reuse already-contiguous storage);
 - `binary_repr` is limited to widths up to 53 bits and `base_repr` supports
   bases 2..36; `copyto`/`putmask` mutate their destination and `putmask`
   requires broadcastable replacement values;
@@ -905,7 +918,8 @@ This is an MVP, not a complete NumPy replacement:
   values are accepted only as aliases for the little-endian `<` spellings.
   `save`/`load`, `savez`/`savez_compressed`/`loadz`, `fromfile`/`tofile`, and
   `loadtxt`/`savetxt` accept open Lua file handles and leave them open;
-  `loadz` reads from the current position to EOF;
+  `loadz` reads from the current position to EOF; `load` auto-detects ZIP
+  magic for path inputs only, not for open handles;
 - `.npz` writing is stored by default and deflate through `savez_compressed`;
   reading and writing support stored, deflate, and ZIP64 archives. Deflate
   needs a system zlib

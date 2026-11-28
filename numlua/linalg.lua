@@ -161,6 +161,61 @@ function linalg.qr(t, mode)
   return t:qr(mode)
 end
 
+local function product_shape(t, first, last)
+  local product = 1
+  for index = first, last do product = product * t:size(index) end
+  return product
+end
+
+function linalg.tensorinv(t, ind)
+  tensor(t, "tensorinv")
+  ind = ind == nil and 2 or ind
+  if type(ind) ~= "number" or ind % 1 ~= 0 or ind < 1 or ind >= t:dim() then
+    error("numlua.linalg.tensorinv: ind must be an integer in 1..ndim-1", 2)
+  end
+  local left = product_shape(t, 1, ind)
+  local right = product_shape(t, ind + 1, t:dim())
+  if left ~= right then
+    error("numlua.linalg.tensorinv: leading and trailing products must match", 2)
+  end
+  local inverse = linalg.pinv(t:reshape(left, right))
+  local shape = {}
+  for index = ind + 1, t:dim() do shape[#shape + 1] = t:size(index) end
+  for index = 1, ind do shape[#shape + 1] = t:size(index) end
+  return inverse:reshape(shape)
+end
+
+function linalg.tensorsolve(a, b, axes)
+  tensor(a, "tensorsolve")
+  tensor(b, "tensorsolve")
+  if axes ~= nil then
+    error("numlua.linalg.tensorsolve: axes is not supported", 2)
+  end
+  if a:dim() % 2 ~= 0 then
+    error("numlua.linalg.tensorsolve expects an even-rank coefficient tensor", 2)
+  end
+  local half = math.floor(a:dim() / 2)
+  local left, right = product_shape(a, 1, half),
+    product_shape(a, half + 1, a:dim())
+  if left ~= right then
+    error("numlua.linalg.tensorsolve: coefficient halves must have equal " ..
+      "products", 2)
+  end
+  if b:dim() ~= half then
+    error("numlua.linalg.tensorsolve: b rank must match half the input rank", 2)
+  end
+  for index = 1, half do
+    if b:size(index) ~= a:size(index) then
+      error("numlua.linalg.tensorsolve: b shape does not match the " ..
+        "coefficient tensor", 2)
+    end
+  end
+  local solution = a:reshape(left, right):solve(b:reshape(left))
+  local shape = {}
+  for index = 1, half do shape[index] = a:size(index) end
+  return solution:reshape(shape)
+end
+
 function linalg.lu(t)
   return square(t, "lu"):lu()
 end

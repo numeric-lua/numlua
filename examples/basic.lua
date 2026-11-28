@@ -206,6 +206,9 @@ assert(inner_product:get(1, 1) == 14 and inner_product:get(2, 2) == 77)
 print("tensordot:\n" .. numlua.tensordot(a,
   numlua.array({ { 1, 1 }, { 1, 1 }, { 1, 1 } }, { dtype = "int64" }), 1)
   :format())
+print("einsum:\n" .. numlua.einsum("ij,jk->ik", a,
+  numlua.array({ { 1, 0 }, { 0, 1 }, { 1, 1 } }, { dtype = "int64" }))
+  :format())
 local outer_product = numlua.outer(numlua.array({ 1, 2 }),
   numlua.array({ 3, 4 }))
 print("outer product:\n" .. outer_product:format())
@@ -265,6 +268,11 @@ print("lu_solve: " .. table.concat(la.lu_solve(p, l, u,
   numlua.array({ 1.0, 2.0 }, { dtype = "float64" })):totable(), ", "))
 print("svdvals: " .. table.concat(la.svdvals(square):totable(), ", "))
 print("vector_norm = " .. tostring(la.vector_norm(square):item()))
+local tensor_identity = numlua.eye(4, { dtype = "float64" }):reshape(2, 2, 2, 2)
+print("tensorinv shape: " ..
+  table.concat(numlua.shape(la.tensorinv(tensor_identity)), " x "))
+print("tensorsolve:\n" .. la.tensorsolve(tensor_identity,
+  numlua.array({ { 1, 2 }, { 3, 4 } }, { dtype = "float64" })):format())
 
 heading("Predicates and selection")
 local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })
@@ -301,6 +309,9 @@ numlua.copyto(copied, numlua.array({ { 1, 2 } }))
 print("copyto:\n" .. copied:format())
 numlua.putmask(copied, copied:gt(1), 0)
 print("putmask:\n" .. copied:format())
+local cloned = numlua.copy(copied)
+local contiguous = numlua.ascontiguousarray(cloned:t())
+print("copy/contiguous shapes: " .. table.concat(numlua.shape(contiguous), " x "))
 
 local matrix = numlua.array({ { 10, 30, 20 }, { 60, 40, 50 } })
 local sorted = numlua.take_along_axis(matrix, numlua.argsort(matrix, 2), 2)
@@ -431,6 +442,8 @@ assert(archive.block:equal(product))
 assert(io.type(npz_handle) == "file")
 npz_handle:close()
 print("restored the same tensor from an .npz file handle")
+local auto_archive = numlua.load(npz_path)
+print("auto-loaded npz member: " .. tostring(auto_archive.block:get(1, 1)))
 os.remove(npz_path)
 
 heading("Raw binary round-trip")

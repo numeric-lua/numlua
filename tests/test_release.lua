@@ -91,11 +91,13 @@ test("new public API and format support are documented", function()
       "numlua.nanpercentile", "numlua.histogram2d", "numlua.fromiter",
       "numlua.packbits", "numlua.unpackbits", "numlua.mask_indices",
       "numlua.mgrid", "numlua.ogrid", "numlua.ndindex",
-      "numlua.tensordot", "numlua.ndenumerate", "numlua.vectorize",
+      "numlua.tensordot", "numlua.einsum", "numlua.copy",
+      "numlua.ascontiguousarray", "numlua.ndenumerate", "numlua.vectorize",
       "numlua.base_repr", "numlua.array2string", "numlua.array_str",
       "numlua.fromregex", "numlua.isrealobj", "numlua.iscomplexobj",
       "numlua.isscalar", "numlua.isfortran",
       "numlua.binary_repr", "numlua.copyto", "numlua.putmask",
+      "numlua.linalg.tensorinv", "numlua.linalg.tensorsolve",
       "numlua.linalg.lu", "numlua.linalg.lu_solve",
       "numlua.linalg.svdvals",
       "numlua.linalg.vector_norm",
@@ -401,11 +403,16 @@ test("new public API and format support are documented", function()
       readme:find("numlua.fromregex", 1, true) ~= nil and
       readme:find("numlua.isrealobj", 1, true) ~= nil,
     "README.md does not document array2string/fromregex/predicates")
+  assert_true(readme:find("numlua.einsum", 1, true) ~= nil and
+      readme:find("numlua.copy", 1, true) ~= nil and
+      readme:find("numlua.ascontiguousarray", 1, true) ~= nil,
+    "README.md does not document einsum/copy/contiguity")
   assert_true(readme:find("numlua.linalg.lu", 1, true) ~= nil and
       readme:find("numlua.linalg.lu_solve", 1, true) ~= nil and
       readme:find("numlua.linalg.svdvals", 1, true) ~= nil and
-      readme:find("numlua.linalg.vector_norm", 1, true) ~= nil,
-    "README.md does not document lu/lu_solve/svdvals/vector_norm")
+      readme:find("numlua.linalg.vector_norm", 1, true) ~= nil and
+      readme:find("numlua.linalg.tensorinv", 1, true) ~= nil,
+    "README.md does not document linalg factorization/tensor helpers")
   assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
     "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,
