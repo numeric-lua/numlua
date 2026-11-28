@@ -512,13 +512,14 @@ and follows the ordinary `median`/reduction shape rules. With an axis the
 reduced dimension is removed unless `keepdims` is true; integer input follows
 `median`'s dtype behavior, while floating input keeps its dtype.
 
-### `numlua.nanquantile(t, q[, axis[, keepdims]])`, `numlua.nanpercentile`
+### `numlua.nanquantile(t, q[, axis[, keepdims[, method]]])`, `numlua.nanpercentile`
 
 NaN-aware quantiles. `q` is a number in `[0, 1]` or a non-empty table; NaN
 values are removed per slice and an all-NaN slice yields NaN. A scalar q with
 no axis returns a 0-D tensor; with an axis the reduced dimension follows the
 usual `keepdims` rules. A q table stacks results along the first result axis.
-`nanpercentile` accepts `0..100` and delegates to `nanquantile`.
+`method` is `"linear"` (default), `"lower"`, `"higher"`, `"midpoint"`, or
+`"nearest"`. `nanpercentile` accepts `0..100` and the same trailing method.
 
 ### `numlua.nan_to_num(t[, nan[, posinf[, neginf]]])`
 
@@ -721,6 +722,13 @@ raise an error.
 Formats an integer in bases `2..36` (default `2`), with optional zero padding.
 Negative values receive a leading `-`.
 
+### `numlua.array2string(t[, options])`, `numlua.array_str`
+
+Formats a tensor as a simple bracketed string rather than `tensor(...)`.
+Options are `precision` (default `8`), `separator` (default `" "`), `prefix`,
+and `suffix`; `array_str` is an alias. Multi-dimensional rows are separated by
+newlines. This is not a byte-for-byte copy of NumPy's aligned/wrapped printer.
+
 ### `numlua.percentile(t, q[, axis[, keepdims]])`
 
 Percent-scaled alias for `numlua.quantile`; `q` is in `[0, 100]` and may also
@@ -774,6 +782,12 @@ Results are `int64` 1-based indices with the same axis/`keepdims` rules as
 `argmin`/`argmax`; integer input follows the ordinary arg reductions.
 
 ## Predicates and selection
+
+### `numlua.isrealobj(value)`, `numlua.iscomplexobj(value)`, `numlua.isscalar(value)`, `numlua.isfortran(t)`
+
+`isrealobj` is always true and `iscomplexobj` always false because no complex
+dtypes are supported. `isscalar` is true for Lua numbers/booleans and false for
+tensors/tables. `isfortran` accepts a tensor and always returns false.
 
 ### `numlua.where(condition, x, y)`
 
@@ -1111,6 +1125,7 @@ local q, r = la.qr(a)
 | `linalg.svd(t[, full_matrices])` | returns `U, S, Vh`; `full_matrices` defaults to `true` |
 | `linalg.qr(t[, mode])` | returns `Q, R`; `mode` is `"reduced"` (default), `"complete"`, or `"r"` |
 | `numlua.linalg.lu(t)` | returns `P, L, U` |
+| `numlua.linalg.lu_solve(p, l, u, b)` | solves using existing `P, L, U` factors |
 | `numlua.linalg.svdvals(t)` | singular-value vector |
 | `numlua.linalg.vector_norm(t[, ord[, axis[, keepdims]]])` | vector norm wrapper |
 | `numlua.linalg.cholesky(t)` | lower Cholesky factor |
@@ -1151,8 +1166,9 @@ eigenvalues, eigenvectors and `eigvalsh` returns only the eigenvalues;
 both require symmetric input. `matrix_power` accepts integer exponents
 (including zero and negatives). `cond` supports `p = 2` (default), `-2`, `1`,
 `infinity`, and `"fro"`; singular matrices return `inf` for 1/inf/fro.
-`lu` returns the ATen `P, L, U` factors, `svdvals` returns the singular-value
-vector, and `vector_norm` delegates to `norm`.
+`lu` returns the ATen `P, L, U` factors, `lu_solve` solves a vector/matrix
+right-hand side from those factors, `svdvals` returns the singular-value vector,
+and `vector_norm` delegates to `norm`.
 
 `lstsq` uses the SVD pseudoinverse; it is a convenience wrapper, not a LAPACK
 driver.
@@ -1565,7 +1581,7 @@ with `narrow`. These allocate independent storage: `resize`, `diag`,
 `interp`, `digitize`, `average`, `cov`, `corrcoef`, `polyval`, `polyfit`,
 `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint`,
 `iqr`, `intersect1d`, `union1d`, `setdiff1d`, `setxor1d`, `isin`, `in1d`,
-`fromstring`, `deg2rad`, `rad2deg`, `sinc`, `heaviside`,
+`fromstring`, `fromregex`, `deg2rad`, `rad2deg`, `sinc`, `heaviside`,
 `mgrid`, `ogrid`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`,
 `block`, `append`, `insert`, `choose`, `extract`, `piecewise`, `msort`,
 `tensordot`,
@@ -1881,6 +1897,13 @@ Parses already-loaded numeric text into a 1-D tensor. A non-empty text
 separator is required; binary mode is not implemented. `count` truncates the
 result when supplied. Numeric and bool spellings match `loadtxt`.
 
+### `numlua.fromregex(source, pattern[, dtype[, count]])`
+
+Extracts all non-overlapping Lua-pattern matches from a path or open handle and
+parses the first capture (or the whole match when there is no capture) as a 1-D
+tensor. `dtype` defaults to `"float64"`; `count` truncates. Python regular
+expression syntax and multiple capture groups are not supported.
+
 ### `numlua.loadtxt(path_or_file[, options])`
 
 Reads a whitespace- or delimiter-separated numeric text file and returns a
@@ -2163,8 +2186,9 @@ dtype, or backend constraints are forwarded as-is.
   supports 1-D/2-D operands and follows the right operand's dtype.
   `linalg.cholesky` needs positive-definite input, `eigh`/`eigvalsh` need
   symmetric input, `matrix_power` takes integer exponents, and `cond` supports
-  p = 2, -2, 1, infinity, or `"fro"`; `lu` returns ATen's `P, L, U`, `svdvals`
-  returns a 1-D singular-value vector, and `vector_norm` delegates to `norm`.
+  p = 2, -2, 1, infinity, or `"fro"`; `lu` returns ATen's `P, L, U`, `lu_solve`
+  solves from those factors, `svdvals` returns a 1-D singular-value vector, and
+  `vector_norm` delegates to `norm`.
 - `trapezoid`/`trapz` integrate along one 1-based axis. A coordinate array may
   be 1-D for the selected axis or have the full input shape; integer input
   follows ATen's promotion to `float32`.
@@ -2189,6 +2213,11 @@ dtype, or backend constraints are forwarded as-is.
 - `vectorize` broadcasts scalar/tensor/table arguments and applies a Lua
   callback per element; it does not implement `excluded` or full output
   signatures beyond `otypes`.
+- `array2string`/`array_str` use a simple bracketed layout without NumPy's
+  line wrapping/alignment; `fromregex` uses Lua patterns and one capture (or
+  the whole match) per value.
+- No complex dtype is supported, so `isrealobj` is always true and
+  `iscomplexobj`/`isfortran` always false.
 - `copyto`/`putmask` mutate their destination; `putmask` requires broadcastable
   replacement values.
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D input,
@@ -2245,8 +2274,8 @@ dtype, or backend constraints are forwarded as-is.
 - `nanmedian`/`nanquantile`/`nanpercentile` materialize each slice's valid
   values; the median follows `median`'s integer-input dtype behavior, q tables
   stack along the first result axis, and all-NaN slices return NaN.
-  `quantile`/`percentile` support linear/lower/higher/midpoint/nearest
-  interpolation; `nanquantile` remains linear-only.
+  `quantile`/`percentile`/`nanquantile`/`nanpercentile` support
+  linear/lower/higher/midpoint/nearest interpolation.
 - `searchsorted` sorters are 1-based permutations of the sorted axis, and
   `*_indices_from` derive 1-based coordinates from the input shape.
 - `partition`/`argpartition` return a fully sorted result, which satisfies the

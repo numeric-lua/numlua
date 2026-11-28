@@ -1324,4 +1324,35 @@ function text.fromstring(data, dtype, count, sep)
   return torch.tensor(values, { dtype = dtype })
 end
 
+-- fromregex extracts all non-overlapping Lua-pattern matches (the first
+-- capture, or the whole match when there is no capture) and parses them as a
+-- 1-D tensor.  Python regular-expression syntax is not supported.
+function text.fromregex(source, pattern, dtype, count)
+  if type(pattern) ~= "string" or pattern == "" then
+    error("numlua.fromregex expects a non-empty Lua pattern", 2)
+  end
+  dtype = dtype or "float64"
+  if not SUPPORTED_DTYPES[dtype] then
+    error("numlua.fromregex: unsupported dtype '" .. tostring(dtype) .. "'", 2)
+  end
+  if count == -1 then count = nil end
+  if count ~= nil and (type(count) ~= "number" or count % 1 ~= 0 or
+      count < 0) then
+    error("numlua.fromregex: count must be a non-negative integer or nil", 2)
+  end
+  local data = read_input(source, "fromregex")
+  local values = {}
+  for field in data:gmatch(pattern) do
+    local value = dtype == "bool" and parse_bool(field) or parse_number(field)
+    if value == nil then
+      error("numlua.fromregex: cannot parse match '" .. tostring(field) ..
+        "'", 2)
+    end
+    if dtype == "bool" then value = value ~= 0 end
+    values[#values + 1] = value
+    if count ~= nil and #values >= count then break end
+  end
+  return torch.tensor(values, { dtype = dtype })
+end
+
 return text

@@ -83,10 +83,15 @@
 - `numlua.base_repr` adds integer formatting in bases 2..36.
 - `numlua.vectorize` adds broadcasted scalar-callback wrappers.
 - `numlua.linalg.lu`, `svdvals`, and `vector_norm` extend linear algebra.
+- `numlua.array2string`/`numlua.array_str` add simple tensor formatting.
+- `numlua.fromregex` adds Lua-pattern text extraction.
+- `numlua.linalg.lu_solve` solves from existing LU factors.
+- `numlua.isrealobj`/`iscomplexobj`/`isscalar`/`isfortran` add type predicates.
+- `numlua.nanquantile`/`nanpercentile` accept interpolation methods.
 
 ### Tests
 
-- 600 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 609 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -120,7 +125,10 @@
   `test_copyto_putmask.lua` covers broadcast assignment and masks;
   `test_base_repr.lua` covers base formatting; `test_vectorize.lua` covers
   broadcasted callbacks and inference; `test_linalg_lu.lua` covers LU,
-  singular values, and vector norms.
+  singular values, and vector norms; `test_nanquantile_methods.lua` covers
+  NaN-aware interpolation; `test_array2string.lua` covers formatting;
+  `test_fromregex.lua` covers pattern extraction; `test_linalg_lu_solve.lua`
+  covers factor-based solves; `test_array_predicates.lua` covers predicates.
 
 ## 0.26.0 — 2026-11-24
 

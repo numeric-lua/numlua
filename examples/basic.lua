@@ -114,6 +114,8 @@ print("nanargmin/nanargmax: " ..
   tostring(numlua.nanargmax(nan_values):item()))
 print("nanmedian: " .. tostring(numlua.nanmedian(nan_values):item()))
 print("nanquantile: " .. tostring(numlua.nanquantile(nan_values, 0.5):item()))
+print("nanquantile lower: " .. tostring(numlua.nanquantile(
+  nan_values, 0.5, nil, false, "lower"):item()))
 print("iqr: " .. tostring(numlua.iqr(numlua.array({ 1, 2, 3, 4 })):item()))
 print("quantile lower: " .. tostring(numlua.quantile(
   numlua.array({ 1, 2, 3, 4 }), 0.5, nil, false, "lower")))
@@ -170,6 +172,7 @@ end, "int64"):totable(), ", "))
 print("packbits: " .. table.concat(numlua.packbits(
   numlua.array({ 1, 0, 1, 0, 0, 0, 0, 1 })):totable(), ", "))
 print("binary_repr: " .. numlua.binary_repr(-5, 8))
+print("array2string: " .. numlua.array2string(numlua.array({ 1, 2, 3 })))
 print("base_repr: " .. numlua.base_repr(255, 16))
 local double = numlua.vectorize(function(value) return value * 2 end)
 print("vectorize: " .. table.concat(double(
@@ -258,12 +261,16 @@ local p, l, u = la.lu(square)
 print("lu shapes: " .. table.concat(numlua.shape(p), "x") .. ", " ..
   table.concat(numlua.shape(l), "x") .. ", " ..
   table.concat(numlua.shape(u), "x"))
+print("lu_solve: " .. table.concat(la.lu_solve(p, l, u,
+  numlua.array({ 1.0, 2.0 }, { dtype = "float64" })):totable(), ", "))
 print("svdvals: " .. table.concat(la.svdvals(square):totable(), ", "))
 print("vector_norm = " .. tostring(la.vector_norm(square):item()))
 
 heading("Predicates and selection")
 local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })
 print("clipped:\n" .. numlua.clip(values, -1, 1):format())
+print("predicates: " .. tostring(numlua.isrealobj(values)) .. "/" ..
+  tostring(numlua.isscalar(1)) .. "/" .. tostring(numlua.isfortran(values)))
 print("positive values selected:\n" ..
   numlua.where(values:gt(0), values, 0):format())
 print("choose: " .. table.concat(numlua.choose(
@@ -473,6 +480,13 @@ print("bool text:\n" .. bool_loaded:format())
 assert(bool_loaded:equal(bool_values))
 os.remove(bool_path)
 
+local regex_path = root .. "/examples/.basic-demo-regex.txt"
+local regex_handle = assert(io.open(regex_path, "w"))
+regex_handle:write("x=1; y=2; z=30")
+regex_handle:close()
+print("fromregex: " .. table.concat(numlua.fromregex(
+  regex_path, "(%d+)", "int64"):totable(), ", "))
+os.remove(regex_path)
 print("fromstring: " .. table.concat(numlua.fromstring(
   "1 2 3", "int64", nil, " "):totable(), ", "))
 local genfromtxt_path = root .. "/examples/.basic-demo-missing.csv"

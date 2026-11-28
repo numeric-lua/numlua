@@ -77,6 +77,10 @@ print(numlua.select({ values:lt(0), values:gt(0) }, { -1, 1 }, 0):format())
 print(numlua.count_nonzero(values):item(), numlua.any(values:gt(0)):item())
 ```
 
+`numlua.isrealobj`, `numlua.iscomplexobj`, `numlua.isscalar`, and
+`numlua.isfortran` provide simple type/order predicates; no complex dtype is
+currently supported.
+
 `numlua.piecewise(x, condlist, funclist[, ...])` evaluates a callback or
 constant per condition and folds the results with `select`; a trailing
 funclist entry supplies the default, and extra arguments are forwarded to every
@@ -306,11 +310,11 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Iteration | `apply_along_axis`, `apply_over_axes`, `vectorize` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod`, `deg2rad`, `radians`, `rad2deg`, `degrees`, `sinc`, `heaviside` |
 | Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `nanmedian`, `nanquantile`, `nanpercentile`, `iqr`, `cov`, `corrcoef` |
-| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `binary_repr`, `base_repr`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
-| Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isin`, `in1d`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
+| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `binary_repr`, `base_repr`, `array2string`, `array_str`, `fromregex`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
+| Predicates/selection | `where`, `isrealobj`, `iscomplexobj`, `isscalar`, `isfortran`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isin`, `in1d`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Sets | `intersect1d`, `union1d`, `setdiff1d`, `setxor1d` |
 | Mutation | `copyto`, `putmask` |
-| Linear algebra | `dot`, `tensordot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.lu`, `linalg.svdvals`, `linalg.vector_norm`, `linalg.cholesky`, `linalg.eigh`, `linalg.eigvalsh`, `linalg.matrix_power`, `linalg.cond`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
+| Linear algebra | `dot`, `tensordot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.lu`, `linalg.lu_solve`, `linalg.svdvals`, `linalg.vector_norm`, `linalg.cholesky`, `linalg.eigh`, `linalg.eigvalsh`, `linalg.matrix_power`, `linalg.cond`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt`, `genfromtxt` |
@@ -342,7 +346,8 @@ returns `max - min` over the same axis (bool input becomes `int64`).
 return the sum of weights; `numlua.nanargmin`/`numlua.nanargmax` ignore NaNs
 and reject all-NaN slices, while `numlua.nanmedian`,
 `numlua.nanquantile`, and `numlua.nanpercentile` return NaN for all-NaN
-slices; `numlua.iqr` is the q75 - q25 range. `numlua.quantile` and
+slices; they also accept the trailing interpolation methods supported by
+`quantile`. `numlua.iqr` is the q75 - q25 range. `numlua.quantile` and
 `numlua.percentile` accept a trailing interpolation method (`"linear"`,
 `"lower"`, `"higher"`, `"midpoint"`, or `"nearest"`). `numlua.cov` computes
 sample covariance matrices and
@@ -364,7 +369,10 @@ that to an arbitrary number of sample dimensions. `numlua.packbits` and
 `numlua.unpackbits` convert flattened binary data to/from `uint8` bytes with
 big- or little-endian bit order. `numlua.binary_repr` formats an integer in
 binary, optionally with a fixed width/two's-complement field, and
-`numlua.base_repr` formats an integer in bases 2..36. `numlua.searchsorted`
+`numlua.base_repr` formats an integer in bases 2..36. `numlua.array2string`
+(and its `array_str` alias) formats tensors without the `tensor(...)` prefix,
+and `numlua.fromregex` extracts values from text using Lua patterns.
+`numlua.searchsorted`
 accepts an optional 1-based `sorter` permutation as a fourth argument.
 
 The elementwise surface also includes `numlua.isinf`, `numlua.isfinite`,
@@ -391,8 +399,9 @@ determinant sign and log-absolute value. `numlua.linalg.kron` supports 1-D and
 2-D Kronecker products. `numlua.linalg.cholesky`, `numlua.linalg.eigh`, and
 `numlua.linalg.eigvalsh` expose factorization/eigenvalue helpers, while
 `numlua.linalg.matrix_power` and `numlua.linalg.cond` add powers and condition
-numbers. `numlua.linalg.lu` returns `P, L, U`, `numlua.linalg.svdvals` returns
-the singular-value vector, and `numlua.linalg.vector_norm` mirrors `norm`.
+numbers. `numlua.linalg.lu` returns `P, L, U`, `numlua.linalg.lu_solve` solves using
+existing factors, `numlua.linalg.svdvals` returns the singular-value vector,
+and `numlua.linalg.vector_norm` mirrors `norm`.
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
@@ -726,8 +735,9 @@ iterator construction, polynomial arithmetic/calculus, set/membership helpers,
 text parsing, invalid-row skipping, angle/sinc/heaviside ufuncs, coordinate
 grids and iterators, block assembly, extra linalg helpers (vdot/multi_dot/
 matrix_rank/slogdet/kron/powers/condition), tensordot, mutation helpers,
-binary/base formatting, ndenumerate, vectorize, LU/singular-value helpers,
-searchsorted sorters, additional ufuncs and NaN
+binary/base/array formatting, ndenumerate, vectorize, regex extraction,
+LU/singular-value helpers, type predicates, nanquantile methods, searchsorted
+sorters, additional ufuncs and NaN
 helpers, difference edges,
 broadcast-shape arithmetic, quoted/bool text fields,
 meshgrid, gradients, closeness predicates,
@@ -738,7 +748,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 600 tests.
+It currently contains 609 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -783,8 +793,8 @@ This is an MVP, not a complete NumPy replacement:
   `nanmedian`/`nanquantile`/`nanpercentile` materialize per-slice valid values;
   the median follows `median`'s integer-input dtype behavior, q tables stack
   along the first result axis, and `iqr` is `quantile(0.75) - quantile(0.25)`.
-  `quantile`/`percentile` support linear/lower/higher/midpoint/nearest
-  interpolation; `nanquantile` remains linear-only;
+  `quantile`/`percentile`/`nanquantile`/`nanpercentile` support
+  linear/lower/higher/midpoint/nearest interpolation;
 - `put_along_axis` broadcasts singleton non-axis input dimensions but requires
   values to be scalar or match the indices/broadcast size; `delete` accepts
   integer indices/tables, not Python-style slice objects; `insert` supports one
@@ -814,8 +824,8 @@ This is an MVP, not a complete NumPy replacement:
   `linalg.cholesky` requires positive-definite input, `eigh`/`eigvalsh` require
   symmetric matrices, `matrix_power` takes integer exponents, and `cond`
   supports p = 2, -2, 1, infinity, or `"fro"`; `linalg.lu` returns `P, L, U`,
-  `linalg.svdvals` returns a 1-D vector, and `linalg.vector_norm` delegates to
-  `norm`;
+  `linalg.lu_solve` solves from those factors, `linalg.svdvals` returns a 1-D
+  vector, and `linalg.vector_norm` delegates to `norm`;
 - `trapezoid`/`trapz` default to the last axis, accept a 1-D coordinate vector
   or full-shape coordinates, and use ATen's arithmetic promotion (integer
   input becomes `float32`);
@@ -839,6 +849,11 @@ This is an MVP, not a complete NumPy replacement:
 - `vectorize` broadcasts tensor/table/scalar arguments, applies a Lua callback
   per element, and returns a tensor; it does not implement `excluded` or
   output-signature handling beyond `otypes`;
+- `array2string`/`array_str` produce a simple `[...]` representation without
+  NumPy's line wrapping/alignment; `fromregex` uses Lua patterns and extracts
+  one capture (or the whole match) per value;
+- `isrealobj` is always true and `iscomplexobj` always false because no complex
+  dtypes are supported; `isfortran` is always false;
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D inputs,
   `rowvar = false`, and optional `y` observations; `corrcoef` uses unit sample
   covariance and clips round-off to `[-1, 1]`;

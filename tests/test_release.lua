@@ -92,9 +92,12 @@ test("new public API and format support are documented", function()
       "numlua.packbits", "numlua.unpackbits", "numlua.mask_indices",
       "numlua.mgrid", "numlua.ogrid", "numlua.ndindex",
       "numlua.tensordot", "numlua.ndenumerate", "numlua.vectorize",
-      "numlua.base_repr",
+      "numlua.base_repr", "numlua.array2string", "numlua.array_str",
+      "numlua.fromregex", "numlua.isrealobj", "numlua.iscomplexobj",
+      "numlua.isscalar", "numlua.isfortran",
       "numlua.binary_repr", "numlua.copyto", "numlua.putmask",
-      "numlua.linalg.lu", "numlua.linalg.svdvals",
+      "numlua.linalg.lu", "numlua.linalg.lu_solve",
+      "numlua.linalg.svdvals",
       "numlua.linalg.vector_norm",
       "numlua.linalg.cholesky", "numlua.linalg.eigh",
       "numlua.linalg.eigvalsh", "numlua.linalg.matrix_power",
@@ -394,10 +397,15 @@ test("new public API and format support are documented", function()
   assert_true(readme:find("numlua.base_repr", 1, true) ~= nil and
       readme:find("numlua.vectorize", 1, true) ~= nil,
     "README.md does not document base_repr/vectorize")
+  assert_true(readme:find("numlua.array2string", 1, true) ~= nil and
+      readme:find("numlua.fromregex", 1, true) ~= nil and
+      readme:find("numlua.isrealobj", 1, true) ~= nil,
+    "README.md does not document array2string/fromregex/predicates")
   assert_true(readme:find("numlua.linalg.lu", 1, true) ~= nil and
+      readme:find("numlua.linalg.lu_solve", 1, true) ~= nil and
       readme:find("numlua.linalg.svdvals", 1, true) ~= nil and
       readme:find("numlua.linalg.vector_norm", 1, true) ~= nil,
-    "README.md does not document lu/svdvals/vector_norm")
+    "README.md does not document lu/lu_solve/svdvals/vector_norm")
   assert_true(readme:find("optional 1-based `sorter`", 1, true) ~= nil,
     "README.md does not document searchsorted sorters")
   assert_true(readme:find("comment markers inside", 1, true) ~= nil,

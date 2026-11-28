@@ -165,6 +165,24 @@ function linalg.lu(t)
   return square(t, "lu"):lu()
 end
 
+function linalg.lu_solve(p, l, u, b)
+  matrix(p, "lu_solve")
+  matrix(l, "lu_solve")
+  matrix(u, "lu_solve")
+  tensor(b, "lu_solve")
+  local n = p:size(1)
+  if p:size(2) ~= n or l:size(1) ~= n or l:size(2) ~= n or
+      u:size(1) ~= n or u:size(2) ~= n then
+    error("numlua.linalg.lu_solve expects n by n P, L, U factors", 2)
+  end
+  local dims = b:sizes()
+  if (#dims ~= 1 and #dims ~= 2) or dims[1] ~= n then
+    error(string.format(
+      "numlua.linalg.lu_solve: b must have first dimension %d", n), 2)
+  end
+  return u:solve(l:solve(p:matmul(b)))
+end
+
 function linalg.svdvals(t)
   local _, singular = matrix(t, "svdvals"):svd(false)
   return singular:reshape(-1)

@@ -305,6 +305,74 @@ end
 -- vectorize(func[, otypes]) returns a function that broadcasts its tensor
 -- arguments and applies func to each scalar tuple.  otypes is a luatorch dtype
 -- string; when omitted, the first result's Lua type drives tensor inference.
+local ARRAY2STRING_OPTIONS = {
+  precision = true, separator = true, prefix = true, suffix = true,
+}
+
+function numlua.array2string(t, options)
+  check_tensor(t, "array2string")
+  if options ~= nil and type(options) ~= "table" then
+    error("numlua.array2string: options must be a table or nil", 2)
+  end
+  options = options or {}
+  for key in pairs(options) do
+    if not ARRAY2STRING_OPTIONS[key] then
+      error("numlua.array2string: unknown option '" .. tostring(key) .. "'", 2)
+    end
+  end
+  local precision = options.precision == nil and 8 or options.precision
+  if type(precision) ~= "number" or precision % 1 ~= 0 or precision < 0 then
+    error("numlua.array2string: precision must be a non-negative integer", 2)
+  end
+  local separator = options.separator == nil and " " or options.separator
+  local prefix = options.prefix == nil and "" or options.prefix
+  local suffix = options.suffix == nil and "" or options.suffix
+  if type(separator) ~= "string" or type(prefix) ~= "string" or
+      type(suffix) ~= "string" then
+    error("numlua.array2string: separator, prefix, and suffix must be strings",
+      2)
+  end
+  local dtype = t:dtype()
+  local integer = dtype == "int64" or dtype == "int32" or dtype == "int16"
+    or dtype == "int8" or dtype == "uint8"
+  local function format_value(value)
+    if type(value) == "boolean" then return value and "True" or "False" end
+    if integer then return tostring(math.floor(value)) end
+    return string.format("%." .. precision .. "g", value)
+  end
+  local function render(value, depth)
+    if type(value) ~= "table" then return format_value(value) end
+    local parts = {}
+    for index = 1, #value do parts[index] = render(value[index], depth + 1) end
+    local nested = type(value[1]) == "table"
+    local joiner = nested and ("\n" .. string.rep(" ", math.max(0, depth - 1)))
+      or separator
+    return "[" .. table.concat(parts, joiner) .. "]"
+  end
+  return prefix .. render(t:totable(), 1) .. suffix
+end
+
+numlua.array_str = numlua.array2string
+
+function numlua.isrealobj(value)
+  return not (torch.is_tensor(value) and value:dtype() == "complex64") and
+    not (torch.is_tensor(value) and value:dtype() == "complex128")
+end
+
+function numlua.iscomplexobj(value)
+  return torch.is_tensor(value) and (value:dtype() == "complex64" or
+    value:dtype() == "complex128")
+end
+
+function numlua.isscalar(value)
+  return type(value) == "number" or type(value) == "boolean"
+end
+
+function numlua.isfortran(t)
+  check_tensor(t, "isfortran")
+  return false
+end
+
 function numlua.vectorize(func, otypes)
   if type(func) ~= "function" then
     error("numlua.vectorize expects a function", 2)
@@ -1587,12 +1655,32 @@ function numlua.nanmedian(t, axis, keepdims)
   return result
 end
 
-local function quantile_of_sorted(sorted, q)
+local QUANTILE_METHODS = {
+  linear = true, lower = true, higher = true, midpoint = true,
+  nearest = true,
+}
+
+local function quantile_of_sorted(sorted, q, method)
   local count = sorted:numel()
   local position = q * (count - 1) + 1
   local lower = math.floor(position)
   local upper = math.min(count, lower + 1)
   local fraction = position - lower
+  if method == "lower" then
+    upper, fraction = lower, 0
+  elseif method == "higher" then
+    if fraction > 0 then lower = upper end
+    upper, fraction = lower, 0
+  elseif method == "midpoint" then
+    if fraction > 0 then
+      fraction = 0.5
+    else
+      upper, fraction = lower, 0
+    end
+  elseif method == "nearest" then
+    local nearest = math.min(count, math.max(1, math.floor(position + 0.5)))
+    lower, upper, fraction = nearest, nearest, 0
+  end
   local a, b = sorted:get(lower), sorted:get(upper)
   return a + (b - a) * fraction
 end
@@ -1615,9 +1703,9 @@ local function check_nanquantile_q(q, name)
   end
 end
 
-local function nanquantile_scalar(t, q, axis, keepdims)
+local function nanquantile_scalar(t, q, axis, keepdims, method)
   if not t:is_floating_point() or not t:ne(t):any():item() then
-    local result = numlua.quantile(t, q, axis, keepdims)
+    local result = numlua.quantile(t, q, axis, keepdims, method)
     if type(result) == "number" then
       local dtype = t:is_floating_point() and t:dtype() or "float64"
       result = torch.tensor(result, { dtype = dtype })
@@ -1631,7 +1719,7 @@ local function nanquantile_scalar(t, q, axis, keepdims)
     if valid:numel() == 0 then
       return torch.tensor(0 / 0, { dtype = t:dtype() })
     end
-    return torch.tensor(quantile_of_sorted(valid:sort(), q),
+    return torch.tensor(quantile_of_sorted(valid:sort(), q, method),
       { dtype = t:dtype() })
   end
 
@@ -1657,7 +1745,7 @@ local function nanquantile_scalar(t, q, axis, keepdims)
     if valid:numel() == 0 then
       values[row] = 0 / 0
     else
-      values[row] = quantile_of_sorted(valid:sort(), q)
+      values[row] = quantile_of_sorted(valid:sort(), q, method)
     end
   end
   local shape = {}
@@ -1670,22 +1758,27 @@ local function nanquantile_scalar(t, q, axis, keepdims)
   return result
 end
 
-function numlua.nanquantile(t, q, axis, keepdims)
+function numlua.nanquantile(t, q, axis, keepdims, method)
   check_tensor(t, "nanquantile")
   check_axis(axis, "nanquantile")
   check_keepdims(keepdims, "nanquantile")
   check_nanquantile_q(q, "nanquantile")
+  method = method or "linear"
+  if not QUANTILE_METHODS[method] then
+    error("numlua.nanquantile: unknown interpolation method '" ..
+      tostring(method) .. "'", 2)
+  end
   if type(q) == "number" then
-    return nanquantile_scalar(t, q, axis, keepdims)
+    return nanquantile_scalar(t, q, axis, keepdims, method)
   end
   local parts = {}
   for index = 1, #q do
-    parts[index] = nanquantile_scalar(t, q[index], axis, keepdims)
+    parts[index] = nanquantile_scalar(t, q[index], axis, keepdims, method)
   end
   return torch.stack(parts, 1)
 end
 
-function numlua.nanpercentile(t, q, axis, keepdims)
+function numlua.nanpercentile(t, q, axis, keepdims, method)
   check_tensor(t, "nanpercentile")
   if type(q) == "table" then
     local scaled = {}
@@ -1696,18 +1789,13 @@ function numlua.nanpercentile(t, q, axis, keepdims)
       end
       scaled[index] = value / 100
     end
-    return numlua.nanquantile(t, scaled, axis, keepdims)
+    return numlua.nanquantile(t, scaled, axis, keepdims, method)
   end
   if type(q) ~= "number" or q < 0 or q > 100 then
     error("numlua.nanpercentile: q must be in [0, 100]", 2)
   end
-  return numlua.nanquantile(t, q / 100, axis, keepdims)
+  return numlua.nanquantile(t, q / 100, axis, keepdims, method)
 end
-
-local QUANTILE_METHODS = {
-  linear = true, lower = true, higher = true, midpoint = true,
-  nearest = true,
-}
 
 local function quantile_scalar(sorted, q, axis, keepdims, method)
   local n = axis == nil and sorted:numel() or sorted:size(axis)
@@ -4008,6 +4096,7 @@ numlua.loadz = npz.loadz
 -- ---------------------------------------------------------------------------
 
 numlua.fromstring = text.fromstring
+numlua.fromregex = text.fromregex
 numlua.loadtxt = text.loadtxt
 numlua.savetxt = text.savetxt
 numlua.genfromtxt = text.genfromtxt
