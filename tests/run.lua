@@ -255,6 +255,7 @@ local files = {
   "test_linalg_more.lua",
   "test_linalg_lu.lua",
   "test_linalg_lu_solve.lua",
+  "test_batched_linalg.lua",
   "test_tensorinv.lua",
   "test_tensorsolve.lua",
   "test_linalg_facade.lua",

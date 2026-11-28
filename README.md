@@ -399,7 +399,9 @@ determinant sign and log-absolute value. `numlua.linalg.kron` supports 1-D and
 2-D Kronecker products. `numlua.linalg.cholesky`, `numlua.linalg.eigh`, and
 `numlua.linalg.eigvalsh` expose factorization/eigenvalue helpers, while
 `numlua.linalg.matrix_power` and `numlua.linalg.cond` add powers and condition
-numbers. `numlua.linalg.tensorinv` and `numlua.linalg.tensorsolve` reshape
+numbers. Most square-matrix helpers accept leading batch dimensions: `inv`,
+`det`, `slogdet`, `cholesky`, `eigh`/`eigvalsh`, `svd`/`svdvals`, `lu`, and
+`matrix_power` are batched; `cond`/`matrix_rank` remain 2-D. `numlua.linalg.tensorinv` and `numlua.linalg.tensorsolve` reshape
 tensor systems into matrix operations. `numlua.linalg.lu` returns `P, L, U`,
 `numlua.linalg.lu_solve` solves using
 existing factors, `numlua.linalg.svdvals` returns the singular-value vector,
@@ -743,7 +745,8 @@ text parsing, invalid-row skipping, angle/sinc/heaviside ufuncs, coordinate
 grids and iterators, block assembly, extra linalg helpers (vdot/multi_dot/
 matrix_rank/slogdet/kron/powers/condition), tensordot, mutation helpers,
 binary/base/array formatting, ndenumerate, vectorize, regex extraction,
-LU/singular-value helpers, tensor reshaped solves, einsum, auto-loaded `.npz`,
+LU/singular-value helpers, batched linalg, tensor reshaped solves, einsum,
+auto-loaded `.npz`,
 copy/contiguity helpers, type predicates, nanquantile methods, searchsorted
 sorters, additional ufuncs and NaN
 helpers, difference edges,
@@ -756,7 +759,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 620 tests.
+It currently contains 625 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -834,7 +837,9 @@ This is an MVP, not a complete NumPy replacement:
   supports p = 2, -2, 1, infinity, or `"fro"`; `linalg.lu` returns `P, L, U`,
   `linalg.lu_solve` solves from those factors, `linalg.tensorinv`/
   `tensorsolve` reshape tensor systems into matrix operations, `linalg.svdvals`
-  returns a 1-D vector, and `linalg.vector_norm` delegates to `norm`;
+  returns a 1-D vector for a matrix and a `batch .. min` tensor for batches,
+  and `linalg.vector_norm` delegates to `norm`. `slogdet` returns Lua numbers
+  for a single matrix but sign/log tensors for batches;
 - `trapezoid`/`trapz` default to the last axis, accept a 1-D coordinate vector
   or full-shape coordinates, and use ATen's arithmetic promotion (integer
   input becomes `float32`);

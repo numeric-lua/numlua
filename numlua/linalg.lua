@@ -20,10 +20,20 @@ end
 local function square(value, name)
   tensor(value, name)
   local sizes = value:sizes()
-  if #sizes ~= 2 or sizes[1] ~= sizes[2] then
+  if #sizes < 2 or sizes[#sizes - 1] ~= sizes[#sizes] then
     error(string.format(
       "numlua.linalg.%s expects a square matrix, got %s",
       name, table.concat(sizes, "x")), 3)
+  end
+  return value
+end
+
+local function batch_matrix(value, name)
+  tensor(value, name)
+  if value:dim() < 2 then
+    error(string.format(
+      "numlua.linalg.%s expects a matrix, got %d dimensions",
+      name, value:dim()), 3)
   end
   return value
 end
@@ -84,7 +94,7 @@ end
 -- svd(t[, full_matrices]) returns U, S, Vh.  full_matrices defaults to true,
 -- following luatorch/NumPy.
 function linalg.svd(t, full_matrices)
-  matrix(t, "svd")
+  batch_matrix(t, "svd")
   if full_matrices ~= nil and type(full_matrices) ~= "boolean" then
     error("numlua.linalg.svd: full_matrices must be a boolean or nil", 2)
   end
@@ -239,8 +249,8 @@ function linalg.lu_solve(p, l, u, b)
 end
 
 function linalg.svdvals(t)
-  local _, singular = matrix(t, "svdvals"):svd(false)
-  return singular:reshape(-1)
+  local _, singular = batch_matrix(t, "svdvals"):svd(false)
+  return singular
 end
 
 function linalg.vector_norm(t, ord, axis, keepdims)
@@ -270,7 +280,19 @@ function linalg.matrix_power(t, exponent)
     base = t:inverse()
     exponent = -exponent
   end
-  local result = torch.eye(t:size(1), { dtype = t:dtype() })
+  local ndim = t:dim()
+  local n = t:size(ndim - 1)
+  local eye_shape, full = {}, {}
+  for index = 1, ndim - 2 do
+    eye_shape[index] = 1
+    full[index] = t:size(index)
+  end
+  eye_shape[#eye_shape + 1] = n
+  eye_shape[#eye_shape + 1] = n
+  full[#full + 1] = n
+  full[#full + 1] = n
+  local result = torch.eye(n, { dtype = t:dtype() }):reshape(eye_shape)
+    :expand(full)
   while exponent > 0 do
     if exponent % 2 == 1 then result = result:matmul(base) end
     exponent = math.floor(exponent / 2)
@@ -363,6 +385,9 @@ end
 function linalg.slogdet(t)
   square(t, "slogdet")
   local value = t:det()
+  if torch.is_tensor(value) and value:numel() > 1 then
+    return value:sign(), value:abs():log()
+  end
   if torch.is_tensor(value) then value = value:item() end
   if value == 0 then return 0, -math.huge end
   return value > 0 and 1 or -1, math.log(math.abs(value))

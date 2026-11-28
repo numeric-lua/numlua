@@ -273,6 +273,12 @@ print("tensorinv shape: " ..
   table.concat(numlua.shape(la.tensorinv(tensor_identity)), " x "))
 print("tensorsolve:\n" .. la.tensorsolve(tensor_identity,
   numlua.array({ { 1, 2 }, { 3, 4 } }, { dtype = "float64" })):format())
+local stacked = numlua.array({
+  { { 2, 0 }, { 0, 4 } }, { { 3, 0 }, { 0, 5 } },
+}, { dtype = "float64" })
+print("batched det: " .. table.concat(la.det(stacked):totable(), ", "))
+print("batched svdvals shape: " ..
+  table.concat(numlua.shape(la.svdvals(stacked)), " x "))
 
 heading("Predicates and selection")
 local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })

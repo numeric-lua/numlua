@@ -1135,32 +1135,34 @@ local q, r = la.qr(a)
 | Function | Result |
 | --- | --- |
 | `linalg.norm(t[, p[, dim[, keepdim]]])` | 0-D norm, or a tensor when `dim` is given; `p` defaults to 2 |
-| `linalg.inv(t)` | inverse of a square matrix |
-| `linalg.det(t)` | 0-D determinant of a square matrix |
+| `linalg.inv(t)` | inverse of a square matrix, or a stack of matrices |
+| `linalg.det(t)` | determinant (0-D for a matrix, batched tensor for stacks) |
 | `linalg.solve(a, b)` | solves `a * x = b`; `b` is a vector or matrix |
-| `linalg.svd(t[, full_matrices])` | returns `U, S, Vh`; `full_matrices` defaults to `true` |
+| `linalg.svd(t[, full_matrices])` | returns `U, S, Vh` for a matrix or matrix stack; `full_matrices` defaults to `true` |
 | `linalg.qr(t[, mode])` | returns `Q, R`; `mode` is `"reduced"` (default), `"complete"`, or `"r"` |
 | `numlua.linalg.tensorinv(t[, ind])` | tensor pseudoinverse via reshape |
 | `numlua.linalg.tensorsolve(a, b)` | solve a reshaped tensor system |
-| `numlua.linalg.lu(t)` | returns `P, L, U` |
+| `numlua.linalg.lu(t)` | returns `P, L, U` for a matrix or stack |
 | `numlua.linalg.lu_solve(p, l, u, b)` | solves using existing `P, L, U` factors |
-| `numlua.linalg.svdvals(t)` | singular-value vector |
+| `numlua.linalg.svdvals(t)` | singular-value vector, or `batch .. min` tensor |
 | `numlua.linalg.vector_norm(t[, ord[, axis[, keepdims]]])` | vector norm wrapper |
-| `numlua.linalg.cholesky(t)` | lower Cholesky factor |
-| `numlua.linalg.eigh(t)` | symmetric eigenvalues and eigenvectors |
-| `numlua.linalg.eigvalsh(t)` | symmetric eigenvalues only |
-| `numlua.linalg.matrix_power(t, n)` | integer matrix power |
+| `numlua.linalg.cholesky(t)` | lower Cholesky factor (batched) |
+| `numlua.linalg.eigh(t)` | symmetric eigenvalues/eigenvectors (batched) |
+| `numlua.linalg.eigvalsh(t)` | symmetric eigenvalues only (batched) |
+| `numlua.linalg.matrix_power(t, n)` | integer matrix power (batched) |
 | `numlua.linalg.cond(t[, p])` | condition number (2/-2/1/inf/fro) |
 | `numlua.linalg.vdot(a, b)` | flattened inner product |
 | `numlua.linalg.multi_dot(arrays)` | left-to-right product of 2-D matrices |
 | `numlua.linalg.matrix_rank(t[, tolerance])` | SVD-based numerical rank (0-D int64 tensor) |
-| `numlua.linalg.slogdet(t)` | determinant sign and log-absolute value as Lua numbers |
+| `numlua.linalg.slogdet(t)` | sign/log-absolute determinant; Lua numbers for a matrix, tensors for batches |
 | `numlua.linalg.kron(a, b)` | 1-D/2-D Kronecker product, following `b`'s dtype |
 
-`svd` accepts rectangular matrices. `qr` returns the ATen shapes for the chosen
-mode. Invalid dtypes, singular systems, and shape errors are reported by
-luatorch/ATen; the facade adds clear errors for non-tensors, non-square
-inverses/determinants, zero dimensions, and mismatched `solve` shapes.
+`svd` accepts rectangular matrices and stacks. `qr` returns the ATen shapes for
+the chosen mode. `inv`, `det`, `slogdet`, `cholesky`, `eigh`, `eigvalsh`, `svd`,
+`svdvals`, `lu`, and `matrix_power` accept leading batch dimensions. Invalid
+dtypes, singular systems, and shape errors are reported by luatorch/ATen; the
+facade adds clear errors for non-tensors, non-square inverses/determinants,
+zero dimensions, and mismatched `solve` shapes.
 
 Additional matrix helpers:
 
@@ -1177,8 +1179,9 @@ remaining orders follow NumPy's max/min absolute column- or row-sum rules.
 Unsupported orders raise a `numlua.linalg.matrix_norm:` error.
 `vdot` flattens both operands first. `multi_dot` accepts only 2-D matrices and
 multiplies left-to-right. `matrix_rank` uses the SVD with an optional absolute
-tolerance. `slogdet` returns `sign, logabsdet` as Lua numbers. `kron` supports
-1-D and 2-D operands and keeps the right operand's dtype.
+tolerance. `slogdet` returns `sign, logabsdet` as Lua numbers for a single
+matrix and as tensors for batches. `kron` supports 1-D and 2-D operands and
+keeps the right operand's dtype.
 `cholesky` requires a positive-definite square matrix. `eigh` returns
 eigenvalues, eigenvectors and `eigvalsh` returns only the eigenvalues;
 both require symmetric input. `matrix_power` accepts integer exponents
@@ -2204,13 +2207,16 @@ dtype, or backend constraints are forwarded as-is.
   the same rank for both operands, and broadcasts batch axes through ATen.
 - `linalg.vdot` flattens both operands; `linalg.multi_dot` chains 2-D matrices
   left-to-right; `linalg.matrix_rank` uses the SVD with an optional absolute
-  tolerance; `linalg.slogdet` returns Lua sign/log numbers; `linalg.kron`
-  supports 1-D/2-D operands and follows the right operand's dtype.
-  `linalg.cholesky` needs positive-definite input, `eigh`/`eigvalsh` need
-  symmetric input, `matrix_power` takes integer exponents, and `cond` supports
-  p = 2, -2, 1, infinity, or `"fro"`; `lu` returns ATen's `P, L, U`, `lu_solve`
-  solves from those factors, `svdvals` returns a 1-D singular-value vector, and
-  `vector_norm` delegates to `norm`.
+  tolerance; `linalg.slogdet` returns Lua sign/log numbers for one matrix and
+  tensors for batches; `linalg.kron` supports 1-D/2-D operands and follows the
+  right operand's dtype. `linalg.cholesky` needs positive-definite input,
+  `eigh`/`eigvalsh` need symmetric input, `matrix_power` takes integer
+  exponents, and `cond` supports p = 2, -2, 1, infinity, or `"fro"`; `lu`
+  returns ATen's `P, L, U`, `lu_solve` solves from those factors, `svdvals`
+  returns a 1-D vector for a matrix (or `batch .. min` for stacks), and
+  `vector_norm` delegates to `norm`. `inv`/`det`/`slogdet`/`cholesky`/`eigh`/
+  `eigvalsh`/`svd`/`svdvals`/`lu`/`matrix_power` accept leading batch axes;
+  `cond`/`matrix_rank` remain 2-D.
 - `trapezoid`/`trapz` integrate along one 1-based axis. A coordinate array may
   be 1-D for the selected axis or have the full input shape; integer input
   follows ATen's promotion to `float32`.

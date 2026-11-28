@@ -92,10 +92,14 @@
 - `numlua.load` auto-detects `.npz`/ZIP paths and returns a member table.
 - `numlua.linalg.tensorinv` and `tensorsolve` add reshaped tensor systems.
 - `numlua.einsum` adds one/two-operand letter-subscript contractions.
+- Batched `linalg.inv`/`det`/`slogdet` support leading matrix-stack axes.
+- Batched `linalg.cholesky`/`eigh`/`eigvalsh` support stacked matrices.
+- Batched `linalg.svd`/`svdvals` preserve leading dimensions.
+- Batched `linalg.matrix_power` and `linalg.lu` support matrix stacks.
 
 ### Tests
 
-- 620 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 625 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -135,7 +139,9 @@
   covers factor-based solves; `test_array_predicates.lua` covers predicates;
   `test_copy_contiguous.lua` covers copy/contiguity; `test_load_npz.lua`
   covers auto-detected archives; `test_tensorinv.lua`/`test_tensorsolve.lua`
-  cover reshaped systems; `test_einsum.lua` covers contractions and errors.
+  cover reshaped systems; `test_einsum.lua` covers contractions and errors;
+  `test_batched_linalg.lua` covers batch inv/det/slogdet, Cholesky/eigh,
+  SVD/svdvals, matrix_power, LU, and validation.
 
 ## 0.26.0 — 2026-11-24
 
