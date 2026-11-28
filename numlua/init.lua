@@ -277,6 +277,97 @@ function numlua.binary_repr(value, width)
   return digits
 end
 
+function numlua.base_repr(value, base, padding)
+  if type(value) ~= "number" or value % 1 ~= 0 then
+    error("numlua.base_repr expects an integer", 2)
+  end
+  base = base == nil and 2 or base
+  if type(base) ~= "number" or base % 1 ~= 0 or base < 2 or base > 36 then
+    error("numlua.base_repr: base must be an integer in 2..36", 2)
+  end
+  padding = padding == nil and 0 or padding
+  if type(padding) ~= "number" or padding % 1 ~= 0 or padding < 0 then
+    error("numlua.base_repr: padding must be a non-negative integer", 2)
+  end
+  local digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  local sign = ""
+  if value < 0 then sign, value = "-", -value end
+  local result = ""
+  repeat
+    local digit = value % base
+    result = digits:sub(digit + 1, digit + 1) .. result
+    value = math.floor(value / base)
+  until value == 0
+  while #result < padding do result = "0" .. result end
+  return sign .. result
+end
+
+-- vectorize(func[, otypes]) returns a function that broadcasts its tensor
+-- arguments and applies func to each scalar tuple.  otypes is a luatorch dtype
+-- string; when omitted, the first result's Lua type drives tensor inference.
+function numlua.vectorize(func, otypes)
+  if type(func) ~= "function" then
+    error("numlua.vectorize expects a function", 2)
+  end
+  if otypes ~= nil and type(otypes) ~= "string" then
+    error("numlua.vectorize: otypes must be a dtype string or nil", 2)
+  end
+  return function(...)
+    local count = select("#", ...)
+    if count == 0 then
+      error("numlua.vectorize wrapper expects at least one argument", 2)
+    end
+    local tensors = {}
+    for index = 1, count do
+      local value = select(index, ...)
+      if torch.is_tensor(value) then
+        tensors[index] = value
+      elseif type(value) == "number" or type(value) == "boolean" or
+          type(value) == "table" then
+        local ok, converted = pcall(torch.tensor, value)
+        if not ok then
+          error("numlua.vectorize: argument " .. index ..
+            " is not numeric: " .. tostring(converted), 2)
+        end
+        tensors[index] = converted
+      else
+        error("numlua.vectorize: argument " .. index ..
+          " must be a tensor, number, boolean, or table", 2)
+      end
+    end
+    local broadcasted = { numlua.broadcast_arrays(
+      unpack(tensors, 1, #tensors)) }
+    local shape = broadcasted[1]:sizes()
+    local total = broadcasted[1]:numel()
+    local values = {}
+    for position = 1, total do
+      local arguments = {}
+      for index = 1, #broadcasted do
+        arguments[index] = broadcasted[index]:reshape(-1):get(position)
+      end
+      local value = func(unpack(arguments, 1, #arguments))
+      if torch.is_tensor(value) then
+        if value:numel() ~= 1 then
+          error("numlua.vectorize: function must return a scalar", 2)
+        end
+        value = value:item()
+      end
+      if type(value) ~= "number" and type(value) ~= "boolean" then
+        error("numlua.vectorize: function must return a number, boolean, " ..
+          "or scalar tensor", 2)
+      end
+      values[position] = value
+    end
+    local ok, result = pcall(torch.tensor, values,
+      otypes and { dtype = otypes } or nil)
+    if not ok then
+      error("numlua.vectorize: cannot create result tensor: " ..
+        tostring(result), 2)
+    end
+    return result:reshape(shape)
+  end
+end
+
 function numlua.copyto(destination, source)
   check_tensor(destination, "copyto")
   check_tensor(source, "copyto")

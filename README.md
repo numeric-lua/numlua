@@ -178,6 +178,10 @@ end, 1, rows):format())
 -- tensor([5., 7., 9.])
 ```
 
+`numlua.vectorize(func[, otypes])` returns a wrapper that broadcasts its
+arguments and applies `func` to each scalar tuple; `otypes` optionally selects
+the result dtype.
+
 `numlua.apply_over_axes` applies a reduction callback over a list of axes and
 restores each reduced axis as size 1, following `np.apply_over_axes` (with
 1-based axes). A callback that keeps the rank is used unchanged, so
@@ -299,14 +303,14 @@ See [docs/api.md](docs/api.md) for the full surface and limits.
 | Shape | `shape`, `reshape`, `transpose`, `swapaxes`, `moveaxis`, `ravel`, `squeeze`, `unsqueeze`, `atleast_1d`, `atleast_2d`, `atleast_3d`, `resize`, `diag`, `diagflat`, `diagonal`, `trace`, `tril`, `triu` |
 | Combine | `concatenate`, `stack`, `vstack`, `hstack`, `dstack`, `column_stack`, `row_stack`, `block`, `append`, `split`, `array_split`, `hsplit`, `vsplit`, `dsplit` |
 | Layout | `broadcast_to`, `broadcast_arrays`, `broadcast_shapes`, `tile`, `repeat_`, `flip`, `fliplr`, `flipud`, `rot90`, `roll`, `rollaxis`, `pad`, `diff`, `ediff1d`, `gradient`, `unwrap`, `cumsum`, `cumprod`, `argsort`, `sort`, `msort`, `unique`, `nonzero`, `argwhere`, `take`, `take_along_axis`, `put`, `put_along_axis`, `delete`, `insert`, `trim_zeros`, `partition`, `argpartition`, `indices`, `diag_indices`, `tril_indices`, `triu_indices`, `diag_indices_from`, `tril_indices_from`, `triu_indices_from`, `mask_indices`, `ravel_multi_index`, `unravel_index` |
-| Iteration | `apply_along_axis`, `apply_over_axes` |
+| Iteration | `apply_along_axis`, `apply_over_axes`, `vectorize` |
 | Elementwise | `add`, `subtract`, `multiply`, `divide`, `negative`, `abs`, `sqrt`, `exp`, `log`, `log1p`, `sin`, `cos`, `tanh`, `maximum`, `minimum`, `power`, `square`, `sign`, `floor`, `ceil`, `trunc`, `round`, `reciprocal`, `isinf`, `isfinite`, `logical_and`, `logical_or`, `logical_xor`, `logical_not`, `isposinf`, `isneginf`, `hypot`, `remainder`, `mod`, `deg2rad`, `radians`, `rad2deg`, `degrees`, `sinc`, `heaviside` |
 | Reductions | `sum`, `prod`, `mean`, `average`, `var`, `std`, `max`, `min`, `ptp`, `argmax`, `argmin`, `nanargmin`, `nanargmax`, `nansum`, `nanprod`, `nanmean`, `nanmin`, `nanmax`, `nanvar`, `nanstd`, `nancumsum`, `nancumprod`, `nan_to_num`, `nanmedian`, `nanquantile`, `nanpercentile`, `iqr`, `cov`, `corrcoef` |
-| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `binary_repr`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
+| Numerical | `trapezoid`, `trapz`, `interp`, `digitize`, `searchsorted`, `binary_repr`, `base_repr`, `polyval`, `polyfit`, `histogram`, `histogram_bin_edges`, `histogram2d`, `histogramdd`, `packbits`, `unpackbits`, `fromstring`, `poly`, `polyadd`, `polysub`, `polymul`, `polydiv`, `polyder`, `polyint` |
 | Predicates/selection | `where`, `select`, `choose`, `extract`, `piecewise`, `clip`, `compress`, `isin`, `in1d`, `isnan`, `isclose`, `allclose`, `array_equal`, `array_equiv`, `any`, `all`, `count_nonzero` |
 | Sets | `intersect1d`, `union1d`, `setdiff1d`, `setxor1d` |
 | Mutation | `copyto`, `putmask` |
-| Linear algebra | `dot`, `tensordot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.cholesky`, `linalg.eigh`, `linalg.eigvalsh`, `linalg.matrix_power`, `linalg.cond`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
+| Linear algebra | `dot`, `tensordot`, `inner`, `outer`, `cross`, `matmul`, `kron`, `linalg.lu`, `linalg.svdvals`, `linalg.vector_norm`, `linalg.cholesky`, `linalg.eigh`, `linalg.eigvalsh`, `linalg.matrix_power`, `linalg.cond`, `linalg.vdot`, `linalg.multi_dot`, `linalg.matrix_rank`, `linalg.slogdet`, `linalg.pinv`, `linalg.lstsq`, `linalg.matrix_norm` |
 | Dtype | `dtype`, `astype`, `promote_types`, `result_type`, `can_cast` |
 | NumPy I/O | `save`, `load`, `fromfile`, `tofile`, `savez`, `savez_compressed`, `loadz` |
 | Text/CSV I/O | `loadtxt`, `savetxt`, `genfromtxt` |
@@ -359,7 +363,8 @@ adds the two-sample form with per-axis edges; `numlua.histogramdd` generalizes
 that to an arbitrary number of sample dimensions. `numlua.packbits` and
 `numlua.unpackbits` convert flattened binary data to/from `uint8` bytes with
 big- or little-endian bit order. `numlua.binary_repr` formats an integer in
-binary, optionally with a fixed width/two's-complement field. `numlua.searchsorted`
+binary, optionally with a fixed width/two's-complement field, and
+`numlua.base_repr` formats an integer in bases 2..36. `numlua.searchsorted`
 accepts an optional 1-based `sorter` permutation as a fourth argument.
 
 The elementwise surface also includes `numlua.isinf`, `numlua.isfinite`,
@@ -386,7 +391,8 @@ determinant sign and log-absolute value. `numlua.linalg.kron` supports 1-D and
 2-D Kronecker products. `numlua.linalg.cholesky`, `numlua.linalg.eigh`, and
 `numlua.linalg.eigvalsh` expose factorization/eigenvalue helpers, while
 `numlua.linalg.matrix_power` and `numlua.linalg.cond` add powers and condition
-numbers.
+numbers. `numlua.linalg.lu` returns `P, L, U`, `numlua.linalg.svdvals` returns
+the singular-value vector, and `numlua.linalg.vector_norm` mirrors `norm`.
 
 `transpose`, `swapaxes`, `moveaxis`, `atleast_*`, `broadcast_*`, `squeeze`,
 `unsqueeze`, and contiguous `reshape`/`ravel` are views. `resize`, `diag`,
@@ -720,8 +726,8 @@ iterator construction, polynomial arithmetic/calculus, set/membership helpers,
 text parsing, invalid-row skipping, angle/sinc/heaviside ufuncs, coordinate
 grids and iterators, block assembly, extra linalg helpers (vdot/multi_dot/
 matrix_rank/slogdet/kron/powers/condition), tensordot, mutation helpers,
-binary formatting, ndenumerate, searchsorted sorters, additional ufuncs and
-NaN
+binary/base formatting, ndenumerate, vectorize, LU/singular-value helpers,
+searchsorted sorters, additional ufuncs and NaN
 helpers, difference edges,
 broadcast-shape arithmetic, quoted/bool text fields,
 meshgrid, gradients, closeness predicates,
@@ -732,7 +738,7 @@ wrap results with an independent index walk and cover every constant-value
 form; the selection and I/O tests cover empty/0-D branches, Unicode and
 colliding `.npz` names, EOCD comments, invalid members, zero-width text
 tensors, sequential handles, and truncation.
-It currently contains 592 tests.
+It currently contains 600 tests.
 `examples/basic.lua` is runnable with the same `LUA_PATH`.
 
 ## Performance notes
@@ -807,7 +813,9 @@ This is an MVP, not a complete NumPy replacement:
   supports 1-D and 2-D operands and follows the right operand's dtype;
   `linalg.cholesky` requires positive-definite input, `eigh`/`eigvalsh` require
   symmetric matrices, `matrix_power` takes integer exponents, and `cond`
-  supports p = 2, -2, 1, infinity, or `"fro"`;
+  supports p = 2, -2, 1, infinity, or `"fro"`; `linalg.lu` returns `P, L, U`,
+  `linalg.svdvals` returns a 1-D vector, and `linalg.vector_norm` delegates to
+  `norm`;
 - `trapezoid`/`trapz` default to the last axis, accept a 1-D coordinate vector
   or full-shape coordinates, and use ATen's arithmetic promotion (integer
   input becomes `float32`);
@@ -825,8 +833,12 @@ This is an MVP, not a complete NumPy replacement:
   `ndenumerate` adds values; `block` assembles nested rows of 2-D tiles only;
 - `tensordot` contracts an integer number of trailing/leading axes or explicit
   axis pairs; free axes retain their original order;
-- `binary_repr` is limited to widths up to 53 bits; `copyto`/`putmask` mutate
-  their destination and `putmask` requires broadcastable replacement values;
+- `binary_repr` is limited to widths up to 53 bits and `base_repr` supports
+  bases 2..36; `copyto`/`putmask` mutate their destination and `putmask`
+  requires broadcastable replacement values;
+- `vectorize` broadcasts tensor/table/scalar arguments, applies a Lua callback
+  per element, and returns a tensor; it does not implement `excluded` or
+  output-signature handling beyond `otypes`;
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D inputs,
   `rowvar = false`, and optional `y` observations; `corrcoef` uses unit sample
   covariance and clips round-off to `[-1, 1]`;

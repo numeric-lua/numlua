@@ -80,10 +80,13 @@
 - `numlua.ndenumerate` adds coordinate/value iteration.
 - `numlua.binary_repr` adds binary integer formatting.
 - `numlua.copyto` and `numlua.putmask` add in-place assignment helpers.
+- `numlua.base_repr` adds integer formatting in bases 2..36.
+- `numlua.vectorize` adds broadcasted scalar-callback wrappers.
+- `numlua.linalg.lu`, `svdvals`, and `vector_norm` extend linear algebra.
 
 ### Tests
 
-- 592 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 600 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -114,7 +117,10 @@
   `test_tensordot.lua` covers contractions and validation;
   `test_ndenumerate.lua` covers coordinate/value iteration;
   `test_binary_repr.lua` covers formatting and width errors;
-  `test_copyto_putmask.lua` covers broadcast assignment and masks.
+  `test_copyto_putmask.lua` covers broadcast assignment and masks;
+  `test_base_repr.lua` covers base formatting; `test_vectorize.lua` covers
+  broadcasted callbacks and inference; `test_linalg_lu.lua` covers LU,
+  singular values, and vector norms.
 
 ## 0.26.0 — 2026-11-24
 

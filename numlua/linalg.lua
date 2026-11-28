@@ -161,6 +161,19 @@ function linalg.qr(t, mode)
   return t:qr(mode)
 end
 
+function linalg.lu(t)
+  return square(t, "lu"):lu()
+end
+
+function linalg.svdvals(t)
+  local _, singular = matrix(t, "svdvals"):svd(false)
+  return singular:reshape(-1)
+end
+
+function linalg.vector_norm(t, ord, axis, keepdims)
+  return linalg.norm(t, ord, axis, keepdims)
+end
+
 function linalg.cholesky(t)
   return square(t, "cholesky"):cholesky()
 end

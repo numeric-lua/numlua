@@ -170,6 +170,10 @@ end, "int64"):totable(), ", "))
 print("packbits: " .. table.concat(numlua.packbits(
   numlua.array({ 1, 0, 1, 0, 0, 0, 0, 1 })):totable(), ", "))
 print("binary_repr: " .. numlua.binary_repr(-5, 8))
+print("base_repr: " .. numlua.base_repr(255, 16))
+local double = numlua.vectorize(function(value) return value * 2 end)
+print("vectorize: " .. table.concat(double(
+  numlua.array({ 1, 2, 3 })):totable(), ", "))
 print("ravel: " .. table.concat(numlua.ravel_multi_index(
   { { 1, 2 }, { 2, 3 } }, { 2, 3 }):totable(), ", "))
 local row, column = numlua.unravel_index(
@@ -250,6 +254,12 @@ print("matrix_power:\n" .. la.matrix_power(numlua.array({
   { 1.0, 1.0 }, { 0.0, 1.0 },
 }, { dtype = "float64" }), 3):format())
 print("cond = " .. tostring(la.cond(square):item()))
+local p, l, u = la.lu(square)
+print("lu shapes: " .. table.concat(numlua.shape(p), "x") .. ", " ..
+  table.concat(numlua.shape(l), "x") .. ", " ..
+  table.concat(numlua.shape(u), "x"))
+print("svdvals: " .. table.concat(la.svdvals(square):totable(), ", "))
+print("vector_norm = " .. tostring(la.vector_norm(square):item()))
 
 heading("Predicates and selection")
 local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })

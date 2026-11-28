@@ -716,6 +716,11 @@ Formats an integer in binary. Without `width`, negative values use a leading
 positive values are zero-padded. Values that do not fit the requested width
 raise an error.
 
+### `numlua.base_repr(value[, base[, padding]])`
+
+Formats an integer in bases `2..36` (default `2`), with optional zero padding.
+Negative values receive a leading `-`.
+
 ### `numlua.percentile(t, q[, axis[, keepdims]])`
 
 Percent-scaled alias for `numlua.quantile`; `q` is in `[0, 100]` and may also
@@ -1105,6 +1110,9 @@ local q, r = la.qr(a)
 | `linalg.solve(a, b)` | solves `a * x = b`; `b` is a vector or matrix |
 | `linalg.svd(t[, full_matrices])` | returns `U, S, Vh`; `full_matrices` defaults to `true` |
 | `linalg.qr(t[, mode])` | returns `Q, R`; `mode` is `"reduced"` (default), `"complete"`, or `"r"` |
+| `numlua.linalg.lu(t)` | returns `P, L, U` |
+| `numlua.linalg.svdvals(t)` | singular-value vector |
+| `numlua.linalg.vector_norm(t[, ord[, axis[, keepdims]]])` | vector norm wrapper |
 | `numlua.linalg.cholesky(t)` | lower Cholesky factor |
 | `numlua.linalg.eigh(t)` | symmetric eigenvalues and eigenvectors |
 | `numlua.linalg.eigvalsh(t)` | symmetric eigenvalues only |
@@ -1143,6 +1151,8 @@ eigenvalues, eigenvectors and `eigvalsh` returns only the eigenvalues;
 both require symmetric input. `matrix_power` accepts integer exponents
 (including zero and negatives). `cond` supports `p = 2` (default), `-2`, `1`,
 `infinity`, and `"fro"`; singular matrices return `inf` for 1/inf/fro.
+`lu` returns the ATen `P, L, U` factors, `svdvals` returns the singular-value
+vector, and `vector_norm` delegates to `norm`.
 
 `lstsq` uses the SVD pseudoinverse; it is a convenience wrapper, not a LAPACK
 driver.
@@ -1578,6 +1588,14 @@ turn a view into a full-size copy or make an allocating helper alias its input.
 `put_along_axis`, `copyto`, and `putmask` instead mutate their input in place
 and return it.
 `trim_zeros` returns a view created with `narrow`.
+
+### `numlua.vectorize(func[, otypes])`
+
+Returns a wrapper that broadcasts tensor/table/scalar arguments through
+`broadcast_arrays` and calls `func` with each scalar tuple. The callback must
+return a number, boolean, or scalar tensor. `otypes` optionally names the result
+dtype; otherwise tensor inference follows the first value. `excluded` and other
+NumPy vectorize options are not implemented.
 
 ## Dtype
 
@@ -2145,7 +2163,8 @@ dtype, or backend constraints are forwarded as-is.
   supports 1-D/2-D operands and follows the right operand's dtype.
   `linalg.cholesky` needs positive-definite input, `eigh`/`eigvalsh` need
   symmetric input, `matrix_power` takes integer exponents, and `cond` supports
-  p = 2, -2, 1, infinity, or `"fro"`.
+  p = 2, -2, 1, infinity, or `"fro"`; `lu` returns ATen's `P, L, U`, `svdvals`
+  returns a 1-D singular-value vector, and `vector_norm` delegates to `norm`.
 - `trapezoid`/`trapz` integrate along one 1-based axis. A coordinate array may
   be 1-D for the selected axis or have the full input shape; integer input
   follows ATen's promotion to `float32`.
@@ -2165,7 +2184,11 @@ dtype, or backend constraints are forwarded as-is.
   Python slice syntax; `ndindex` yields 1-based C-order coordinate tables and
   `ndenumerate` adds values; `block` assembles 2-D tiles only.
 - `tensordot` contracts trailing/leading axes or explicit axis pairs; free axes
-  retain their original order. `binary_repr` widths are limited to 1..53 bits.
+  retain their original order. `binary_repr` widths are limited to 1..53 bits;
+  `base_repr` supports bases 2..36.
+- `vectorize` broadcasts scalar/tensor/table arguments and applies a Lua
+  callback per element; it does not implement `excluded` or full output
+  signatures beyond `otypes`.
 - `copyto`/`putmask` mutate their destination; `putmask` requires broadcastable
   replacement values.
 - `cov` defaults to sample covariance (`ddof = 1`) and supports 1-D/2-D input,
