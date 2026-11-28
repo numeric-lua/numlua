@@ -96,10 +96,12 @@
 - Batched `linalg.cholesky`/`eigh`/`eigvalsh` support stacked matrices.
 - Batched `linalg.svd`/`svdvals` preserve leading dimensions.
 - Batched `linalg.matrix_power` and `linalg.lu` support matrix stacks.
+- Batched `linalg.solve`, `qr`, and `lu_solve` handle stacked systems.
+- Batched `linalg.cond` and `matrix_rank` compute per-matrix results.
 
 ### Tests
 
-- 625 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
+- 629 tests, passing with system zlib and with `NUMLUA_DISABLE_ZLIB=1`.
   `test_broadcast_shapes.lua` covers right alignment, zero-size axes, and shape
   validation; `test_diff_edges.lua` covers prepend/append ranks, N-D axes,
   `ediff1d`, and errors; `test_average.lua` covers unweighted/weighted/returned
@@ -141,7 +143,8 @@
   covers auto-detected archives; `test_tensorinv.lua`/`test_tensorsolve.lua`
   cover reshaped systems; `test_einsum.lua` covers contractions and errors;
   `test_batched_linalg.lua` covers batch inv/det/slogdet, Cholesky/eigh,
-  SVD/svdvals, matrix_power, LU, and validation.
+  SVD/svdvals, matrix_power, LU, and validation; `test_batched_linalg2.lua`
+  covers batched solve/QR/cond/matrix_rank/LU-solve.
 
 ## 0.26.0 — 2026-11-24
 

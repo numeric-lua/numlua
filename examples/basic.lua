@@ -279,6 +279,16 @@ local stacked = numlua.array({
 print("batched det: " .. table.concat(la.det(stacked):totable(), ", "))
 print("batched svdvals shape: " ..
   table.concat(numlua.shape(la.svdvals(stacked)), " x "))
+print("batched solve:\n" .. la.solve(stacked,
+  numlua.array({ { 2, 8 }, { 3, 10 } }, { dtype = "float64" })):format())
+local qb, rb = la.qr(stacked)
+print("batched qr shapes: " .. table.concat(numlua.shape(qb), "x") .. "/" ..
+  table.concat(numlua.shape(rb), "x"))
+print("batched cond: " .. table.concat(la.cond(stacked):totable(), ", "))
+print("batched rank: " .. table.concat(la.matrix_rank(stacked):totable(), ", "))
+local bp, bl, bu = la.lu(stacked)
+print("batched lu_solve:\n" .. la.lu_solve(bp, bl, bu,
+  numlua.array({ { 2, 8 }, { 3, 10 } }, { dtype = "float64" })):format())
 
 heading("Predicates and selection")
 local values = numlua.array({ -2.0, -0.5, 0.0, 0.5, 2.0 })

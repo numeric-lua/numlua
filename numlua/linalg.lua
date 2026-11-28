@@ -38,6 +38,13 @@ local function batch_matrix(value, name)
   return value
 end
 
+local function batch_prefix_matches(a, b, count)
+  for index = 1, count do
+    if a:size(index) ~= b:size(index) then return false end
+  end
+  return true
+end
+
 local function matrix(value, name)
   tensor(value, name)
   if value:dim() ~= 2 then
@@ -80,13 +87,25 @@ end
 function linalg.solve(a, b)
   square(a, "solve")
   tensor(b, "solve")
-  local n = a:size(1)
+  local ndim = a:dim()
+  local n = a:size(ndim - 1)
+  local batch_rank = ndim - 2
   local bdims = b:sizes()
-  if (#bdims ~= 1 and #bdims ~= 2) or bdims[1] ~= n then
+  local valid = false
+  if #bdims == 1 and bdims[1] == n then
+    valid = true
+  elseif #bdims == batch_rank + 1 and bdims[#bdims] == n and
+      batch_prefix_matches(a, b, batch_rank) then
+    valid = true
+  elseif #bdims == batch_rank + 2 and bdims[#bdims - 1] == n and
+      batch_prefix_matches(a, b, batch_rank) then
+    valid = true
+  end
+  if not valid then
     error(string.format(
-      "numlua.linalg.solve: b must be a vector or matrix with first " ..
-      "dimension %d, got %s", n,
-      #bdims > 0 and table.concat(bdims, "x") or "a scalar"), 2)
+      "numlua.linalg.solve: incompatible right-hand side shape %s for " ..
+      "%s (first dimension must match)", table.concat(bdims, "x"),
+      table.concat(a:sizes(), "x")), 2)
   end
   return a:solve(b)
 end
@@ -164,7 +183,7 @@ end
 -- qr(t[, mode]) returns Q, R.  mode is "reduced" (default), "complete", or
 -- "r"; shape and mode errors are ATen's.
 function linalg.qr(t, mode)
-  matrix(t, "qr")
+  batch_matrix(t, "qr")
   if mode ~= nil and type(mode) ~= "string" then
     error("numlua.linalg.qr: mode must be a string or nil", 2)
   end
@@ -231,21 +250,40 @@ function linalg.lu(t)
 end
 
 function linalg.lu_solve(p, l, u, b)
-  matrix(p, "lu_solve")
-  matrix(l, "lu_solve")
-  matrix(u, "lu_solve")
+  square(p, "lu_solve")
+  square(l, "lu_solve")
+  square(u, "lu_solve")
   tensor(b, "lu_solve")
-  local n = p:size(1)
-  if p:size(2) ~= n or l:size(1) ~= n or l:size(2) ~= n or
-      u:size(1) ~= n or u:size(2) ~= n then
-    error("numlua.linalg.lu_solve expects n by n P, L, U factors", 2)
+  local ndim = p:dim()
+  local n = p:size(ndim - 1)
+  local batch_rank = ndim - 2
+  for index = 1, ndim do
+    if l:size(index) ~= p:size(index) or u:size(index) ~= p:size(index) then
+      error("numlua.linalg.lu_solve expects matching P, L, U factors", 2)
+    end
   end
   local dims = b:sizes()
-  if (#dims ~= 1 and #dims ~= 2) or dims[1] ~= n then
-    error(string.format(
-      "numlua.linalg.lu_solve: b must have first dimension %d", n), 2)
+  local valid = false
+  if #dims == 1 and dims[1] == n then
+    valid = true
+  elseif #dims == batch_rank + 1 and dims[#dims] == n and
+      batch_prefix_matches(p, b, batch_rank) then
+    valid = true
+  elseif #dims == batch_rank + 2 and dims[#dims - 1] == n and
+      batch_prefix_matches(p, b, batch_rank) then
+    valid = true
   end
-  return u:solve(l:solve(p:matmul(b)))
+  if not valid then
+    error(string.format(
+      "numlua.linalg.lu_solve: incompatible right-hand side shape %s " ..
+      "(first dimension must match)", table.concat(dims, "x")), 2)
+  end
+  local right = b
+  local batched_vector = batch_rank > 0 and #dims == batch_rank + 1
+  if batched_vector then right = b:unsqueeze(b:dim() + 1) end
+  local pb = p:matmul(right)
+  if batched_vector then pb = pb:squeeze(pb:dim()) end
+  return u:solve(l:solve(pb))
 end
 
 function linalg.svdvals(t)
@@ -302,34 +340,41 @@ function linalg.matrix_power(t, exponent)
 end
 
 function linalg.cond(t, p)
-  matrix(t, "cond")
+  square(t, "cond")
   p = p == nil and 2 or p
   local dtype = t:is_floating_point() and t:dtype() or "float64"
+  local ndim = t:dim()
   if p == 2 or p == -2 then
     local _, singular = t:svd(false)
-    local values = singular:reshape(-1)
+    local values = singular
     if values:numel() == 0 then
       return torch.tensor(0, { dtype = dtype })
     end
-    local largest, smallest = values:max():item(), values:min():item()
+    local largest = values:max(values:dim())
+    local smallest = values:min(values:dim())
+    local ratio, zero
     if p == 2 then
-      return torch.tensor(smallest == 0 and math.huge or largest / smallest,
-        { dtype = dtype })
+      ratio, zero = largest:div(smallest), smallest:eq(0)
+    else
+      ratio, zero = smallest:div(largest), largest:eq(0)
     end
-    return torch.tensor(largest == 0 and math.huge or smallest / largest,
-      { dtype = dtype })
+    local infinite = zero:mul(0):add(math.huge)
+    return torch.where(zero, infinite, ratio):to(dtype)
   end
   if p ~= 1 and p ~= math.huge and p ~= "fro" and p ~= "f" then
     error("numlua.linalg.cond: unsupported p " .. tostring(p), 2)
   end
   local ok, inverse = pcall(function() return t:inverse() end)
-  if not ok then return torch.tensor(math.huge, { dtype = dtype }) end
-  local function norm_value(value)
-    if p == 1 then return value:abs():sum(1):max():item() end
-    if p == math.huge then return value:abs():sum(2):max():item() end
-    return value:norm(2):item()
+  if not ok then
+    return t:abs():sum(ndim):sum(ndim - 1):mul(0):add(math.huge)
+      :to(dtype)
   end
-  return torch.tensor(norm_value(t) * norm_value(inverse), { dtype = dtype })
+  local function norm_value(value)
+    if p == 1 then return value:abs():sum(ndim - 1):max(ndim - 1) end
+    if p == math.huge then return value:abs():sum(ndim):max(ndim - 1) end
+    return value:abs():pow(2):sum(ndim):sum(ndim - 1):sqrt()
+  end
+  return norm_value(t):mul(norm_value(inverse)):to(dtype)
 end
 
 function linalg.vdot(a, b)
@@ -361,25 +406,32 @@ function linalg.multi_dot(arrays)
 end
 
 function linalg.matrix_rank(t, tolerance)
-  matrix(t, "matrix_rank")
+  batch_matrix(t, "matrix_rank")
   if tolerance ~= nil and (type(tolerance) ~= "number" or tolerance < 0) then
     error("numlua.linalg.matrix_rank: tolerance must be non-negative or nil", 2)
   end
   local _, singular = t:svd(false)
-  local values = singular:reshape(-1)
+  local values = singular
+  local ndim = t:dim()
   if values:numel() == 0 then
-    return torch.tensor(0, { dtype = "int64" })
+    local shape = {}
+    for index = 1, ndim - 2 do shape[index] = t:size(index) end
+    if #shape == 0 then return torch.tensor(0, { dtype = "int64" }) end
+    return torch.zeros(shape, { dtype = "int64" })
   end
-  local largest = values:max():item()
+  local largest = values:max(values:dim())
   local eps = (t:dtype() == "float16" or t:dtype() == "float32")
     and 1.1920929e-7 or 2.220446049250313e-16
-  local cutoff = tolerance or
-    largest * math.max(t:size(1), t:size(2)) * eps
-  local rank = 0
-  for index = 1, values:numel() do
-    if values:get(index) > cutoff then rank = rank + 1 end
+  local cutoff
+  if tolerance ~= nil then
+    cutoff = tolerance
+  else
+    cutoff = largest:mul(math.max(t:size(ndim - 1), t:size(ndim)) * eps)
   end
-  return torch.tensor(rank, { dtype = "int64" })
+  local expanded = type(cutoff) == "number" and cutoff
+    or cutoff:unsqueeze(values:dim())
+  local rank = values:gt(expanded):sum(values:dim())
+  return rank:to("int64")
 end
 
 function linalg.slogdet(t)
